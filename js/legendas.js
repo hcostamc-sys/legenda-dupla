@@ -78,6 +78,32 @@ export function pareceTraducao(nome) {
   return r.startsWith('portuguese') || r.startsWith('português') || /pt-br/i.test(String(nome || ''));
 }
 
+/** Título do vídeo a partir do nome do arquivo do DownSub: "[English] Título [DownSub.com].srt" → "Título". */
+export function tituloDoArquivo(nome) {
+  return String(nome || '')
+    .replace(/\.(srt|vtt|txt)$/i, '')
+    .replace(/^\s*\[[^\]]*\]\s*/, '')
+    .replace(/\s*\[DownSub\.com\]\s*$/i, '')
+    .trim();
+}
+
+/** Chave para comparar títulos: sem acentos, sem maiúsculas e sem pontuação. */
+export function chaveTitulo(texto) {
+  return normalizar(texto).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** true se os dois títulos parecem ser do mesmo vídeo (o DownSub tira símbolos como ? e |). */
+export function titulosParecidos(a, b) {
+  const A = chaveTitulo(a);
+  const B = chaveTitulo(b);
+  if (!A || !B) return true; // sem dados para comparar: não acusa
+  if (A === B || A.includes(B) || B.includes(A)) return true;
+  const pa = new Set(A.split(' '));
+  const pb = B.split(' ');
+  const comuns = pb.filter((w) => pa.has(w)).length;
+  return comuns / Math.max(pa.size, pb.length) >= 0.6;
+}
+
 /** Recebe dois nomes e devolve { estudo, traducao } com os índices sugeridos. */
 export function sugerirPapeis(nomes) {
   if (nomes.length < 2) return { estudo: 0, traducao: -1 };

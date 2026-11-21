@@ -2,7 +2,7 @@
 // PLANO.md seções 7 a 11.
 
 import {
-  lerLink, lerArquivoLegenda, sugerirPapeis, processar, falaNoTempo, indiceLogico, navegar,
+  tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, sugerirPapeis, processar, falaNoTempo, indiceLogico, navegar,
   tempoDestino, normalizar, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
   MSG_LINK_INVALIDO,
 } from './legendas.js';
@@ -220,6 +220,53 @@ async function receberArquivos(lista, papel) {
     definirEscolha(alvo, await lerArquivo(arquivos[0]));
   }
   validarFormulario();
+  await preencherLinkAutomatico();
+}
+
+/** Link de um vídeo no formato que o campo mostra. */
+function linkDoVideo(id, inicioSeg = 0) {
+  return `https://www.youtube.com/watch?v=${id}${inicioSeg ? `&t=${inicioSeg}s` : ''}`;
+}
+
+function avisarLink(texto, tipo = 'msg-alerta') {
+  const msg = $('#msg-link');
+  msg.textContent = texto;
+  msg.className = `msg ${tipo}`;
+}
+
+/**
+ * Sem link no campo: 1) procura na biblioteca um vídeo com o mesmo título do arquivo;
+ * 2) usa o link que estiver copiado (o mesmo que foi colado no DownSub).
+ */
+async function preencherLinkAutomatico() {
+  if (lerLink($('#campo-link').value)) return;
+  const nome = S.escolha.estudo?.arquivo || S.escolha.traducao?.arquivo;
+  if (!nome) return;
+  const chave = chaveTitulo(tituloDoArquivo(nome));
+  if (chave) {
+    const videos = await listarVideos();
+    const bate = (c) => c && chaveTitulo(c) === chave;
+    // Primeiro pelo nome dos arquivos já usados; se não decidir, pelo título do vídeo.
+    let achados = videos.filter((v) => bate(tituloDoArquivo(v.estudo?.arquivo)) || bate(tituloDoArquivo(v.traducao?.arquivo)));
+    if (achados.length !== 1) achados = videos.filter((v) => bate(v.titulo));
+    if (achados.length === 1) {
+      const v = achados[0];
+      $('#campo-link').value = linkDoVideo(v.id);
+      avisarLink(`Link preenchido: é o vídeo “${v.titulo || 'Vídeo ' + v.id}” da sua biblioteca.`);
+      validarFormulario();
+      return;
+    }
+  }
+  try {
+    const link = lerLink(await navigator.clipboard.readText());
+    if (link) {
+      $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
+      avisarLink('Link pego do que você copiou no YouTube. Ao abrir, o app confere se o título bate com as legendas.');
+      validarFormulario();
+      return;
+    }
+  } catch { /* sem permissão ou sem texto copiado */ }
+  if (!$('#msg-link').textContent) avisarLink('Agora cole o link do vídeo (botão Colar).');
 }
 
 function trocarPapeis() {
@@ -523,6 +570,8 @@ async function abrirVideo(reg, inicio) {
   S.primeiroPlay = false;
   S.tocandoLogico = false;
   S.ajustouVelInicio = false;
+  S.tituloConferido = false;
+  cancelarToqueLivre();
   S.ab = { a: null, b: null };
   atualizarAB();
   $('#busca-falas').value = '';
@@ -587,6 +636,7 @@ function encerrarPlayer() {
 
 function fecharVideo() {
   encerrarPlayer();
+  cancelarToqueLivre();
   try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch { /* nada */ }
   S.registro = null;
   S.unidades = [];
@@ -685,6 +735,19 @@ function lerTitulo() {
     salvarVideo(reg);
     $('#titulo-video').textContent = tituloAtual();
   }
+  conferirTitulo(t);
+}
+
+/** Avisa se o título do vídeo não bate com o título no nome do arquivo de legenda. */
+function conferirTitulo(tituloVideo) {
+  const reg = S.registro;
+  if (!reg || !tituloVideo || S.tituloConferido) return;
+  S.tituloConferido = true;
+  const nome = reg.estudo?.arquivo || '';
+  if (!/^\s*\[/.test(nome)) return; // só nomes no padrão do DownSub trazem o título
+  const doArquivo = tituloDoArquivo(nome);
+  if (titulosParecidos(tituloVideo, doArquivo)) return;
+  toast(`Atenção: as legendas parecem ser de outro vídeo. Arquivo: “${doArquivo}”. Vídeo: “${tituloVideo}”. Confira o link.`, 9000);
 }
 
 function atualizarBotaoPlay() {
@@ -1166,6 +1229,35 @@ function toqueNaCaixa(alvo) {
   if (alvo.classList.contains('palavra') && linha.id === 'caixa-l1') abrirCartao(alvo);
 }
 
+// ============================================================ liberar o toque no vídeo (anúncios)
+
+let timerToqueLivre = null;
+
+function cancelarToqueLivre() {
+  clearInterval(timerToqueLivre);
+  timerToqueLivre = null;
+  document.body.classList.remove('toque-livre');
+  const b = $('#btn-liberar');
+  if (b) b.textContent = '👆';
+}
+
+/** Deixa o toque chegar ao player do YouTube por 10 s (para tocar em “Pular anúncio”). */
+function liberarToque() {
+  if (timerToqueLivre) { cancelarToqueLivre(); return; }
+  if (!S.primeiroPlay) { toast('Antes do primeiro play o toque no vídeo já vai direto para o YouTube.'); return; }
+  const fim = performance.now() + 10000;
+  document.body.classList.add('toque-livre');
+  toast('Toque livre no vídeo por 10 s: use para tocar em “Pular anúncio”.', 3000);
+  const b = $('#btn-liberar');
+  const atualizar = () => {
+    const resta = Math.ceil((fim - performance.now()) / 1000);
+    if (resta <= 0) { cancelarToqueLivre(); return; }
+    b.textContent = `👆${resta}`;
+  };
+  atualizar();
+  timerToqueLivre = setInterval(atualizar, 250);
+}
+
 // ============================================================ tela cheia e modo deitado (8.3)
 
 const mqDeitado = window.matchMedia('(orientation: landscape) and (max-height: 600px) and (pointer: coarse)');
@@ -1538,7 +1630,7 @@ function lerCompartilhamento() {
     toast(MSG_LINK_INVALIDO);
     return;
   }
-  $('#campo-link').value = `https://www.youtube.com/watch?v=${link.videoId}${link.inicioSeg ? `&t=${link.inicioSeg}s` : ''}`;
+  $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
   const msg = $('#msg-link');
   msg.textContent = 'Link recebido. Agora escolha os arquivos de legenda.';
   msg.className = 'msg msg-alerta';
@@ -1595,6 +1687,7 @@ function ligarEventos() {
     if (menu.hidden) { montarMenuVelocidade(); menu.hidden = false; } else menu.hidden = true;
   });
   $('#btn-tela-cheia').addEventListener('click', alternarTelaCheia);
+  $('#btn-liberar').addEventListener('click', liberarToque);
   $('#btn-ajustes').addEventListener('click', () => abrirPainel('#painel-ajustes'));
   $('#btn-fechar-ajustes').addEventListener('click', fecharPaineis);
   $('#fundo-painel').addEventListener('click', fecharPaineis);

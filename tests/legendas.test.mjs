@@ -7,7 +7,7 @@ import {
   lerArquivoLegenda, lerLegenda, decodificar, lerLink, lerTempoLink, sugerirPapeis,
   ehAutomatica, montarFrases, processar, falaNoTempo, navegar, tempoDestino,
   esconderMarcacoes, ehMarcacao, normalizar, limparPalavra, formatarTempo, formatarNumero,
-  parearPorFala, rotuloArquivo, MSG_SEM_LEGENDA,
+  parearPorFala, rotuloArquivo, MSG_SEM_LEGENDA, tituloDoArquivo, titulosParecidos, chaveTitulo,
 } from '../js/legendas.js';
 
 const fx = (nome) => readFileSync(new URL(`./fixtures/${nome}`, import.meta.url));
@@ -350,4 +350,17 @@ test('Pareamento e modo frases com 4.000 falas em menos de 100 ms', () => {
   assert.ok(r1.unidades.length > 1000 && r2.unidades.length === 4000);
   assert.ok(t1 - t0 < 100, `modo frases: ${(t1 - t0).toFixed(1)} ms`);
   assert.ok(t2 - t1 < 100, `por fala: ${(t2 - t1).toFixed(1)} ms`);
+});
+
+// ---------------------------------------------------------------- título pelo nome do arquivo
+
+test('tituloDoArquivo e comparação de títulos', () => {
+  const nome = "[English (auto-generated)] Hype or reality Inside Anthropic's $1 trillion US IPO The Current [DownSub.com].srt";
+  assert.equal(tituloDoArquivo(nome), "Hype or reality Inside Anthropic's $1 trillion US IPO The Current");
+  assert.equal(tituloDoArquivo('[Portuguese] Aula de Física [DownSub.com].vtt'), 'Aula de Física');
+  // o DownSub tira ? e |
+  assert.ok(titulosParecidos("Hype or reality? Inside Anthropic's $1 trillion US IPO | The Current", tituloDoArquivo(nome)));
+  assert.ok(!titulosParecidos('How to wire a VFD', tituloDoArquivo(nome)));
+  assert.equal(chaveTitulo('Ação | Teste?'), 'acao teste');
+  assert.ok(titulosParecidos('', 'qualquer'));
 });

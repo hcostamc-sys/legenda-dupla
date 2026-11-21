@@ -497,6 +497,37 @@ def t_compartilhar(page, base):
     expect(page.locator('#erro-abrir-yt')).to_have_attribute('href', f'https://www.youtube.com/watch?v={ID}')
 
 
+@caso('9d. Link automático: biblioteca, área de transferência e aviso de título; liberar toque')
+def t_link_automatico(page, base, en, pt):
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    page.goto(base + '?mock=1')
+    # 1) mesmo título de um vídeo da biblioteca: o link entra sozinho
+    page.set_input_files('#arq-estudo', [en, pt])
+    expect(page.locator('#campo-link')).to_have_value(f'https://www.youtube.com/watch?v={ID}')
+    expect(page.locator('#msg-link')).to_contain_text('da sua biblioteca')
+    # 2) título novo: usa o link copiado
+    pasta = os.path.dirname(en)
+    novo = os.path.join(pasta, '[English] Outro vídeo qualquer [DownSub.com].srt')
+    shutil.copy(en, novo)
+    page.goto(base + '?mock=1')
+    page.evaluate("navigator.clipboard.writeText('Veja https://youtu.be/BBBBBBBBBBB?si=x')")
+    page.set_input_files('#arq-estudo', [novo])
+    expect(page.locator('#campo-link')).to_have_value('https://www.youtube.com/watch?v=BBBBBBBBBBB')
+    expect(page.locator('#msg-link')).to_contain_text('do que você copiou')
+    # 3) o título do vídeo ("Vídeo de teste") não bate com o do arquivo: aviso
+    page.click('#btn-abrir')
+    expect(page.locator('#toast')).to_contain_text('parecem ser de outro vídeo')
+    page.click('#btn-tocar-grande')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    esperar(lambda: page.evaluate("getComputedStyle(document.querySelector('#camada-gestos')).pointerEvents") == 'auto', msg='gestos')
+    page.click('#btn-liberar')
+    assert page.evaluate("getComputedStyle(document.querySelector('#camada-gestos')).pointerEvents") == 'none'
+    expect(page.locator('#btn-liberar')).to_have_text('👆10')
+    page.click('#btn-liberar')  # tocar de novo cancela
+    assert page.evaluate("getComputedStyle(document.querySelector('#camada-gestos')).pointerEvents") == 'auto'
+    page.click('#btn-voltar')
+
+
 @caso('9c. Lista virtual com 1.200 falas segue a fala atual')
 def t_lista_grande(page, base, pasta):
     linhas = []
@@ -595,6 +626,7 @@ def main():
         t_backup(page, url, pasta)
         t_compartilhar(page, base)
         t_lista_grande(page, base, pasta)
+        t_link_automatico(page, base, en, pt)
         ctx.close()
         t_capturas(browser, url, en, pt)
         browser.close()

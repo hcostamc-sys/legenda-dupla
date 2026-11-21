@@ -6,11 +6,10 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 
 ## Como usar
 
-1. Baixe as legendas do vídeo no DownSub (veja abaixo).
-2. Abra o Legenda Dupla, cole o link do vídeo do YouTube (botão **Colar**).
-3. Toque em **Legenda do idioma que estou estudando** e escolha o arquivo `.srt` em inglês (ou outro idioma).
-4. Toque em **Tradução (opcional)** e escolha o arquivo em português. Você também pode escolher os dois de uma vez: o app tenta descobrir qual é o português. Se ficaram trocados, toque em **⇅ Trocar**.
-5. Toque em **Abrir vídeo** e depois em **▶ Tocar**.
+1. No app do YouTube, copie o link do vídeo e baixe as legendas no DownSub (veja abaixo).
+2. Abra o Legenda Dupla e toque em **Legenda do idioma que estou estudando**. Escolha os dois arquivos `.srt` de uma vez (ou um de cada vez, usando também **Tradução (opcional)**). O app descobre qual é o português; se ficaram trocados, toque em **⇅ Trocar**.
+3. O link entra sozinho no campo: se o vídeo já está na biblioteca, o app reconhece pelo título; se não, usa o link que você copiou no passo 1. Na primeira vez, o Chrome pergunta se o site pode ver o que foi copiado: toque em **Permitir**. Se o campo ficar vazio, toque em **Colar**.
+4. Toque em **Abrir vídeo** e depois em **▶ Tocar**. Se o título do vídeo não bater com o título no nome do arquivo de legenda, aparece um aviso para conferir o link.
 
 ### Gestos e botões
 
@@ -27,6 +26,7 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 | Velocidade | Botão **1×** | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
+| Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar) | Igual |
 | Repetir um trecho | Na lista de falas: vá à primeira fala e toque **A**, vá à última e toque **B** | Igual |
 
 A direção do arraste pode ser invertida em **⚙ Ajustes**. Lá também ficam a sincronia de cada legenda (se ela aparecer adiantada ou atrasada), o modo frases, o tamanho das letras e as outras opções.
@@ -54,7 +54,7 @@ A mesma ajuda existe dentro do app (link no rodapé da biblioteca). Pode mudar s
 ## Limitações que o app não consegue resolver
 
 - Alguns vídeos não tocam fora do YouTube (o dono proibiu: erros 101 e 150). O app mostra o botão **Abrir no YouTube**.
-- O YouTube mostra vídeos relacionados ao pausar ou no fim, e pode mostrar anúncios.
+- O YouTube mostra vídeos relacionados ao pausar ou no fim, e pode mostrar anúncios. Durante um anúncio, use o botão 👆 para conseguir tocar em **Pular anúncio**. Quem tem YouTube Premium e está conectado ao youtube.com no Chrome (não só no app do YouTube) normalmente não vê anúncios.
 - Pular de fala pode começar um pouquinho antes do ponto certo quando o trecho ainda não carregou.
 - A legenda do próprio YouTube pode aparecer junto. Se acontecer, desligue as legendas uma vez no app do YouTube.
 - O som para com a tela desligada ou com o app em segundo plano.

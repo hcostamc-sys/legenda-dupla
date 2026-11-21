@@ -284,6 +284,9 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   -webkit-user-select: none;
 }
 .gestos-ativos .camada-gestos { pointer-events: auto; }
+.toque-livre .camada-gestos { pointer-events: none; }
+.toque-livre .area-video { outline: 3px solid var(--ambar); outline-offset: -3px; }
+.btn-liberar { font-variant-numeric: tabular-nums; padding: 0 6px; }
 
 .legenda-sobre {
   position: absolute;
