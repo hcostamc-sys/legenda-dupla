@@ -1,0 +1,27 @@
+1
+00:00:01,000 --> 00:00:03,400
+When I started working
+with machines,
+
+2
+00:00:03,425 --> 00:00:05,800
+I thought every fault
+had a single cause.
+
+3
+00:00:05,825 --> 00:00:07,000
+(Laughter)
+
+4
+00:00:07,025 --> 00:00:09,500
+My boss just said: [Nope!]
+and walked away.
+
+5
+00:00:09,525 --> 00:00:11,000
+(Applause)
+
+6
+00:00:11,025 --> 00:00:13,400
+So I learned to test
+before I guess.

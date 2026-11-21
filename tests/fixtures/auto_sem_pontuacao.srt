@@ -1,0 +1,47 @@
+1
+00:00:00,000 --> 00:00:02,000
+and the machine keeps running number 0 without any stop
+
+2
+00:00:02,000 --> 00:00:04,000
+and the machine keeps running number 1 without any stop
+
+3
+00:00:04,000 --> 00:00:06,000
+and the machine keeps running number 2 without any stop
+
+4
+00:00:06,000 --> 00:00:08,000
+and the machine keeps running number 3 without any stop
+
+5
+00:00:08,000 --> 00:00:10,000
+and the machine keeps running number 4 without any stop
+
+6
+00:00:10,000 --> 00:00:12,000
+and the machine keeps running number 5 without any stop
+
+7
+00:00:12,000 --> 00:00:14,000
+and the machine keeps running number 6 without any stop
+
+8
+00:00:14,000 --> 00:00:16,000
+and the machine keeps running number 7 without any stop
+
+9
+00:00:16,000 --> 00:00:18,000
+and the machine keeps running number 8 without any stop
+
+10
+00:00:18,000 --> 00:00:20,000
+and the machine keeps running number 9 without any stop
+
+11
+00:00:20,000 --> 00:00:22,000
+and the machine keeps running number 10 without any stop
+
+12
+00:00:22,000 --> 00:00:24,000
+and the machine keeps running number 11 without any stop

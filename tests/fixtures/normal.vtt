@@ -1,0 +1,19 @@
+WEBVTT
+Kind: captions
+Language: pt
+
+NOTE Isto é um comentário
+que ocupa duas linhas
+
+STYLE
+::cue { color: yellow; }
+
+REGION
+id:fred width:40%
+
+intro
+00:01.000 --> 00:03.500 align:start position:0%
+<v Ana>Olá, tudo bem?</v>
+
+00:00:04.000 --> 00:00:06.000 line:90%
+<c.yellow>Tudo ótimo.</c>

@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="Assista vídeos do YouTube com duas legendas sincronizadas.">
+  <title>Legenda Dupla</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/app.css">
+  <script type="module" src="./js/app.js"></script>
+</head>
+<body>
+
+<!-- ============================== BIBLIOTECA ============================== -->
+<main id="tela-biblioteca" class="tela">
+  <header class="cabecalho-bib">
+    <img src="./icons/icon-192.png" alt="" width="40" height="40">
+    <h1>Legenda Dupla</h1>
+  </header>
+
+  <section class="cartao" id="area-novo" aria-labelledby="t-novo">
+    <h2 id="t-novo" class="visualmente-oculto">Abrir um vídeo</h2>
+    <label for="campo-link" class="rotulo">Link do vídeo do YouTube</label>
+    <div class="linha-link">
+      <input id="campo-link" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+             placeholder="https://youtu.be/...">
+      <button id="btn-colar" type="button" class="btn">Colar</button>
+    </div>
+    <p id="msg-link" class="msg" aria-live="polite"></p>
+
+    <div id="zona-arquivos" class="zona-arquivos">
+      <div class="escolha">
+        <label class="btn btn-arquivo" for="arq-estudo">Legenda do idioma que estou estudando</label>
+        <input id="arq-estudo" type="file" multiple class="visualmente-oculto">
+        <p id="info-estudo" class="info-arquivo">Nenhum arquivo escolhido.</p>
+      </div>
+      <button id="btn-trocar-papeis" type="button" class="btn btn-trocar" aria-label="Trocar os dois arquivos">⇅ Trocar</button>
+      <div class="escolha">
+        <label class="btn btn-arquivo" for="arq-traducao">Tradução (opcional)</label>
+        <input id="arq-traducao" type="file" multiple class="visualmente-oculto">
+        <p id="info-traducao" class="info-arquivo">Nenhum arquivo escolhido.</p>
+      </div>
+      <p class="dica">Dica: você pode escolher os dois arquivos de uma vez ou arrastá-los para cá.</p>
+    </div>
+
+    <button id="btn-abrir" type="button" class="btn btn-principal" disabled>Abrir vídeo</button>
+  </section>
+
+  <section class="cartao" aria-labelledby="t-continuar">
+    <h2 id="t-continuar">Continuar assistindo</h2>
+    <p id="aviso-memoria" class="msg msg-alerta" hidden>O navegador não deixou salvar. O vídeo funciona, mas não ficará na biblioteca.</p>
+    <ul id="lista-biblioteca" class="lista-biblioteca"></ul>
+    <p id="biblioteca-vazia" class="msg">Nenhum vídeo ainda. Cole um link e escolha as legendas acima.</p>
+  </section>
+
+  <footer class="rodape">
+    <button id="btn-exportar" type="button" class="btn">Exportar biblioteca</button>
+    <button id="btn-importar" type="button" class="btn">Importar biblioteca</button>
+    <button id="btn-ajuda" type="button" class="btn-link">Como baixar legendas no DownSub</button>
+  </footer>
+</main>
+
+<!-- ============================== ASSISTIR ============================== -->
+<main id="tela-assistir" class="tela" hidden>
+  <header id="barra-topo" class="barra-topo">
+    <button id="btn-voltar" type="button" class="btn-topo" aria-label="Voltar para a biblioteca">← Biblioteca</button>
+    <h1 id="titulo-video" class="titulo-video"></h1>
+    <button id="btn-lista" type="button" class="btn-topo so-imersivo" aria-label="Lista de falas">☰</button>
+    <button id="btn-tela-cheia" type="button" class="btn-topo" aria-label="Tela cheia">⛶</button>
+    <button id="btn-ajustes" type="button" class="btn-topo" aria-label="Ajustes">⚙</button>
+  </header>
+
+  <div class="assistir-corpo">
+    <div class="coluna-principal">
+      <div id="area-video" class="area-video">
+        <div id="player-host" class="player-host"></div>
+        <div id="camada-gestos" class="camada-gestos" aria-hidden="true"></div>
+        <div id="legenda-sobre" class="legenda-sobre" aria-hidden="true">
+          <div class="l1"></div>
+          <div class="l2"></div>
+        </div>
+        <button id="btn-tocar-grande" type="button" class="btn-tocar-grande">▶ Tocar</button>
+        <p id="aviso-toque" class="aviso-toque" hidden>Toque no vídeo para começar</p>
+        <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
+        <div id="erro-player" class="erro-player" hidden>
+          <p id="erro-texto"></p>
+          <a id="erro-abrir-yt" class="btn" href="#" target="_blank" rel="noopener" hidden>Abrir no YouTube</a>
+        </div>
+      </div>
+
+      <div id="faixa" class="faixa">
+        <div class="progresso">
+          <span id="tempo-atual" class="tempo">0:00</span>
+          <input id="barra-progresso" type="range" min="0" max="1" step="0.1" value="0" aria-label="Posição do vídeo">
+          <span id="tempo-total" class="tempo">0:00</span>
+        </div>
+        <div class="controles-principais">
+          <button id="btn-anterior" type="button" class="btn-ctrl" aria-label="Voltar fala">⏮</button>
+          <button id="btn-repetir" type="button" class="btn-ctrl" aria-label="Repetir fala">↻</button>
+          <button id="btn-play" type="button" class="btn-ctrl btn-play" aria-label="Tocar">▶</button>
+          <button id="btn-proxima" type="button" class="btn-ctrl" aria-label="Avançar fala">⏭</button>
+        </div>
+      </div>
+
+      <div id="caixa-legenda" class="caixa-legenda">
+        <div id="caixa-l1" class="linha l1"></div>
+        <div id="caixa-l2" class="linha l2"></div>
+      </div>
+
+      <div class="controles-estudo" role="toolbar" aria-label="Controles de estudo">
+        <button id="btn-velocidade" type="button" class="chip">1×</button>
+        <button id="btn-pausa-auto" type="button" class="chip" aria-pressed="false">Pausa automática</button>
+        <button id="btn-loop" type="button" class="chip" aria-pressed="false">Loop da fala</button>
+        <button id="btn-linha1" type="button" class="chip">Linha 1: visível</button>
+        <button id="btn-linha2" type="button" class="chip">Linha 2: visível</button>
+        <button id="btn-menos5" type="button" class="chip">− 5 s</button>
+        <button id="btn-mais5" type="button" class="chip">+ 5 s</button>
+      </div>
+      <p id="aviso-frases" class="aviso-frases" hidden>Legenda automática: frases montadas pelo app</p>
+    </div>
+
+    <aside id="painel-lista" class="painel-lista" aria-label="Lista de falas">
+      <div class="lista-topo">
+        <input id="busca-falas" type="search" placeholder="Buscar nas falas" aria-label="Buscar nas falas" autocomplete="off">
+        <div class="ab-barra">
+          <button id="btn-a" type="button" class="chip" aria-label="Marcar a fala atual como início do trecho A–B">A</button>
+          <button id="btn-b" type="button" class="chip" aria-label="Marcar a fala atual como fim do trecho A–B">B</button>
+          <button id="btn-limpar-ab" type="button" class="chip" aria-label="Limpar trecho A–B" hidden>✕ A–B</button>
+        </div>
+        <button id="btn-fechar-lista" type="button" class="btn-topo so-imersivo" aria-label="Fechar lista">✕</button>
+      </div>
+      <p id="info-ab" class="info-ab"></p>
+      <div id="lista-falas" class="lista-falas" role="list"></div>
+      <button id="btn-fala-atual" type="button" class="btn btn-fala-atual" hidden>↧ Voltar à fala atual</button>
+    </aside>
+  </div>
+
+  <div id="menu-velocidade" class="menu-velocidade" hidden role="menu" aria-label="Velocidade"></div>
+
+  <div id="cartao-palavra" class="cartao-palavra" hidden role="dialog" aria-label="Palavra">
+    <div class="cp-topo">
+      <strong id="cp-palavra"></strong>
+      <button id="cp-fechar" type="button" class="btn-topo" aria-label="Fechar">✕</button>
+    </div>
+    <div class="cp-botoes">
+      <a id="cp-traduzir-palavra" class="btn" target="_blank" rel="noopener">Traduzir palavra</a>
+      <a id="cp-traduzir-frase" class="btn" target="_blank" rel="noopener">Traduzir frase</a>
+      <button id="cp-copiar-palavra" type="button" class="btn">Copiar palavra</button>
+      <button id="cp-copiar-frase" type="button" class="btn">Copiar frase</button>
+    </div>
+  </div>
+</main>
+
+<!-- ============================== AJUSTES ============================== -->
+<div id="fundo-painel" class="fundo-painel" hidden></div>
+<section id="painel-ajustes" class="painel-ajustes" hidden aria-labelledby="t-ajustes">
+  <div class="painel-topo">
+    <h2 id="t-ajustes">Ajustes</h2>
+    <button id="btn-fechar-ajustes" type="button" class="btn-topo" aria-label="Fechar ajustes">✕</button>
+  </div>
+  <div class="painel-conteudo">
+
+    <div id="grupo-sincronia" class="grupo">
+      <h3>Sincronia (só deste vídeo)</h3>
+      <div class="ajuste-sinc" data-alvo="ajusteEstudo">
+        <span>Legenda estudada: <b class="valor-sinc">0 s</b></span>
+        <div class="botoes-sinc">
+          <button type="button" class="chip" data-d="-0.5">−0,5</button>
+          <button type="button" class="chip" data-d="-0.1">−0,1</button>
+          <button type="button" class="chip" data-d="0.1">+0,1</button>
+          <button type="button" class="chip" data-d="0.5">+0,5</button>
+          <button type="button" class="chip" data-d="zerar">Zerar</button>
+        </div>
+      </div>
+      <div class="ajuste-sinc" data-alvo="ajusteTraducao">
+        <span>Tradução: <b class="valor-sinc">0 s</b></span>
+        <div class="botoes-sinc">
+          <button type="button" class="chip" data-d="-0.5">−0,5</button>
+          <button type="button" class="chip" data-d="-0.1">−0,1</button>
+          <button type="button" class="chip" data-d="0.1">+0,1</button>
+          <button type="button" class="chip" data-d="0.5">+0,5</button>
+          <button type="button" class="chip" data-d="zerar">Zerar</button>
+        </div>
+      </div>
+      <p class="dica">Use “−” se a legenda aparece atrasada e “+” se aparece adiantada.</p>
+    </div>
+
+    <div class="grupo">
+      <h3>Estudo</h3>
+      <label class="ajuste">Idioma que estou estudando
+        <select data-ajuste="idioma">
+          <option value="en">Inglês</option>
+          <option value="fr">Francês</option>
+          <option value="es">Espanhol</option>
+          <option value="it">Italiano</option>
+          <option value="de">Alemão</option>
+          <option value="auto">Outro</option>
+        </select>
+      </label>
+      <label class="ajuste">Modo frases
+        <select data-ajuste="modoFrases">
+          <option value="auto">Automático</option>
+          <option value="ligado">Ligado</option>
+          <option value="desligado">Desligado</option>
+        </select>
+      </label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="esconderMarcacoes"> Esconder marcações de som ([Music])</label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="manterUltima"> Manter a última fala na tela entre falas</label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="traducaoSoPausado"> Tradução só quando pausado</label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterOrdem"> Inverter ordem das linhas (tradução em cima)</label>
+    </div>
+
+    <div class="grupo">
+      <h3>Navegação</h3>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="tocarAoNavegar"> Tocar ao navegar entre falas</label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterArraste"> Inverter direção do arraste</label>
+      <label class="ajuste">Pré-rolagem antes da fala: <b data-mostra="preRolagem"></b>
+        <input type="range" min="0" max="0.5" step="0.05" data-ajuste="preRolagem">
+      </label>
+      <label class="ajuste">Pré-rolagem no modo frases: <b data-mostra="preRolagemFrases"></b>
+        <input type="range" min="0" max="0.5" step="0.05" data-ajuste="preRolagemFrases">
+      </label>
+    </div>
+
+    <div class="grupo">
+      <h3>Pausa automática e loop</h3>
+      <label class="ajuste">Antecedência da pausa automática: <b data-mostra="antecedencia"></b>
+        <input type="range" min="0" max="0.3" step="0.05" data-ajuste="antecedencia">
+      </label>
+      <label class="ajuste">Repetições do loop
+        <select data-ajuste="loopVezes" data-numero>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="5">5</option>
+          <option value="0">∞ (sem parar)</option>
+        </select>
+      </label>
+      <label class="ajuste">Pausa entre repetições
+        <select data-ajuste="pausaEntreRepeticoes" data-numero>
+          <option value="0">0 s</option>
+          <option value="0.5">0,5 s</option>
+          <option value="1">1 s</option>
+          <option value="2">2 s</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="grupo">
+      <h3>Aparência</h3>
+      <label class="ajuste">Tamanho da linha 1: <b data-mostra="fonteL1"></b>
+        <input type="range" min="14" max="40" step="1" data-ajuste="fonteL1">
+      </label>
+      <label class="ajuste">Tamanho da linha 2: <b data-mostra="fonteL2"></b>
+        <input type="range" min="14" max="40" step="1" data-ajuste="fonteL2">
+      </label>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="legendaSobreEmPe"> Legendas sobre o vídeo com o celular em pé</label>
+      <label class="ajuste">Posição das legendas sobre o vídeo
+        <select data-ajuste="posicaoSobre">
+          <option value="baixo">Embaixo</option>
+          <option value="cima">Em cima</option>
+        </select>
+      </label>
+      <label class="ajuste">Opacidade do fundo das legendas sobre o vídeo: <b data-mostra="opacidadeFundo"></b>
+        <input type="range" min="0" max="100" step="5" data-ajuste="opacidadeFundo">
+      </label>
+    </div>
+
+    <div class="grupo">
+      <button id="btn-restaurar" type="button" class="btn">Restaurar padrões</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== AJUDA ============================== -->
+<section id="ajuda" class="painel-ajustes" hidden aria-labelledby="t-ajuda">
+  <div class="painel-topo">
+    <h2 id="t-ajuda">Como baixar legendas no DownSub</h2>
+    <button id="btn-fechar-ajuda" type="button" class="btn-topo" aria-label="Fechar ajuda">✕</button>
+  </div>
+  <div class="painel-conteudo ajuda-texto">
+    <p class="msg">Pode mudar se o site mudar.</p>
+    <ol>
+      <li>No app do YouTube, toque em <b>Compartilhar</b> → <b>Copiar link</b>.</li>
+      <li>No Chrome, abra <b>downsub.com</b>, cole o link no campo do topo e toque no <b>botão verde com a seta para baixo</b>. Se aparecer “Verifique se você é humano”, marque a caixa.</li>
+      <li>Aparece o título do vídeo e, logo abaixo, a <b>lista das legendas que o vídeo tem</b>. Cada linha tem os botões <b>SRT</b>, <b>VTT</b>, <b>TXT</b>, <b>RAW</b>, um lápis e o nome do idioma.</li>
+      <li>Na linha do idioma falado no vídeo (por exemplo <b>English</b> ou <b>English (auto-generated)</b>), toque em <b>SRT</b>.</li>
+      <li>Para o português: se nessa primeira lista houver <b>Portuguese</b>, <b>Portuguese (Brazil)</b> ou <b>Portuguese (Portugal)</b>, toque em <b>SRT</b> nela. Se não houver, desça até a parte <b>Auto-translate from</b>, deixe <b>Default</b> e toque em <b>SRT</b> na linha <b>Portuguese</b>. Essa é a tradução automática do YouTube, grátis.</li>
+      <li>Não use <b>Download Full Video With Subtitle</b>, <b>Translate with AI</b> (pago), <b>Bilingual (Dual subtitles)</b> nem os anúncios. O Legenda Dupla já junta as duas legendas.</li>
+      <li>Volte ao Legenda Dupla, cole o link e escolha os dois arquivos. Eles ficam em <b>Downloads</b> com nomes como <i>[English] Título do vídeo [DownSub.com].srt</i> e <i>[Portuguese] Título do vídeo [DownSub.com].srt</i>.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================== DIÁLOGO E AVISOS ============================== -->
+<div id="dialogo" class="dialogo" hidden role="dialog" aria-modal="true" aria-labelledby="dialogo-texto">
+  <div class="dialogo-caixa">
+    <p id="dialogo-texto"></p>
+    <div id="dialogo-extra"></div>
+    <div class="dialogo-botoes">
+      <button id="dialogo-cancelar" type="button" class="btn">Cancelar</button>
+      <button id="dialogo-ok" type="button" class="btn btn-principal">OK</button>
+    </div>
+  </div>
+</div>
+<input id="arq-importar" type="file" class="visualmente-oculto">
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<noscript><p class="msg">O Legenda Dupla precisa do JavaScript ligado.</p></noscript>
+</body>
+</html>
