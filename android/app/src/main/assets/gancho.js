@@ -7,10 +7,14 @@
 // 3) Baixa a faixa que a página pedir: pelo próprio player e, se ele não baixar, direto pelo endereço
 //    da faixa (mesmo site do player, com os cookies dele).
 // 4) Avisa quando há anúncio e quando o botão "Pular anúncio" do YouTube aparece, e clica nele.
+// 5) Descobre o idioma do áudio original (vídeos com dublagem automática têm vários) e, se o player
+//    escolheu uma dublagem, volta para o áudio original: a legenda sugerida é a do idioma falado.
+// 6) Esconde o que o player desenha por cima do vídeo: botão compartilhar, título, logotipo do YouTube,
+//    ícone de pausa no meio, sugestões de vídeos. O app tem os próprios botões, tempo e barra.
 (function () {
   if (window.__ldGancho) return;
   window.__ldGancho = true;
-  var VERSAO = 3; // 3: avisa também se o vídeo é transmissão ao vivo (ou agendada)
+  var VERSAO = 4; // 3: ao vivo; 4: idioma do áudio original e player sem os enfeites do YouTube
   var noPlayer = window.top !== window && /^\/embed\//.test(location.pathname);
   var contagemLegendas = 0; // legendas vistas (para saber se o player já baixou)
 
@@ -108,6 +112,107 @@
 
   if (!noPlayer) return;
 
+  // ---------------------------------------------------------------- player limpo (só o vídeo)
+
+  // Nomes de classe do player do YouTube (podem mudar; aí o elemento volta a aparecer, sem outro efeito).
+  // Nada de anúncio (.ytp-ad-*, .video-ads) é escondido: o "Pular anúncio" precisa continuar visível.
+  var CSS = [
+    '.ytp-share-button, .ytp-share-button-visible, .ytp-copylink-button, .ytp-overflow-button,',
+    'button[aria-label^="Compartilhar"], button[aria-label^="Share"], button[title^="Compartilhar"], button[title^="Share"],',
+    '.ytp-watermark, .ytp-youtube-button, .ytp-small-redirect, .ytp-impression-link,',
+    '.ytp-chrome-top, .ytp-gradient-top, .ytp-title, .ytp-title-channel, .ytp-show-cards-title,',
+    '.ytp-chrome-bottom, .ytp-gradient-bottom, .ytp-bezel, .ytp-bezel-text-wrapper, .ytp-doubletap-ui-legacy,',
+    '.ytp-pause-overlay, .ytp-pause-overlay-container, .ytp-ce-element, .html5-endscreen, .videowall-endscreen,',
+    '.ytp-endscreen-content, .ytp-suggested-action, .ytp-featured-product, .ytp-iv-player-content, .iv-branding,',
+    '.branding-img-container, .annotation, .ytp-cards-teaser, .ytp-cards-button, .ytp-paid-content-overlay,',
+    '.ytp-caption-window-container, .ytp-contextmenu',
+    '{ display: none !important; }',
+    // Variações de nome (player para celular): pelo pedaço do nome, sem tocar no que é de anúncio.
+    ':is([class*="share-button"], [class*="watermark"], [class*="bezel"], [class*="pause-overlay"],',
+    '[class*="player-controls"], [class*="play-pause"], [class*="chrome-top"], [class*="title-channel"])',
+    ':not(.video-ads *):not([class*="ad-"]) { display: none !important; }',
+    // Botão grande de tocar: só some depois que o vídeo tocou uma vez (antes, pode ser preciso tocar nele).
+    'html.ld-tocou :is(.ytp-large-play-button, [class*="large-play-button"], .ytp-cued-thumbnail-overlay):not(.video-ads *)',
+    '{ display: none !important; }',
+  ].join('\n');
+
+  function porEstilo() {
+    if (document.getElementById('ld-player-limpo')) return;
+    var alvo = document.head || document.documentElement;
+    if (!alvo) return;
+    var st = document.createElement('style');
+    st.id = 'ld-player-limpo';
+    st.textContent = CSS;
+    alvo.appendChild(st);
+  }
+  porEstilo();
+  document.addEventListener('DOMContentLoaded', porEstilo);
+  // 'playing' não sobe pela página, mas passa pela captura no documento.
+  document.addEventListener('playing', function () {
+    try { document.documentElement.classList.add('ld-tocou'); } catch (e) { /* nada */ }
+  }, true);
+
+  // ---------------------------------------------------------------- áudio original
+
+  function idiomaDoId(id) {
+    var m = /^([a-zA-Z]{2,3}(?:-[A-Za-z0-9]+)?)(\.|$)/.exec(String(id || ''));
+    return m ? m[1] : '';
+  }
+
+  function nomeAudio(t) {
+    try { return String(t.displayName || t.name || (t.getLanguageInfo && t.getLanguageInfo().getName && t.getLanguageInfo().getName()) || ''); } catch (e) { return ''; }
+  }
+
+  function idiomaAudio(t) {
+    if (!t) return '';
+    var c = '';
+    try { c = t.languageCode || (t.getLanguageInfo && t.getLanguageInfo().getId && t.getLanguageInfo().getId()) || ''; } catch (e) { /* nada */ }
+    return idiomaDoId(c) || idiomaDoId(t.id) || idiomaDoId(t.audioTrackId);
+  }
+
+  function ehOriginal(t) {
+    return !!t && (t.isOriginalTrack === true || t.isOriginal === true || /original/i.test(nomeAudio(t)));
+  }
+
+  var audioTrocadoEm = ''; // vídeo em que o áudio já foi trocado para o original (uma vez só)
+
+  /** { original, atual, fonte } ou null. Só informa quando há mais de um áudio (com um só, a legenda automática basta). */
+  function lerAudio(p, resp, video) {
+    // 1) O player: faixas de áudio com a marcação de original.
+    try {
+      var lista = p && p.getAvailableAudioTracks && p.getAvailableAudioTracks();
+      if (lista && lista.length > 1) {
+        var orig = null;
+        for (var i = 0; i < lista.length; i++) if (ehOriginal(lista[i])) { orig = lista[i]; break; }
+        var atual = p.getAudioTrack && p.getAudioTrack();
+        if (orig && idiomaAudio(orig)) {
+          var anuncio = !!p.classList && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'));
+          if (!anuncio && video && atual && orig.id !== undefined && atual.id !== orig.id && audioTrocadoEm !== video && p.setAudioTrack) {
+            audioTrocadoEm = video;
+            try { p.setAudioTrack(orig); } catch (e) { /* nada */ }
+          }
+          return { original: idiomaAudio(orig), atual: idiomaAudio(atual), fonte: 'player' };
+        }
+      }
+    } catch (e) { /* nada */ }
+    // 2) A resposta do YouTube: os formatos de áudio trazem o nome da faixa ("English original").
+    try {
+      var fmts = resp && resp.streamingData && resp.streamingData.adaptiveFormats;
+      if (Array.isArray(fmts)) {
+        var vistos = {};
+        var achou = '';
+        fmts.forEach(function (f) {
+          var a = f && f.audioTrack;
+          if (!a) return;
+          vistos[a.id] = true;
+          if (!achou && /original/i.test(a.displayName || '')) achou = idiomaDoId(a.id);
+        });
+        if (achou && Object.keys(vistos).length > 1) return { original: achou, atual: '', fonte: 'resposta' };
+      }
+    } catch (e) { /* nada */ }
+    return null;
+  }
+
   // ---------------------------------------------------------------- faixas de legenda
 
   function obterPlayer() {
@@ -200,6 +305,7 @@
     return {
       ldFaixas: true, versao: VERSAO, video: video, faixas: lista, fontes: fontes, status: status,
       semCaptions: semCaptions, temResposta: !!resp, aoVivo: aoVivo, agendado: agendado,
+      audio: lerAudio(p, resp, video),
       getPlayerResponse: !!(p && typeof p.getPlayerResponse === 'function'), token: !!token,
     };
   }

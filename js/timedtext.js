@@ -133,11 +133,19 @@ export function infoUrl(url) {
  * Faixa sugerida: a do idioma falado. A legenda automática do YouTube só existe no idioma do
  * áudio, então ela indica o idioma; se houver uma feita por pessoa nesse idioma, ela é melhor.
  */
-export function faixaSugerida(faixas, idiomaAjuste = 'auto') {
+export function faixaSugerida(faixas, idiomaAjuste = 'auto', idiomaAudio = '') {
   if (!faixas.length) return -1;
-  const base = (c) => String(c || '').split('-')[0];
-  const asr = faixas.find((f) => f.kind === 'asr');
-  let idioma = asr ? base(asr.languageCode) : '';
+  const base = (c) => {
+    const b = String(c || '').toLowerCase().split('-')[0];
+    return { he: 'iw', jv: 'jw', fil: 'tl' }[b] || b;
+  };
+  // 1) O idioma do áudio original, quando o player (ou o título) informa: é o idioma falado.
+  // 2) Sem isso, a automática: ela só existe no idioma do áudio... exceto em vídeos com dublagem
+  //    automática, que têm uma automática para cada dublagem. Por isso o áudio vem antes.
+  const asrs = faixas.filter((f) => f.kind === 'asr');
+  let idioma = '';
+  if (idiomaAudio && faixas.some((f) => base(f.languageCode) === base(idiomaAudio))) idioma = base(idiomaAudio);
+  if (!idioma && asrs.length) idioma = base(asrs[0].languageCode);
   if (!idioma && idiomaAjuste !== 'auto' && faixas.some((f) => base(f.languageCode) === idiomaAjuste)) idioma = idiomaAjuste;
   if (!idioma) {
     const padrao = faixas.find((f) => f.is_default);

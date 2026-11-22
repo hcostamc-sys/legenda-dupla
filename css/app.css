@@ -230,11 +230,15 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .barra-topo {
   display: flex;
   align-items: center;
-  gap: 2px;
-  min-height: 56px;
-  padding: env(safe-area-inset-top) 4px 0;
+  gap: 4px;
+  min-height: 52px;
+  padding: calc(6px + env(safe-area-inset-top)) 6px 6px;
   flex: none;
 }
+/* App Android: o próprio app já afasta a página da barra de status. Sem isto o espaço ficava em dobro. */
+body.android:not(.imersivo) .barra-topo { padding-top: 6px; }
+body.android #tela-biblioteca { padding-top: 12px; }
+body.android .tela-ab { padding-top: 0; }
 .barra-topo .btn-topo { min-width: 44px; min-height: 44px; font-size: 20px; padding: 0 8px; }
 /* Botões redondos só com ícone (voltar, tela cheia, ajustes) */
 .btn-icone {
@@ -255,15 +259,28 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .btn-icone svg { width: 24px; height: 24px; fill: currentColor; }
 .btn-icone:active { background: #333; }
 .btn-icone:focus-visible { outline: 2px solid var(--ambar); outline-offset: 0; }
-#btn-voltar { background: var(--fundo-3); width: 40px; height: 40px; margin: 0 4px 0 2px; }
+#btn-voltar { background: var(--fundo-3); border: 1px solid var(--borda); width: 42px; height: 42px; margin: 0 2px 0 0; }
 #btn-voltar:active { background: #3a3a3a; }
+/* Título do vídeo numa caixa de cantos redondos, no estilo da caixa da legenda, com um filete âmbar */
+.caixa-titulo {
+  flex: 1;
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 5px 12px 5px 13px;
+  border-radius: 14px;
+  background: var(--fundo-2);
+  border: 1px solid #3a3a3a;
+}
+.imersivo .caixa-titulo { background: rgba(28, 28, 28, 0.72); border-color: rgba(255, 255, 255, 0.12); }
 .titulo-video {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
   line-height: 1.25;
-  margin: 0 4px;
+  margin: 0;
   /* até duas linhas, com reticências no fim */
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -486,7 +503,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .btn-ctrl:active { filter: brightness(1.4); }
 .btn-ctrl:focus-visible { outline: 2px solid var(--ambar); outline-offset: 2px; }
 .btn-ctrl[aria-pressed="true"] { background: var(--ambar); color: #111; border-color: var(--ambar); }
-.btn-ab { font-size: 13px; font-weight: 700; letter-spacing: -0.3px; }
+.btn-ctrl.btn-ab svg { width: 26px; height: 26px; }
+.btn-ab text { fill: currentColor; }
 .btn-ctrl.modo-desligada svg { opacity: 0.45; }
 .btn-ctrl.modo-desligada::after {
   content: "";
@@ -683,9 +701,40 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 .cp-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cp-topo strong { font-size: 20px; overflow-wrap: anywhere; }
-.cp-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.cp-botoes .btn { padding: 0 8px; font-size: 15px; min-height: 44px; }
+.cp-topo strong { font-size: 20px; overflow-wrap: anywhere; color: var(--ambar); }
+.cp-significado {
+  margin: 2px 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fundo-2);
+  border: 1px solid var(--borda);
+  max-height: 34vh;
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.cp-significado.carregando { color: var(--texto-2); font-style: italic; }
+.cp-significado.erro { color: var(--erro); font-size: 14px; }
+.cp-significado p { margin: 0; }
+.cp-principal { font-size: 18px; font-weight: 600; }
+.cp-sentido { margin-top: 6px !important; color: var(--texto-2); font-size: 14px; }
+.cp-classe {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ambar);
+  border: 1px solid rgba(255, 213, 79, 0.45);
+  border-radius: 999px;
+  padding: 0 7px;
+  margin-right: 2px;
+  line-height: 18px;
+}
+.cp-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cp-botoes .btn { padding: 0 8px; font-size: 15px; min-height: 44px; gap: 6px; }
+.cp-botoes .btn svg { width: 18px; height: 18px; fill: currentColor; flex: none; }
+.cp-botoes .cp-dicionario { grid-column: 1 / -1; }
 
 /* Busca no YouTube (app Android) */
 .filtros-busca { margin: 10px 0 4px; }
@@ -1082,3 +1131,6 @@ body.imersivo:not(.faixa-visivel) .barra-botoes { opacity: 0; pointer-events: no
 @keyframes pulsar { 50% { opacity: 0.25; transform: scale(0.8); } }
 @keyframes bloqueio-entra { from { opacity: 0; transform: translateY(12px) scale(0.96); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .caixa-bloqueio, .ponto-vivo { animation: none; } }
+
+/* Primeira abertura com o celular em outro idioma: a tela espera a tradução da interface (até 3 s) */
+html.i18n-carregando body { visibility: hidden; }

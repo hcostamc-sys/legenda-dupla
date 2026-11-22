@@ -84,7 +84,10 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Voltar** (botão do topo ou do celular) sai do vídeo e volta para o YouTube; se o vídeo foi aberto em **Meus vídeos**, volta para a lista.
 - O vídeo fica em **Meus vídeos** com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
 - No app não há mais arquivos de legenda (DownSub), campo de link nem busca: tudo vem do YouTube. No navegador (fora do app) o site continua com os arquivos.
-- Limitações: áudio em outro idioma não dá para escolher (o player embutido não oferece); o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
+- **Idiomas (versão 7):** a legenda já vem marcada pelo idioma do **áudio original** do vídeo (em vídeos com dublagem automática o app volta para o áudio original) e a tradução no **idioma do celular**; dá para trocar nas listas, que têm todos os idiomas do tradutor do Google. O app também aparece no idioma do celular (a página é traduzida na primeira abertura e guardada no aparelho).
+- **Palavra:** tocar numa palavra mostra o significado dela no próprio app, com **Copiar**, **Copiar frase** e **Dicionário** (Cambridge para palavras em inglês; Wikcionário para os outros idiomas).
+- **Player limpo (versão 7):** o player não mostra mais o botão compartilhar, o título, o logotipo do YouTube nem o ícone de pausa no meio; ficam só o tempo e a barra do próprio app. O **Pular anúncio** continua.
+- Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
 ## Como atualizar o site

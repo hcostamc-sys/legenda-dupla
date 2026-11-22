@@ -6,7 +6,11 @@ import {
   processar, falaNoTempo, navegar, tempoDestino, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
   MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS,
 } from './legendas.js';
-import { textosPendentes, aplicarMapa, traduzirTodos, NOMES_IDIOMA } from './traducao.js';
+import { textosPendentes, aplicarMapa, traduzirTodos, detectarIdiomaTexto, significadoPalavra } from './traducao.js';
+import {
+  listaIdiomas, nomeIdioma, idiomaDoSistema, idiomaInterface, codigoTradutor, mesmoIdioma, urlDicionario,
+} from './idiomas.js';
+import { iniciarI18n, t } from './i18n.js';
 import { criarPlayer, MSG_API } from './player.js';
 import { lerTimedText, infoUrl, faixaSugerida } from './timedtext.js';
 import { urlBusca, misturarFiltros, OPCOES_FILTROS } from './busca.js';
@@ -55,8 +59,18 @@ const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: false };
 
 // ============================================================ estado
 
+// Idioma do celular: é o padrão da tradução (até a pessoa escolher outro na lista).
+const IDIOMA_SISTEMA = idiomaDoSistema();
+const IDIOMA_UI = idiomaInterface();
+
+function ajustesIniciais() {
+  const a = carregarAjustes();
+  if (!a.destinoManual) a.destino = IDIOMA_SISTEMA;
+  return a;
+}
+
 const S = {
-  ajustes: carregarAjustes(),
+  ajustes: ajustesIniciais(),
   // vídeo aberto
   registro: null,
   unidades: [],
@@ -209,7 +223,7 @@ function salvar() {
 
 function textoSemTraducao() {
   const d = S.ajustes.destino;
-  return d === 'nao' ? 'Nenhum arquivo escolhido.' : `Sem arquivo: o app traduz sozinho para o ${NOMES_IDIOMA[d]}.`;
+  return d === 'nao' ? 'Nenhum arquivo escolhido.' : `Sem arquivo: o app traduz sozinho (${nomeIdioma(d)}).`;
 }
 
 function validarFormulario() {
@@ -230,7 +244,13 @@ function validarFormulario() {
 /** Idioma da tradução: o da tradução automática (ou português, se ela estiver desligada). */
 function idiomaAlvo() {
   const d = S.ajustes.destino;
-  return d === 'nao' ? 'pt' : d;
+  return d === 'nao' ? IDIOMA_SISTEMA : d;
+}
+
+/** Idioma de origem para o tradutor: o da legenda estudada (vinda do YouTube) ou o dos ajustes. */
+function idiomaOrigem() {
+  const c = codigoTradutor(S.registro?.estudo?.idioma || '');
+  return c || S.ajustes.idioma || 'auto';
 }
 
 function mostrarEscolha(papel) {
@@ -300,7 +320,7 @@ function organizarPapeis() {
   if (d.conflito) {
     S.escolha.traducao = null;
     mostrarAmbas();
-    mostrarErroArquivo('traducao', traducao.arquivo, `os dois arquivos estão em ${NOMES_IDIOMAS[d.idiomaA]}. Escolha a legenda em ${NOMES_IDIOMAS[idiomaAlvo()]} ou deixe vazio para o app traduzir.`);
+    mostrarErroArquivo('traducao', traducao.arquivo, `os dois arquivos estão em ${NOMES_IDIOMAS[d.idiomaA]}. Escolha a legenda em ${nomeIdioma(idiomaAlvo())} ou deixe vazio para o app traduzir.`);
     return;
   }
   if (d.trocar) {
@@ -501,6 +521,7 @@ async function renderBiblioteca() {
     textos.className = 'textos';
     const titulo = document.createElement('div');
     titulo.className = 'titulo';
+    titulo.setAttribute('translate', 'no');
     titulo.textContent = v.titulo || `Vídeo ${v.id}`;
     const detalhe = document.createElement('div');
     detalhe.className = 'detalhe';
@@ -796,7 +817,7 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   aplicarVelocidadeSalva();
   lerTitulo();
   if (ANDROID && !reg.estudo) escolherLegendaYoutube();
-  if (corrigido) toast(`As legendas estavam trocadas e foram arrumadas: a tradução (${NOMES_IDIOMAS[idiomaAlvo()]}) fica embaixo.`, 4000);
+  if (corrigido) toast(`As legendas estavam trocadas e foram arrumadas: a tradução (${nomeIdioma(idiomaAlvo())}) fica embaixo.`, 4000);
   $('#titulo-video').textContent = tituloAtual();
   atualizarProgresso(true);
 }
@@ -860,7 +881,36 @@ function mostrarErroPlayer(codigo, texto) {
 // ============================================================ tradução automática
 
 function traducaoAutomaticaAtiva() {
-  return !!S.registro && !S.registro.traducao && S.ajustes.destino !== 'nao';
+  if (!S.registro || S.registro.traducao || S.ajustes.destino === 'nao') return false;
+  // Vídeo já no idioma da tradução (ex.: vídeo em português, tradução para português): nada a traduzir.
+  return !mesmoIdioma(S.registro.estudo?.idioma, S.ajustes.destino);
+}
+
+/** Preenche uma lista de idiomas: opções fixas no começo ([valor, texto]) e depois todos os idiomas. */
+function montarListaIdiomas(sel, fixas) {
+  const atual = sel.value;
+  sel.textContent = '';
+  for (const [v, texto] of fixas) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = texto;
+    sel.appendChild(o);
+  }
+  for (const { codigo, nome } of listaIdiomas(IDIOMA_UI)) {
+    const o = document.createElement('option');
+    o.value = codigo;
+    o.textContent = nome;
+    o.setAttribute('translate', 'no'); // o nome já vem no idioma do celular
+    sel.appendChild(o);
+  }
+  if (atual) sel.value = atual;
+}
+
+function montarListasIdiomas() {
+  const naoTraduzir = ['nao', 'Não traduzir'];
+  montarListaIdiomas($('#sel-traducao-video'), [naoTraduzir]);
+  montarListaIdiomas($('[data-ajuste="destino"]'), [naoTraduzir]);
+  montarListaIdiomas($('[data-ajuste="idioma"]'), [['auto', 'Descobrir sozinho']]);
 }
 
 /** Mapa { texto: tradução } do vídeo aberto, no idioma de destino atual. */
@@ -905,7 +955,7 @@ async function iniciarTraducaoAuto() {
   const atual = () => S.registro === reg && S.trad.controle === controle && !controle.signal.aborted;
   try {
     await traduzirTodos(pendentes, {
-      de: S.ajustes.idioma,
+      de: idiomaOrigem(),
       para,
       sinal: controle.signal,
       aoLote: (textos, traducoes) => {
@@ -938,14 +988,14 @@ function atualizarAviso() {
   else if (S.yt.estado === 'sem') partes.push(APP_NOVO ? 'Este vídeo não tem legenda no YouTube.' : 'Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
   if (S.frases) partes.push('Frases montadas pelo app');
   if (traducaoAutomaticaAtiva()) {
-    const nome = NOMES_IDIOMA[S.ajustes.destino] || S.ajustes.destino;
-    const t = S.trad;
-    if (t.estado === 'traduzindo') {
-      const pct = t.total ? Math.floor((100 * t.feitos) / t.total) : 0;
-      partes.push(`Traduzindo para o ${nome}… ${pct}%`);
-    } else if (t.estado === 'ok') {
+    const nome = nomeIdioma(S.ajustes.destino);
+    const tr = S.trad;
+    if (tr.estado === 'traduzindo') {
+      const pct = tr.total ? Math.floor((100 * tr.feitos) / tr.total) : 0;
+      partes.push(`Traduzindo (${nome})… ${pct}%`);
+    } else if (tr.estado === 'ok') {
       partes.push(`Tradução automática (${nome})`);
-    } else if (t.estado === 'erro') {
+    } else if (tr.estado === 'erro') {
       partes.push('Não consegui traduzir. Confira a internet.');
       erro = true;
     }
@@ -958,21 +1008,24 @@ function atualizarAviso() {
 // O app Android injeta um gancho no player do YouTube que manda para esta página uma cópia de
 // cada legenda que o player baixa (/api/timedtext). Aqui: escolher a faixa, pedir e guardar.
 
-const NOMES_IDIOMA_LONGOS = { pt: 'Português', en: 'Inglês', es: 'Espanhol', fr: 'Francês', it: 'Italiano', de: 'Alemão' };
-
 function chaveFaixa(languageCode, asr) {
   return `${languageCode}|${asr ? 'asr' : ''}`;
 }
 
+/** Nome do idioma de uma faixa (código do YouTube) no idioma do celular: 'en-US' → "Inglês (Estados Unidos)". */
+function nomeCodigo(codigo) {
+  const c = String(codigo || '');
+  try {
+    const n = new Intl.DisplayNames([IDIOMA_UI, 'en'], { type: 'language', fallback: 'none' }).of(c);
+    if (n && n !== c) return n.charAt(0).toLocaleUpperCase(IDIOMA_UI) + n.slice(1);
+  } catch { /* código que o Intl não conhece */ }
+  return nomeIdioma(codigoTradutor(c) || c);
+}
+
 function nomeFaixa(f) {
-  const base = (f.languageCode || '').split('-')[0];
-  let nome = f.languageName || f.displayName || '';
-  if (f.kind === 'asr') {
-    // O YouTube chama de "English (auto-generated)": fica "Inglês (automática)".
-    nome = NOMES_IDIOMA_LONGOS[base] || nome.replace(/\s*\([^)]*\)\s*$/, '') || f.languageCode;
-    return `${nome} (automática)`;
-  }
-  return nome || NOMES_IDIOMA_LONGOS[base] || f.languageCode;
+  // O YouTube chama de "English (auto-generated)": fica "Inglês (automática)".
+  if (f.kind === 'asr') return `${nomeCodigo(f.languageCode)} (${t('automática')})`;
+  return nomeCodigo(f.languageCode) || f.languageName || f.displayName || f.languageCode;
 }
 
 const mesmaFaixa = (a, b) => a.languageCode === b.languageCode && (a.kind === 'asr') === (b.kind === 'asr');
@@ -1041,9 +1094,11 @@ async function escolherLegendaYoutube(trocando = false) {
     mostrarCarregando();
     return;
   }
+  const idiomaAudio = await descobrirIdiomaAudio(r.faixas, vale);
+  if (!vale()) return;
   S.yt.fase = 'escolhendo';
   $('#tela-carregando').hidden = true;
-  const escolha = await perguntarIdioma(r.faixas, trocando);
+  const escolha = await perguntarIdioma(r.faixas, trocando, idiomaAudio);
   if (!vale()) return;
   if (!escolha) {
     S.yt.estado = 'ocioso';
@@ -1056,13 +1111,46 @@ async function escolherLegendaYoutube(trocando = false) {
     }
     return;
   }
-  if (escolha.destino !== S.ajustes.destino) {
+  if (escolha.mudouDestino && escolha.destino !== S.ajustes.destino) {
     S.ajustes.destino = escolha.destino;
+    S.ajustes.destinoManual = true; // a pessoa escolheu: deixa de seguir o idioma do celular
     salvar();
   }
   S.yt.fase = 'baixando';
   mostrarCarregando();
   pedirFaixa(escolha.faixa);
+}
+
+/**
+ * Idioma do áudio original do vídeo, para pré-selecionar a legenda do idioma falado:
+ * 1) o gancho do app (faixas de áudio do player: a marcada como original);
+ * 2) com legendas automáticas em mais de um idioma (vídeo com dublagem automática) e sem a
+ *    informação do player, o idioma do título do vídeo, descoberto pelo tradutor.
+ * Devolve '' quando não precisa (uma automática só: ela já indica o idioma) ou não descobre.
+ */
+async function descobrirIdiomaAudio(faixas, vale) {
+  const reg = S.registro;
+  const g = S.yt.gancho;
+  if (g && reg && g.video === reg.id && g.audio) return g.audio;
+  const doPlayer = S.player?.idiomaAudio?.() || '';
+  if (doPlayer) return doPlayer;
+  const asr = [...new Set(faixas.filter((f) => f.kind === 'asr').map((f) => String(f.languageCode).split('-')[0]))];
+  if (asr.length < 2) return '';
+  const titulo = reg?.titulo || S.player?.titulo?.() || '';
+  if (!titulo) return '';
+  const controle = new AbortController();
+  const limite = setTimeout(() => controle.abort(), 3000);
+  try {
+    const idioma = await detectarIdiomaTexto(titulo, controle.signal);
+    if (!vale()) return '';
+    const bate = asr.find((c) => mesmoIdioma(c, idioma));
+    diag(`várias automáticas (${asr.join(', ')}): título em ${idioma || '?'}${bate ? '' : ' (sem automática nesse idioma)'}`);
+    return bate || '';
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(limite);
+  }
 }
 
 /** Espera o player informar as faixas. Devolve { faixas } (vazio: o vídeo não tem legenda) ou null. */
@@ -1188,7 +1276,7 @@ function cancelarCarregando() {
 }
 
 /** Janela de escolha: idioma da legenda (as faixas do vídeo) e tradução. Devolve { faixa, destino } ou null. */
-function perguntarIdioma(faixas, trocando = false) {
+function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
   return new Promise((resolve) => {
     const sel = $('#sel-legenda-video');
     sel.textContent = '';
@@ -1198,8 +1286,16 @@ function perguntarIdioma(faixas, trocando = false) {
       o.textContent = nomeFaixa(f);
       sel.appendChild(o);
     });
-    sel.value = String(faixaSugerida(faixas, S.ajustes.idioma));
-    $('#sel-traducao-video').value = S.ajustes.destino;
+    const sugerida = faixaSugerida(faixas, S.ajustes.idioma, idiomaAudio);
+    sel.value = String(sugerida);
+    const audio = idiomaAudio || (faixas[sugerida]?.kind === 'asr' ? faixas[sugerida].languageCode : '');
+    const dica = $('#idioma-dica-audio');
+    dica.textContent = audio ? `Pré-selecionada pelo áudio do vídeo: ${nomeCodigo(audio)}.` : '';
+    dica.hidden = !audio;
+    const trad = $('#sel-traducao-video');
+    trad.value = S.ajustes.destino;
+    let mudouDestino = false;
+    trad.onchange = () => { mudouDestino = true; };
     $('#idioma-cancelar').textContent = trocando ? 'Cancelar' : APP_NOVO && S.origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar';
     const tela = $('#tela-idioma');
     tela.hidden = false;
@@ -1208,9 +1304,10 @@ function perguntarIdioma(faixas, trocando = false) {
       tela.hidden = true;
       $('#idioma-ok').onclick = null;
       $('#idioma-cancelar').onclick = null;
+      trad.onchange = null;
       resolve(r);
     };
-    $('#idioma-ok').onclick = () => fim({ faixa: faixas[Number(sel.value)], destino: $('#sel-traducao-video').value });
+    $('#idioma-ok').onclick = () => fim({ faixa: faixas[Number(sel.value)], destino: trad.value, mudouDestino });
     $('#idioma-cancelar').onclick = () => fim(null);
   });
 }
@@ -1282,12 +1379,15 @@ function aoReceberDoGancho(ev) {
     status: texto(d.status), semCaptions: !!d.semCaptions, temResposta: !!d.temResposta,
     getPlayerResponse: !!d.getPlayerResponse, versao: Number(d.versao) || 0,
     aoVivo: d.aoVivo === true, agendado: d.agendado === true,
+    // Idioma do áudio original (gancho v4): o idioma falado no vídeo, mesmo com dublagens.
+    audio: d.audio && typeof d.audio === 'object' ? texto(d.audio.original) : '',
+    audioFonte: d.audio && typeof d.audio === 'object' ? texto(d.audio.fonte) : '',
   };
   const antes = S.yt.gancho;
   if (!S.yt.vistoGancho) diag(`gancho v${novo.versao} respondeu`);
   S.yt.vistoGancho = true;
-  if (!antes || antes.video !== novo.video || antes.faixas.length !== faixas.length || antes.semCaptions !== novo.semCaptions || antes.fontes !== novo.fontes) {
-    diag(`gancho: vídeo ${novo.video || '?'}, ${faixas.length} faixas (${faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${novo.fontes || '—'}, resposta ${novo.temResposta ? novo.status || 'sim' : 'não'}${novo.semCaptions ? ', SEM legendas' : ''}`);
+  if (!antes || antes.video !== novo.video || antes.faixas.length !== faixas.length || antes.semCaptions !== novo.semCaptions || antes.fontes !== novo.fontes || antes.audio !== novo.audio) {
+    diag(`gancho: vídeo ${novo.video || '?'}, ${faixas.length} faixas (${faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${novo.fontes || '—'}, resposta ${novo.temResposta ? novo.status || 'sim' : 'não'}${novo.semCaptions ? ', SEM legendas' : ''}${novo.audio ? `, áudio original ${novo.audio} (${novo.audioFonte || '?'})` : ''}`);
   }
   S.yt.gancho = novo;
   conferirAoVivo();
@@ -1495,8 +1595,8 @@ function aplicarLegendaYoutube(cap) {
   const titulo = reg.titulo || p?.titulo() || '';
   const nome = nomeFaixa(S.yt.faixa || { languageCode: cap.idioma, kind: cap.automatica ? 'asr' : '' });
   // "(auto-generated)" no nome faz o app montar frases inteiras, como nos arquivos do DownSub.
-  const rotulo = cap.automatica ? `${NOMES_IDIOMA_LONGOS[cap.idioma.split('-')[0]] || cap.idioma} (auto-generated)` : nome;
-  reg.estudo = { arquivo: `[${rotulo}] ${titulo || 'YouTube'}`, falas: cap.falas, origem: 'youtube' };
+  const rotulo = cap.automatica ? `${nomeIdioma(codigoTradutor(cap.idioma) || cap.idioma, 'en')} (auto-generated)` : nome;
+  reg.estudo = { arquivo: `[${rotulo}] ${titulo || 'YouTube'}`, falas: cap.falas, origem: 'youtube', idioma: cap.idioma };
   if (S.yt.trocando) { reg.traducao = null; reg.ajusteEstudo = 0; reg.ajusteTraducao = 0; }
   reg.traducaoAuto = null;
   if (!reg.titulo && titulo) reg.titulo = titulo;
@@ -1510,7 +1610,6 @@ function aplicarLegendaYoutube(cap) {
   zerarRepeticao();
   reprocessar();
   atualizarAviso();
-  toast(`Legenda em ${nome}: ${cap.falas.length.toLocaleString('pt-BR')} falas.`, 2500);
 }
 
 // ============================================================ primeiro play (7.2)
@@ -2258,14 +2357,72 @@ function mudarVelocidadePasso(passo) {
 
 // ============================================================ cartão da palavra (9.3)
 
-function urlTradutor(texto) {
-  const sl = S.ajustes.idioma || 'auto';
-  const tl = S.ajustes.destino === 'nao' ? 'pt' : S.ajustes.destino;
-  return `https://translate.google.com/?sl=${sl}&tl=${tl}&text=${encodeURIComponent(texto)}&op=translate`;
-}
-
 let palavraAtual = '';
 let fraseAtual = '';
+let pedidoSignificado = null;
+
+/** Mostra o significado no cartão: tradução principal e, se houver, outros sentidos por classe de palavra. */
+function mostrarSignificado(r) {
+  const caixa = $('#cp-significado');
+  caixa.textContent = '';
+  caixa.classList.remove('carregando', 'erro');
+  const principal = document.createElement('p');
+  principal.className = 'cp-principal';
+  principal.textContent = r.principal;
+  caixa.appendChild(principal);
+  const extras = r.sentidos.filter((x) => x.termos.some((tm) => tm.toLowerCase() !== r.principal.toLowerCase()) || x.termos.length > 1);
+  for (const x of extras) {
+    const linha = document.createElement('p');
+    linha.className = 'cp-sentido';
+    if (x.classe) {
+      const c = document.createElement('span');
+      c.className = 'cp-classe';
+      c.textContent = x.classe;
+      linha.append(c, ' ');
+    }
+    linha.append(x.termos.join(', '));
+    caixa.appendChild(linha);
+  }
+}
+
+async function buscarSignificado(palavra) {
+  try { pedidoSignificado?.abort(); } catch { /* nada */ }
+  const controle = new AbortController();
+  pedidoSignificado = controle;
+  const caixa = $('#cp-significado');
+  caixa.textContent = t('Buscando o significado…');
+  caixa.classList.add('carregando');
+  caixa.classList.remove('erro');
+  try {
+    const r = await significadoPalavra(palavra, idiomaOrigem(), idiomaAlvo(), IDIOMA_UI, controle.signal);
+    if (pedidoSignificado !== controle) return;
+    if (!r.principal) throw new Error('vazio');
+    mostrarSignificado(r);
+    // Idioma descoberto pelo tradutor (quando o do vídeo não é conhecido): dicionário certo.
+    if (r.origem && idiomaOrigem() === 'auto') $('#cp-dicionario').href = urlDicionario(palavra, r.origem, idiomaAlvo());
+  } catch (e) {
+    if (e?.name === 'AbortError' || pedidoSignificado !== controle) return;
+    caixa.textContent = t('Não consegui buscar o significado. Confira a internet ou toque em Dicionário.');
+    caixa.classList.remove('carregando');
+    caixa.classList.add('erro');
+  }
+  posicionarCartao();
+}
+
+let spanCartao = null;
+function posicionarCartao() {
+  const cartao = $('#cartao-palavra');
+  if (cartao.hidden || !spanCartao) return;
+  const caixa = $('#caixa-legenda').getBoundingClientRect();
+  const alt = cartao.offsetHeight;
+  const meiaLargura = cartao.offsetWidth / 2;
+  const centro = Math.min(window.innerWidth - meiaLargura - 10, Math.max(meiaLargura + 10, caixa.left + caixa.width / 2));
+  cartao.style.left = `${centro}px`;
+  const r = spanCartao.getBoundingClientRect();
+  let top = r.top - alt - 8;
+  if (top < 8) top = Math.min(window.innerHeight - alt - 8, r.bottom + 8);
+  cartao.style.top = `${Math.max(8, top)}px`;
+}
 
 function abrirCartao(span) {
   const palavra = limparPalavra(span.textContent);
@@ -2276,25 +2433,20 @@ function abrirCartao(span) {
   $$('.palavra.tocada').forEach((e) => e.classList.remove('tocada'));
   span.classList.add('tocada');
   $('#cp-palavra').textContent = palavra;
-  $('#cp-traduzir-palavra').href = urlTradutor(palavra);
-  $('#cp-traduzir-frase').href = urlTradutor(fraseAtual);
-  const cartao = $('#cartao-palavra');
-  cartao.hidden = false;
-  const caixa = $('#caixa-legenda').getBoundingClientRect();
-  const alt = cartao.offsetHeight;
-  const meiaLargura = cartao.offsetWidth / 2;
-  const centro = Math.min(window.innerWidth - meiaLargura - 10, Math.max(meiaLargura + 10, caixa.left + caixa.width / 2));
-  cartao.style.left = `${centro}px`;
-  const r = span.getBoundingClientRect();
-  let top = r.top - alt - 8;
-  if (top < 8) top = Math.min(window.innerHeight - alt - 8, r.bottom + 8);
-  cartao.style.top = `${Math.max(8, top)}px`;
+  $('#cp-dicionario').href = urlDicionario(palavra, idiomaOrigem(), idiomaAlvo());
+  spanCartao = span;
+  $('#cartao-palavra').hidden = false;
+  buscarSignificado(palavra);
+  posicionarCartao();
 }
 
 function fecharCartao() {
   const c = $('#cartao-palavra');
   if (!c || c.hidden) return;
   c.hidden = true;
+  spanCartao = null;
+  try { pedidoSignificado?.abort(); } catch { /* nada */ }
+  pedidoSignificado = null;
   $$('.palavra.tocada').forEach((e) => e.classList.remove('tocada'));
 }
 
@@ -2442,6 +2594,7 @@ function aoMudarAjuste(el) {
   else if (el.type === 'range') v = Number(el.value);
   else v = el.value;
   S.ajustes[k] = v;
+  if (k === 'destino') S.ajustes.destinoManual = true;
   salvar();
   mostrarValor(k);
   aplicarAparencia();
@@ -2811,6 +2964,8 @@ function ligarEventos() {
 async function iniciar() {
   document.body.classList.toggle('android', ANDROID);
   document.body.classList.toggle('app-novo', APP_NOVO);
+  montarListasIdiomas();
+  iniciarI18n();
   aplicarAparencia();
   ligarEventos();
   lerCompartilhamento();

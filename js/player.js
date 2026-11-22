@@ -434,13 +434,20 @@ export class PlayerFalso extends Emissor {
   /** Faixas de teste: inglês automática, inglês feita por pessoa e português. ?mockSemLegenda=1: nenhuma. */
   /** Simula o gancho do app: lista de faixas vista dentro do player (inclui a automática). */
   _avisarFaixasGancho() {
-    if (!this._jaTocou || !(this.opcoes.soAsr || this.opcoes.semLegenda)) return;
-    const faixas = this.opcoes.soAsr
-      ? [{ languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' }]
-      : [];
+    if (!this._jaTocou || !(this.opcoes.soAsr || this.opcoes.semLegenda || this.opcoes.dublado)) return;
+    // ?mockDublado=1: vídeo em inglês com dublagem automática em alemão (uma automática para cada áudio).
+    const faixas = this.opcoes.dublado
+      ? [
+        { languageCode: 'de', kind: 'asr', languageName: 'Deutsch (automatisch erzeugt)', vss_id: 'a.de' },
+        { languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' },
+      ]
+      : this.opcoes.soAsr
+        ? [{ languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' }]
+        : [];
     window.postMessage({
-      ldFaixas: true, versao: 2, video: this._videoId, faixas, fontes: faixas.length ? ['resposta'] : [],
+      ldFaixas: true, versao: this.opcoes.dublado ? 4 : 2, video: this._videoId, faixas, fontes: faixas.length ? ['resposta'] : [],
       status: 'OK', temResposta: true, semCaptions: !faixas.length, getPlayerResponse: true,
+      audio: this.opcoes.dublado ? { original: 'en', atual: 'de', fonte: 'player' } : null,
     }, '*');
   }
 
@@ -448,17 +455,17 @@ export class PlayerFalso extends Emissor {
 
   /** Simula o download pelo gancho (só no modo ?mockSoAsr=1, em que a API do iframe não vê a faixa). */
   baixarPeloGancho(f) {
-    if (!this.opcoes.soAsr || f.kind !== 'asr') return;
+    if (!(this.opcoes.soAsr || this.opcoes.dublado) || f.kind !== 'asr') return;
     const events = [];
     for (let i = 0; i < 30; i++) {
       events.push({ tStartMs: Math.round((0.5 + i * 2.2) * 1000), dDurationMs: 2000, segs: [{ utf8: `auto line ${i + 1} from YouTube` }] });
     }
-    const url = `https://www.youtube.com/api/timedtext?v=${this._videoId}&lang=en&kind=asr&fmt=json3`;
+    const url = `https://www.youtube.com/api/timedtext?v=${this._videoId}&lang=${f.languageCode}&kind=asr&fmt=json3`;
     setTimeout(() => window.postMessage({ ldLegenda: true, via: 'mock-gancho', status: 200, url, texto: JSON.stringify({ events }) }, '*'), 200);
   }
 
   faixasLegenda() {
-    if (this.opcoes.semLegenda || this.opcoes.soAsr || !this._jaTocou) return { faixas: [], traducoes: [] };
+    if (this.opcoes.semLegenda || this.opcoes.soAsr || this.opcoes.dublado || !this._jaTocou) return { faixas: [], traducoes: [] };
     return {
       faixas: [
         { languageCode: 'en', languageName: 'Inglês', kind: 'asr', vss_id: 'a.en' },
@@ -472,7 +479,7 @@ export class PlayerFalso extends Emissor {
   /** Simula o gancho do app Android: manda pela janela a resposta de /api/timedtext em json3. */
   pedirLegenda(faixa) {
     this.pedidos.push(faixa);
-    if (this.opcoes.soAsr) return true; // como no YouTube real: a API do iframe não baixa a automática
+    if (this.opcoes.soAsr || this.opcoes.dublado) return true; // como no YouTube real: a API do iframe não baixa a automática
     const pt = faixa.languageCode.startsWith('pt');
     const events = [];
     for (let i = 0; i < 40; i++) {
@@ -519,6 +526,7 @@ export function criarPlayer(container) {
       anuncio: p.get('mockAnuncio') === 'teimoso' ? 'teimoso' : p.get('mockAnuncio') === '1',
       soAsr: p.get('mockSoAsr') === '1',
       aoVivo: p.get('mockAoVivo') === '1',
+      dublado: p.get('mockDublado') === '1',
     });
   }
   return new PlayerYouTube(container);

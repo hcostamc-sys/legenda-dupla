@@ -45,6 +45,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,12 +60,13 @@ import java.util.concurrent.Executors;
  * 6) toque de verdade no botão "Pular anúncio" do player, quando a página pede;
  * 7) no YouTube da tela inicial, esconde o botão e as prateleiras de Shorts (assets/youtube.js).
  *    Shorts e vídeos ao vivo abertos mesmo assim mostram um aviso na página.
+ * 8) textos no idioma do celular (res/values-xx/strings.xml); a página traduz os dela.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 6; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 7; // a página usa para saber o que o app sabe fazer
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
     private WebView web;
@@ -286,18 +288,18 @@ public class MainActivity extends Activity {
         ImageView icone = new ImageView(this);
         icone.setImageResource(R.mipmap.ic_launcher);
         TextView nome = new TextView(this);
-        nome.setText("Legenda Dupla");
+        nome.setText(R.string.app_name);
         nome.setTextColor(Color.WHITE);
         nome.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         nome.setTypeface(Typeface.DEFAULT_BOLD);
         nome.setSingleLine(true);
         nome.setPadding(dp(8), 0, dp(8), 0);
 
-        TextView meus = criarBotao("Meus vídeos", false);
-        meus.setContentDescription("Meus vídeos: os vídeos que você já estudou");
+        TextView meus = criarBotao(getString(R.string.meus_videos), false);
+        meus.setContentDescription(getString(R.string.meus_videos_desc));
         meus.setOnClickListener(v -> abrirMeusVideos());
-        botaoEntrar = criarBotao("Entrar", true);
-        botaoEntrar.setContentDescription("Entrar na sua conta do YouTube");
+        botaoEntrar = criarBotao(getString(R.string.entrar), true);
+        botaoEntrar.setContentDescription(getString(R.string.entrar_desc));
         botaoEntrar.setOnClickListener(v -> entrarNaConta());
 
         barra.addView(icone, new LinearLayout.LayoutParams(dp(30), dp(30)));
@@ -387,9 +389,10 @@ public class MainActivity extends Activity {
     /** Tela de login do Google para o YouTube, dentro do próprio YouTube do app (os cookies valem para o player). */
     private void entrarNaConta() {
         if (ytWeb == null) return;
-        String volta = "https://m.youtube.com/signin?action_handle_signin=true&app=m&hl=pt-BR&next="
+        String hl = Uri.encode(Locale.getDefault().toLanguageTag()); // tela de login no idioma do celular
+        String volta = "https://m.youtube.com/signin?action_handle_signin=true&app=m&hl=" + hl + "&next="
                 + Uri.encode(INICIO_YOUTUBE);
-        String url = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&hl=pt-BR&continue="
+        String url = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&hl=" + hl + "&continue="
                 + Uri.encode(volta);
         ultimoUrlYt = url;
         ytWeb.loadUrl(url);
@@ -565,7 +568,7 @@ public class MainActivity extends Activity {
             c.setReadTimeout(20000);
             c.setRequestProperty("User-Agent", agenteUsuario);
             c.setRequestProperty("Referer", "https://www.youtube.com/");
-            c.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
+            c.setRequestProperty("Accept-Language", Locale.getDefault().toLanguageTag() + ",en;q=0.8");
             if (cookie != null && !cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
             int status = c.getResponseCode();
             InputStream in = status >= 400 ? c.getErrorStream() : c.getInputStream();

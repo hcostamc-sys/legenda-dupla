@@ -280,6 +280,11 @@ def t_teclas(page):
 
 @caso('6. Cartão da palavra')
 def t_extras(page):
+    def significado(route):
+        route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'},
+                      body=json.dumps({'sentences': [{'trans': 'linha (teste)', 'orig': 'Line'}],
+                                       'dict': [{'pos': 'substantivo', 'terms': ['linha', 'fila']}], 'src': 'en'}))
+    page.route('https://translate.googleapis.com/translate_a/single**', significado)
     page.locator('#titulo-video').click()
     if estado(page) == 1:
         page.keyboard.press('Space')
@@ -287,10 +292,18 @@ def t_extras(page):
     page.locator('#caixa-l1 .palavra').nth(1).click()
     expect(page.locator('#cartao-palavra')).to_be_visible()
     expect(page.locator('#cp-palavra')).to_have_text(page.locator('#caixa-l1 .palavra').nth(1).inner_text().strip(',.'))
-    href = page.get_attribute('#cp-traduzir-palavra', 'href')
-    assert href.startswith('https://translate.google.com/?sl=auto&tl=pt&text=') and href.endswith('&op=translate'), href
+    # significado dentro do app (tradutor simulado) e botões copiar, copiar frase e dicionário
+    expect(page.locator('#cp-significado .cp-principal')).to_have_text('linha (teste)')
+    expect(page.locator('#cp-significado .cp-classe')).to_have_text('substantivo')
+    assert page.locator('#cartao-palavra a, #cartao-palavra button').count() == 4  # fechar + 3 botões
+    expect(page.locator('#cp-copiar-palavra')).to_be_visible()
+    expect(page.locator('#cp-copiar-frase')).to_be_visible()
+    href = page.get_attribute('#cp-dicionario', 'href')
+    assert href.startswith('https://dictionary.cambridge.org/search/direct/?datasetsearch=english-portuguese&q=') or 'wiktionary.org' in href, href
+    page.screenshot(path=os.path.join(CAPTURAS, 'cartao-palavra.png'))
     page.click('#cp-fechar')
     expect(page.locator('#cartao-palavra')).to_be_hidden()
+    page.unroute('https://translate.googleapis.com/translate_a/single**')
     # os atalhos continuam valendo depois de mexer na barra de progresso
     page.locator('#barra-progresso').click()
     st = estado(page)
@@ -546,7 +559,7 @@ def t_ab_invalido(page):
 
 @caso('12d. App novo: vídeo ao vivo e Shorts não abrem (aviso com volta ao YouTube); padrões novos')
 def t_ao_vivo_shorts(browser, base):
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
     page = ctx.new_page()
     erros = []
@@ -619,7 +632,7 @@ def t_ao_vivo_shorts(browser, base):
 @caso('15. YouTube do app: o botão e as prateleiras de Shorts somem')
 def t_youtube_sem_shorts(browser, base):
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'youtube.js')
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     ctx.add_init_script(path=script)
     page = ctx.new_page()
     page.goto(base + 'tests/fixtures/nao_legenda.txt')
@@ -782,14 +795,14 @@ def t_traducao_auto(page, base, en):
     page.goto(base + '?mock=1')
     page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
     page.set_input_files('#arq-estudo', [en])
-    expect(page.locator('#info-traducao')).to_have_text('Sem arquivo: o app traduz sozinho para o português.')
+    expect(page.locator('#info-traducao')).to_have_text('Sem arquivo: o app traduz sozinho (Português).')
     page.click('#btn-abrir')
     # 1) o tradutor falha: aviso e botão para tentar de novo
     expect(page.locator('#aviso-legenda')).to_contain_text('Não consegui traduzir', timeout=15000)
     expect(page.locator('#btn-tentar-traducao')).to_be_visible()
     estado_falha['falhar'] = False
     page.click('#btn-tentar-traducao')
-    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)', timeout=8000)
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (Português)', timeout=8000)
     page.click('#btn-tocar-grande')
     esperar(lambda: estado(page) == 1, msg='tocando')
     page.evaluate('window.__ld.S.player.irPara(22.6)')  # fala 11
@@ -806,7 +819,7 @@ def t_traducao_auto(page, base, en):
     n = len(chamadas)
     page.click('#btn-voltar')
     page.locator('.item-bib .abrir-item').first.click()
-    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)')
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (Português)')
     time.sleep(0.5)
     assert len(chamadas) == n, (len(chamadas), n)
     # 3) "Não traduzir" tira a segunda linha
@@ -818,7 +831,7 @@ def t_traducao_auto(page, base, en):
     page.click('#btn-ajustes')
     page.select_option('[data-ajuste="destino"]', 'pt')
     page.click('#btn-fechar-ajustes')
-    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)', timeout=8000)
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (Português)', timeout=8000)
     page.click('#btn-voltar')
     page.unroute('https://translate.googleapis.com/**')
 
@@ -884,7 +897,7 @@ def t_prototipo(page, base):
 @caso('12. App Android: janela de carregar a legenda, escolha do idioma, legenda do YouTube e tradução do app')
 def t_android(browser, base):
     from urllib.parse import quote
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     page = ctx.new_page()
     erros = []
     page.on('pageerror', lambda e: erros.append(str(e)))
@@ -906,7 +919,8 @@ def t_android(browser, base):
     page.screenshot(path=os.path.join(CAPTURAS, 'android-escolha-idioma.png'))
     page.click('#idioma-ok')
     expect(page.locator('#tela-idioma')).to_be_hidden()
-    expect(page.locator('#toast')).to_contain_text('40 falas')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 40, msg='legenda aplicada')
+    assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
     expect(page.locator('#tela-carregando')).to_be_hidden()
     # a legenda do "anúncio" (outro vídeo) foi ignorada
     assert page.evaluate('window.__ld.S.unidades.length') == 40
@@ -927,7 +941,7 @@ def t_android(browser, base):
     expect(page.locator('#idioma-cancelar')).to_have_text('Cancelar')
     page.select_option('#sel-legenda-video', '0')
     page.click('#idioma-ok')
-    esperar(lambda: page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[Inglês (auto-generated)]'), msg='trocou para a automática')
+    esperar(lambda: page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[English (auto-generated)]'), msg='trocou para a automática')
     assert page.evaluate('window.__ld.S.frases') is True  # automática: frases montadas
     # volta para a biblioteca: o vídeo ficou salvo e reabre sem perguntar
     page.click('#btn-voltar')
@@ -952,7 +966,7 @@ def t_android(browser, base):
 
 @caso('12b. App novo: YouTube na tela inicial, sem arquivos, sem legenda, anúncio com Pular e voltar')
 def t_app_novo(browser, base):
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
     page = ctx.new_page()
     erros = []
@@ -1014,7 +1028,8 @@ def t_app_novo(browser, base):
     expect(page.locator('#selo-anuncio')).to_be_hidden()
     expect(page.locator('#idioma-cancelar')).to_have_text('Voltar ao YouTube')
     page.click('#idioma-ok')
-    expect(page.locator('#toast')).to_contain_text('40 falas')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 40, msg='legenda aplicada')
+    assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
     esperar(lambda: estado(page) == 1, msg='tocando')
     assert page.evaluate('window.__ld.S.player.mudo') is False
     expect(page.locator('#btn-liberar')).to_be_hidden()  # sem a mãozinha no app novo
@@ -1048,7 +1063,8 @@ def t_app_novo(browser, base):
 
     # "Meus vídeos" com um vídeo aberto: fecha o vídeo e mostra a lista
     page.click('#idioma-ok')
-    expect(page.locator('#toast')).to_contain_text('40 falas')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 40, msg='legenda aplicada')
+    assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
     page.evaluate('window.ldMostrarBiblioteca()')
     expect(page.locator('#tela-biblioteca')).to_be_visible()
     expect(page.locator('.item-bib')).to_have_count(2)
@@ -1067,7 +1083,7 @@ def t_app_novo(browser, base):
 
 @caso('12c. Vídeo só com legenda automática: a API do iframe não mostra, o gancho mostra e baixa')
 def t_so_automatica(browser, base):
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
     page = ctx.new_page()
     erros = []
@@ -1078,10 +1094,87 @@ def t_so_automatica(browser, base):
     expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
     expect(page.locator('#sel-legenda-video option')).to_have_text(['Inglês (automática)'])
     page.click('#idioma-ok')
-    expect(page.locator('#toast')).to_contain_text('30 falas')
-    assert page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[Inglês (auto-generated)]')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 30, msg='legenda aplicada')
+    assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
+    assert page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[English (auto-generated)]')
     esperar(lambda: estado(page) == 1, msg='tocando')
     expect(page.locator('#caixa-l1')).to_contain_text('from YouTube', timeout=4000)
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('12e. Vídeo com dublagem automática: a legenda sugerida é a do áudio original; tradução no idioma do celular')
+def t_dublado(browser, base):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android&apk=7&mockDublado=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=DUBDUBDUB00')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    expect(page.locator('#sel-legenda-video option')).to_have_text(['Alemão (automática)', 'Inglês (automática)'])
+    expect(page.locator('#sel-legenda-video')).to_have_value('1')  # inglês: o áudio original
+    expect(page.locator('#idioma-dica-audio')).to_have_text('Pré-selecionada pelo áudio do vídeo: Inglês.')
+    expect(page.locator('#sel-traducao-video')).to_have_value('pt')  # idioma do celular
+    assert page.locator('#sel-traducao-video option').count() > 130
+    assert page.locator('[data-ajuste="destino"] option').count() > 130
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-dublado-escolha.png'))
+    page.click('#idioma-ok')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 30, msg='legenda aplicada')
+    assert page.evaluate('window.__ld.S.registro.estudo.idioma') == 'en'
+    assert page.evaluate('window.__ld.S.ajustes.destinoManual') is False  # não mexeu na lista: segue o celular
+    expect(page.locator('#caixa-l2')).to_contain_text('PT:', timeout=6000)
+    # ícone A–B com o símbolo de loop em volta
+    assert page.locator('#btn-ab svg path').count() == 1 and page.locator('#btn-ab svg text').text_content() == 'A-B'
+    # Dicas no lugar de Gestos
+    page.click('#btn-ajustes')
+    expect(page.locator('#painel-ajustes h3', has_text='Dicas')).to_be_visible()
+    assert page.locator('#painel-ajustes h3', has_text='Gestos').count() == 0
+    # mudar a tradução nos Ajustes vira escolha da pessoa
+    page.select_option('[data-ajuste="destino"]', 'ja')
+    assert page.evaluate('window.__ld.S.ajustes.destinoManual') is True
+    page.click('#btn-fechar-ajustes')
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('16. Celular em inglês: a interface é traduzida (e guardada); legendas e títulos ficam como estão')
+def t_interface_idioma(browser, base):
+    from urllib.parse import parse_qs
+    ctx = browser.new_context(locale='en-US', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    pedidos = []
+
+    def responder(route):
+        url = route.request.url
+        q = parse_qs(route.request.post_data or '').get('q', [])
+        pedidos.append(url)
+        route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'},
+                      body=json.dumps([f'EN: {t}' for t in q]))
+    page.route('https://translate.googleapis.com/**', responder)
+    page.goto(base + '?mock=1&app=android&apk=7')
+    expect(page.locator('#t-continuar .so-app')).to_have_text('EN: Meus vídeos', timeout=6000)
+    assert page.evaluate('document.documentElement.lang') == 'en'
+    assert any('sl=pt' in u and 'tl=en' in u for u in pedidos), pedidos
+    # abre um vídeo: a janela de idioma vem traduzida; a legenda não
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=IIIIIIIIIII')")
+    expect(page.locator('#idioma-ok')).to_have_text('EN: Começar', timeout=6000)
+    page.click('#idioma-ok')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 40, msg='legenda aplicada')
+    expect(page.locator('#caixa-l1')).to_contain_text('from YouTube', timeout=4000)
+    assert 'EN:' not in page.locator('#caixa-legenda').inner_text()
+    assert page.evaluate('window.__ld.S.ajustes.destino') == 'en'  # tradução no idioma do celular
+    # da segunda vez, sem internet: a tradução guardada aparece na hora
+    page.unroute('https://translate.googleapis.com/**')
+    page.route('https://translate.googleapis.com/**', lambda r: r.abort())
+    page.goto(base + '?mock=1&app=android&apk=7')
+    expect(page.locator('#t-continuar .so-app')).to_have_text('EN: Meus vídeos', timeout=2000)
+    page.screenshot(path=os.path.join(CAPTURAS, 'interface-ingles.png'))
     assert not erros, erros
     ctx.close()
 
@@ -1094,9 +1187,20 @@ def t_gancho(browser, base):
     ctx.add_init_script(path=gancho)
     page = ctx.new_page()
     vid = 'VVVVVVVVVVV'
-    embed = """<!doctype html><html><body><div id="movie_player" class="html5-video-player"></div><script>
+    embed = """<!doctype html><html><body><div id="movie_player" class="html5-video-player">
+      <button class="ytp-share-button ytp-button">Compartilhar</button><a class="ytp-youtube-button">YouTube</a>
+      <div class="ytp-bezel">pausa</div><button class="ytp-large-play-button">play</button>
+      <div class="video-ads ytp-ad-module"><button class="ytp-skip-ad-button">Pular</button></div>
+      <video id="v"></video></div><script>
       const p = document.getElementById('movie_player');
       p.getVideoData = () => ({ video_id: '%s' });
+      // dublagem automática: o player tocava o áudio em alemão; o original é o inglês
+      const trilhas = [{ id: 'de-DE.3', displayName: 'Deutsch (Deutschland) (automatisch synchronisiert)', isOriginalTrack: false },
+                       { id: 'en.4', displayName: 'English original', isOriginalTrack: true }];
+      let atual = trilhas[0];
+      p.getAvailableAudioTracks = () => trilhas;
+      p.getAudioTrack = () => atual;
+      p.setAudioTrack = (t) => { atual = t; window.__trocouAudio = t.id; };
       p.getOption = (m, o, op) => (op && op.includeAsr ? [{ languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' }] : []);
       p.loadModule = () => {};
       p.setOption = (m, o, v) => { window.__faixa = v; }; // este player falso não baixa nada
@@ -1141,19 +1245,30 @@ def t_gancho(browser, base):
     assert 'fmt=json3' in leg['url'] and 'kind=asr' in leg['url'] and leg['status'] == 200 and 'hello' in leg['texto'], leg
     assert page.evaluate("window.__f.contentWindow.__faixa.kind") == 'asr'  # pediu antes ao próprio player
     esperar(lambda: page.evaluate("window.__vistas.some((d) => d && d.ldBaixou && d.ok)"), limite=3, msg='aviso de download')
+    # áudio original: informado à página e o player volta para ele
+    audio = page.evaluate("window.__vistas.filter((d) => d && d.ldFaixas).pop().audio")
+    assert audio and audio['original'] == 'en' and audio['fonte'] == 'player', audio
+    assert page.evaluate("window.__f.contentWindow.__trocouAudio") == 'en.4'
+    # player limpo: sem compartilhar, logotipo e ícone de pausa; o Pular anúncio continua
+    vis = lambda sel: page.evaluate("(s) => { const e = window.__f.contentDocument.querySelector(s); return getComputedStyle(e).display !== 'none'; }", sel)
+    assert not vis('.ytp-share-button') and not vis('.ytp-youtube-button') and not vis('.ytp-bezel')
+    assert vis('.ytp-skip-ad-button')
+    assert vis('.ytp-large-play-button')  # antes de tocar, o botão grande fica
+    page.evaluate("window.__f.contentDocument.getElementById('v').dispatchEvent(new Event('playing'))")
+    assert not vis('.ytp-large-play-button')
     ctx.close()
 
 
 @caso('13. App Android: busca no YouTube com filtros e vídeo tocado lá abre aqui')
 def t_busca(browser, base):
     # fora do app: o cartão de busca não aparece
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     page = ctx.new_page()
     page.goto(base + '?mock=1')
     expect(page.locator('#area-busca')).to_be_hidden()
     ctx.close()
     # app antigo (sem ?apk=3): pede para atualizar
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     page = ctx.new_page()
     page.goto(base + '?mock=1&app=android')
     expect(page.locator('#area-busca')).to_be_visible()
@@ -1161,7 +1276,7 @@ def t_busca(browser, base):
     expect(page.locator('#form-busca')).to_be_hidden()
     ctx.close()
     # app novo, com a ponte LDNativo simulada
-    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
     ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
     page = ctx.new_page()
     erros = []
@@ -1194,7 +1309,8 @@ def t_busca(browser, base):
     expect(page.locator('#tela-assistir')).to_be_visible()
     expect(page.locator('#tela-idioma')).to_be_visible()
     page.click('#idioma-ok')
-    expect(page.locator('#toast')).to_contain_text('40 falas')
+    esperar(lambda: page.evaluate('window.__ld.S.registro?.estudo?.falas?.length || 0') == 40, msg='legenda aplicada')
+    assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
     assert page.evaluate('window.__ld.S.registro.id') == 'FFFFFFFFFFF'
     assert not erros, erros
     ctx.close()
@@ -1206,7 +1322,7 @@ def t_capturas(browser, url, en, pt):
     tamanhos = [(384, 854, 'celular-em-pe-384'), (412, 915, 'celular-em-pe-412'),
                 (915, 412, 'celular-deitado-915'), (1366, 768, 'notebook-1366')]
     for w, h, nome in tamanhos:
-        ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=1,
+        ctx = browser.new_context(locale='pt-BR', viewport={'width': w, 'height': h}, device_scale_factor=1,
                                   has_touch=w < 1000, is_mobile=False)
         page = ctx.new_page()
         page.goto(url)
@@ -1275,7 +1391,7 @@ def main():
             browser = p.chromium.launch()
         except Exception:
             browser = p.chromium.launch(executable_path='/usr/bin/google-chrome')
-        ctx = browser.new_context(viewport={'width': 412, 'height': 915}, accept_downloads=True)
+        ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915}, accept_downloads=True)
         page = ctx.new_page()
         page.on('pageerror', lambda e: erros.append(str(e)))
         page.on('console', lambda m: erros.append(m.text) if m.type == 'error' else None)
@@ -1300,6 +1416,8 @@ def main():
         t_android(browser, base)
         t_app_novo(browser, base)
         t_so_automatica(browser, base)
+        t_dublado(browser, base)
+        t_interface_idioma(browser, base)
         t_ao_vivo_shorts(browser, base)
         t_gancho(browser, base)
         t_youtube_sem_shorts(browser, base)

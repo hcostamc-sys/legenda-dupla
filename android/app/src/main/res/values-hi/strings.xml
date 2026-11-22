@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos da barra de cima do YouTube no app. Os da página vêm traduzidos pela própria página (js/i18n.js). -->
+<resources>
+    <string name="meus_videos">मेरे वीडियो</string>
+    <string name="meus_videos_desc">मेरे वीडियो: वे वीडियो जिनसे आप पढ़ चुके हैं</string>
+    <string name="entrar">साइन इन</string>
+    <string name="entrar_desc">अपने YouTube खाते में साइन इन करें</string>
+</resources>

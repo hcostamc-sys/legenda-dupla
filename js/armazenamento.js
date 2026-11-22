@@ -1,6 +1,8 @@
 // armazenamento.js — IndexedDB (vídeos) e localStorage (ajustes). PLANO.md seção 11.
 // Todo acesso fica em try/catch. Se o IndexedDB não abrir, guarda só na memória.
 
+import { IDIOMAS_TRADUCAO } from './idiomas.js';
+
 const BANCO = 'legenda-dupla';
 const STORE = 'videos';
 const CHAVE_AJUSTES = 'ld.ajustes';
@@ -13,6 +15,8 @@ export const AJUSTES_PADRAO = Object.freeze({
   versao: VERSAO_AJUSTES,
   idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
   destino: 'pt', // idioma da tradução automática; 'nao' = não traduzir
+  // false: a tradução segue o idioma do celular (app.js troca o destino ao abrir). true: a pessoa escolheu.
+  destinoManual: false,
   inverterArraste: false,
   // Padrões de quem acabou de instalar (22/11/2026): tradução "mostrar sempre" e as falas em lista.
   modoTraducao: 'sempre', // sempre | pausado (só com o vídeo parado) | desligada
@@ -22,8 +26,8 @@ export const AJUSTES_PADRAO = Object.freeze({
 });
 
 const OPCOES = {
-  idioma: ['auto', 'en', 'fr', 'es', 'it', 'de'],
-  destino: ['pt', 'en', 'es', 'fr', 'nao'],
+  idioma: ['auto', ...IDIOMAS_TRADUCAO],
+  destino: [...IDIOMAS_TRADUCAO, 'nao'],
   modoTraducao: ['sempre', 'pausado', 'desligada'],
   modoLegenda: ['uma', 'lista'],
 };

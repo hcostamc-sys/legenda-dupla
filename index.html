@@ -102,7 +102,9 @@
     <button id="btn-voltar" type="button" class="btn-icone" aria-label="Voltar" title="Voltar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"/></svg>
     </button>
-    <h1 id="titulo-video" class="titulo-video"></h1>
+    <div class="caixa-titulo">
+      <h1 id="titulo-video" class="titulo-video" translate="no"></h1>
+    </div>
     <button id="btn-liberar" type="button" class="btn-topo btn-liberar oculto-no-app" aria-label="Liberar o toque no vídeo por 10 segundos, para tocar em Pular anúncio" title="Liberar o toque no vídeo por 10 s (para Pular anúncio)">👆</button>
     <button id="btn-tela-cheia" type="button" class="btn-icone" aria-label="Tela cheia" title="Tela cheia">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/></svg>
@@ -115,7 +117,7 @@
   <div id="area-video" class="area-video">
     <div id="player-host" class="player-host"></div>
     <div id="camada-gestos" class="camada-gestos" aria-hidden="true"></div>
-    <div id="legenda-sobre" class="legenda-sobre" aria-hidden="true">
+    <div id="legenda-sobre" class="legenda-sobre" aria-hidden="true" translate="no">
       <div class="l1"></div>
       <div class="l2"></div>
     </div>
@@ -150,7 +152,7 @@
     <button type="button" role="menuitemradio" data-modo="desligada">Desativar</button>
   </div>
 
-  <div id="caixa-legenda" class="caixa-legenda">
+  <div id="caixa-legenda" class="caixa-legenda" translate="no">
     <p id="dica-ab" class="dica-ab" hidden></p>
     <div class="legenda-meio">
       <div id="fala-ant" class="fala vizinha anterior" hidden><div class="linha l1"></div><div class="linha l2"></div></div>
@@ -174,7 +176,9 @@
         <button id="btn-loop" type="button" class="btn-ctrl" aria-pressed="false" aria-label="Repetir a fala atual (loop)" title="Loop da fala">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg>
         </button>
-        <button id="btn-ab" type="button" class="btn-ctrl btn-ab" aria-pressed="false" aria-label="Repetir um trecho de A até B" title="Loop do trecho A–B">A–B</button>
+        <button id="btn-ab" type="button" class="btn-ctrl btn-ab" aria-pressed="false" aria-label="Repetir um trecho de A até B" title="Loop do trecho A–B">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.5V5h12V2l4 4-4 4V7H7v2.5zM19 14.5V19H7v3l-4-4 4-4v3h10v-2.5z"/><text x="12" y="14.1" text-anchor="middle" font-size="5.6" font-weight="800" font-family="system-ui, Roboto, sans-serif" letter-spacing="-0.15">A-B</text></svg>
+        </button>
         <button id="btn-traducao" type="button" class="btn-ctrl" aria-haspopup="menu" aria-expanded="false" aria-label="Opções da tradução" title="Tradução">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
           <span class="marca-modo" aria-hidden="true"></span>
@@ -210,19 +214,28 @@
         </div>
       </div>
     </header>
-    <ol id="ab-lista" class="ab-lista"></ol>
+    <ol id="ab-lista" class="ab-lista" translate="no"></ol>
   </section>
 
   <div id="cartao-palavra" class="cartao-palavra" hidden role="dialog" aria-label="Palavra">
     <div class="cp-topo">
-      <strong id="cp-palavra"></strong>
+      <strong id="cp-palavra" translate="no"></strong>
       <button id="cp-fechar" type="button" class="btn-topo" aria-label="Fechar">✕</button>
     </div>
+    <div id="cp-significado" class="cp-significado" aria-live="polite"></div>
     <div class="cp-botoes">
-      <a id="cp-traduzir-palavra" class="btn" target="_blank" rel="noopener">Traduzir palavra</a>
-      <a id="cp-traduzir-frase" class="btn" target="_blank" rel="noopener">Traduzir frase</a>
-      <button id="cp-copiar-palavra" type="button" class="btn">Copiar palavra</button>
-      <button id="cp-copiar-frase" type="button" class="btn">Copiar frase</button>
+      <button id="cp-copiar-palavra" type="button" class="btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11z"/></svg>
+        Copiar
+      </button>
+      <button id="cp-copiar-frase" type="button" class="btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11z"/></svg>
+        Copiar frase
+      </button>
+      <a id="cp-dicionario" class="btn btn-principal cp-dicionario" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM6 4h5v8l-2.5-1.5L6 12z"/></svg>
+        Dicionário
+      </a>
     </div>
   </div>
 </main>
@@ -273,25 +286,12 @@
 
     <div class="grupo">
       <h3>Tradução automática</h3>
-      <p class="dica">Vale quando o vídeo não tem arquivo de tradução.</p>
+      <p class="dica">Padrão: o idioma do seu celular. Escolha outro na lista quando quiser.</p>
       <label class="ajuste">Traduzir para
-        <select data-ajuste="destino">
-          <option value="pt">Português</option>
-          <option value="en">Inglês</option>
-          <option value="es">Espanhol</option>
-          <option value="fr">Francês</option>
-          <option value="nao">Não traduzir</option>
-        </select>
+        <select data-ajuste="destino"></select>
       </label>
-      <label class="ajuste">Idioma falado no vídeo
-        <select data-ajuste="idioma">
-          <option value="auto">Descobrir sozinho</option>
-          <option value="en">Inglês</option>
-          <option value="fr">Francês</option>
-          <option value="es">Espanhol</option>
-          <option value="it">Italiano</option>
-          <option value="de">Alemão</option>
-        </select>
+      <label class="ajuste oculto-no-app">Idioma falado no vídeo
+        <select data-ajuste="idioma"></select>
       </label>
     </div>
 
@@ -304,18 +304,19 @@
     </div>
 
     <div class="grupo">
-      <h3>Gestos</h3>
+      <h3>Dicas</h3>
       <ul class="lista-gestos">
-        <li>Arrastar para a <b>esquerda</b> no vídeo ou na legenda: próxima fala (como virar página).</li>
-        <li>Arrastar para a <b>direita</b>: fala anterior.</li>
-        <li><b>Segurar</b> o dedo no vídeo: repete a fala.</li>
-        <li><b>Tocar</b> no vídeo: toca ou pausa.</li>
-        <li>Tocar numa <b>palavra</b> da legenda: traduzir ou copiar.</li>
+        <li>Arrastar para a <b>esquerda</b> no vídeo ou na legenda: próxima fala (como virar página). Para a <b>direita</b>: fala anterior.</li>
+        <li><b>Segurar</b> o dedo no vídeo: repete a fala. <b>Tocar</b> no vídeo: toca ou pausa.</li>
+        <li>Tocar numa <b>palavra</b> da legenda: mostra o significado dela, com os botões <b>Copiar</b>, <b>Copiar frase</b> e <b>Dicionário</b> (abre o dicionário para ver mais detalhes).</li>
         <li>Para ir a qualquer ponto: arraste a barra do tempo.</li>
-        <li><b>Loop</b> (seta com 1): repete a fala atual até você desligar.</li>
-        <li><b>A–B</b>: toque no botão; abre a lista das falas na tela inteira. Role, toque na fala onde o trecho começa (A) e depois numa fala depois dela, onde termina (B): o trecho tem no mínimo 2 falas. O vídeo volta e repete o trecho. Toque no botão de novo para parar.</li>
+        <li><b>Loop</b> (setas com 1): repete a fala atual até você desligar.</li>
+        <li><b>A–B</b> (setas com A-B): abre a lista das falas na tela inteira. Toque na fala onde o trecho começa (A) e numa fala depois dela, onde termina (B): o trecho tem no mínimo 2 falas e fica repetindo. Toque no botão de novo para parar.</li>
         <li><b>文A</b>: mostrar a tradução sempre, só quando pausar, ou desativar.</li>
-        <li><b>Lista</b> (três barras, ao lado do 文A): mostra a fala anterior, a atual no meio e a próxima. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez.</li>
+        <li><b>Lista</b> (três barras): mostra a fala anterior, a atual no meio e a próxima. Toque na anterior ou na próxima para ir até ela.</li>
+        <li>Ao abrir um vídeo, a legenda já vem escolhida pelo <b>idioma do áudio original</b> e a tradução no <b>idioma do seu celular</b>. Dá para trocar nas listas antes de tocar em Começar, ou depois em <b>Trocar o idioma da legenda deste vídeo</b> (aqui nos Ajustes).</li>
+        <li>A tradução pode ser para qualquer idioma do tradutor do Google: escolha em <b>Tradução automática</b>, acima. Se o vídeo já estiver no idioma da tradução, a segunda linha não aparece.</li>
+        <li>O app aparece no idioma do seu celular.</li>
       </ul>
     </div>
   </div>
@@ -350,17 +351,12 @@
     <h2 id="idioma-titulo">Legendas do vídeo</h2>
     <label class="ajuste">Idioma falado no vídeo (a legenda que você estuda)
       <select id="sel-legenda-video"></select>
+      <span id="idioma-dica-audio" class="dica" hidden></span>
     </label>
     <label class="ajuste">Tradução embaixo (feita pelo app, no tempo de cada fala)
-      <select id="sel-traducao-video">
-        <option value="pt">Português</option>
-        <option value="en">Inglês</option>
-        <option value="es">Espanhol</option>
-        <option value="fr">Francês</option>
-        <option value="nao">Não traduzir</option>
-      </select>
+      <select id="sel-traducao-video"></select>
+      <span class="dica">Padrão: o idioma do seu celular.</span>
     </label>
-    <p class="dica">O áudio em outro idioma não dá para escolher aqui: o player do YouTube usado fora do YouTube não tem essa opção.</p>
     <div class="dialogo-botoes">
       <button id="idioma-cancelar" type="button" class="btn">Agora não</button>
       <button id="idioma-ok" type="button" class="btn btn-principal">Começar</button>

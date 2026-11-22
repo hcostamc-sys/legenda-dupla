@@ -83,6 +83,62 @@ export async function traduzirLote(textos, de, para, sinal) {
   return lerResposta(await r.json(), textos.length);
 }
 
+/**
+ * Idioma de um texto, descoberto pelo tradutor (código do Google, como 'en'), ou '' se não souber.
+ * Usado quando o vídeo tem legendas automáticas em mais de um idioma e o player não disse qual é o áudio.
+ */
+export async function detectarIdiomaTexto(texto, sinal) {
+  const t = String(texto || '').trim().slice(0, 300);
+  if (!t) return '';
+  const corpo = new URLSearchParams();
+  corpo.append('q', t);
+  const r = await fetch(`${URL_TRADUTOR}&sl=auto&tl=en`, { method: 'POST', body: corpo, signal: sinal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (!r.ok) return '';
+  const d = await r.json();
+  // Um texto só, origem automática: ["tradução", "idioma"] (ou [["tradução", "idioma"]]).
+  const par = Array.isArray(d) && Array.isArray(d[0]) ? d[0] : d;
+  return Array.isArray(par) && typeof par[1] === 'string' && /^[a-z]{2,3}(-[A-Za-z]+)?$/.test(par[1]) ? par[1] : '';
+}
+
+/** Junta a resposta do translate_a/single (dj=1): tradução principal e sentidos por classe de palavra. */
+export function lerSignificado(d) {
+  const principal = (d?.sentences || []).map((s) => s?.trans || '').join('').trim();
+  const sentidos = [];
+  for (const e of Array.isArray(d?.dict) ? d.dict : []) {
+    const termos = (Array.isArray(e?.terms) ? e.terms : []).filter((x) => typeof x === 'string' && x.trim());
+    if (!termos.length) continue;
+    sentidos.push({ classe: typeof e.pos === 'string' ? e.pos : '', termos: termos.slice(0, 5) });
+    if (sentidos.length >= 3) break;
+  }
+  return { principal, sentidos, origem: typeof d?.src === 'string' ? d.src : '' };
+}
+
+const cacheSignificado = new Map();
+/**
+ * Significado de uma palavra: { principal, sentidos: [{ classe, termos }] }.
+ * Primeiro o dicionário do tradutor (vários sentidos); se falhar, só a tradução simples.
+ */
+export async function significadoPalavra(palavra, de, para, ui, sinal) {
+  const chave = `${de}|${para}|${ui}|${palavra.toLowerCase()}`;
+  if (cacheSignificado.has(chave)) return cacheSignificado.get(chave);
+  let r = null;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dt=bd&dj=1` +
+      `&sl=${encodeURIComponent(de || 'auto')}&tl=${encodeURIComponent(para)}&hl=${encodeURIComponent(ui || para)}` +
+      `&q=${encodeURIComponent(palavra)}`;
+    const resp = await fetch(url, { signal: sinal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (resp.ok) r = lerSignificado(await resp.json());
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+  }
+  if (!r || !r.principal) {
+    const [t] = await traduzirLote([palavra], de, para, sinal);
+    r = { principal: t || '', sentidos: [], origem: '' };
+  }
+  if (r.principal) cacheSignificado.set(chave, r);
+  return r;
+}
+
 const esperarMs = (ms, sinal) => new Promise((resolve, reject) => {
   const t = setTimeout(resolve, ms);
   sinal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('cancelado', 'AbortError')); }, { once: true });

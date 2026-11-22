@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos da barra de cima do YouTube no app. Os da página vêm traduzidos pela própria página (js/i18n.js). -->
+<resources>
+    <string name="meus_videos">فيديوهاتي</string>
+    <string name="meus_videos_desc">فيديوهاتي: الفيديوهات التي درستها</string>
+    <string name="entrar">تسجيل الدخول</string>
+    <string name="entrar_desc">تسجيل الدخول إلى حسابك على YouTube</string>
+</resources>

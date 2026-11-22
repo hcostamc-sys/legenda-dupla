@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos da barra de cima do YouTube no app. Os da página vêm traduzidos pela própria página (js/i18n.js). -->
+<resources>
+    <string name="meus_videos">내 동영상</string>
+    <string name="meus_videos_desc">내 동영상: 이미 공부한 동영상</string>
+    <string name="entrar">로그인</string>
+    <string name="entrar_desc">YouTube 계정에 로그인</string>
+</resources>

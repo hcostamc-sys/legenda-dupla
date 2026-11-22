@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Textos da barra de cima do YouTube no app. Os da página vêm traduzidos pela própria página (js/i18n.js). -->
+<resources>
+    <string name="app_name" translatable="false">Legenda Dupla</string>
+    <string name="meus_videos">My videos</string>
+    <string name="meus_videos_desc">My videos: the videos you have already studied</string>
+    <string name="entrar">Sign in</string>
+    <string name="entrar_desc">Sign in to your YouTube account</string>
+</resources>
