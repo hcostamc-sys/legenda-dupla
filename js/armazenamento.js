@@ -11,6 +11,7 @@ export const AJUSTES_PADRAO = Object.freeze({
   idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
   destino: 'pt', // idioma da tradução automática; 'nao' = não traduzir
   inverterArraste: false,
+  modoTraducao: 'sempre', // sempre | pausado (só com o vídeo parado) | desligada
   fonteL1: 19, // a linha 2 usa 85% deste tamanho
   velocidade: 1,
 });
@@ -18,6 +19,7 @@ export const AJUSTES_PADRAO = Object.freeze({
 const OPCOES = {
   idioma: ['auto', 'en', 'fr', 'es', 'it', 'de'],
   destino: ['pt', 'en', 'es', 'fr', 'nao'],
+  modoTraducao: ['sempre', 'pausado', 'desligada'],
 };
 const FAIXAS = {
   fonteL1: [14, 32],

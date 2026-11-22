@@ -297,6 +297,75 @@ def t_extras(page):
     time.sleep(0.3)
 
 
+@caso('6b. Loop da fala, trecho A–B e menu da tradução (tamanho automático)')
+def t_repeticao(page):
+    page.locator('#titulo-video').click()
+    if estado(page) != 1:
+        page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    # botões ao lado do play: loop, A–B e tradução; nada além disso
+    assert page.locator('.controles button').count() == 4
+    page.evaluate('window.__ld.S.player.irPara(9.3)')  # fala 5 (8,9 a 10,9)
+    esperar(lambda: exibida(page) == 4, msg='fala 5')
+    page.click('#btn-loop')
+    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'true')
+    voltas, ultimo, fim_t = 0, tempo(page), time.time() + 6
+    while time.time() < fim_t and voltas < 2:
+        t = tempo(page)
+        if t < ultimo - 0.5:
+            voltas += 1
+        ultimo = t
+        time.sleep(0.03)
+    assert voltas == 2, voltas
+    assert exibida(page) == 4, exibida(page)
+    page.click('#btn-loop')
+    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'false')
+    esperar(lambda: exibida(page) == 5, limite=4, msg='seguiu sem loop')
+    # A–B: marca A na fala 6 e B na fala 7
+    page.click('#btn-ab')
+    expect(page.locator('#btn-ab')).to_have_text('A…')
+    esperar(lambda: exibida(page) == 6, limite=4, msg='chegou na fala 7')
+    page.click('#btn-ab')
+    expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'true')
+    inicio_a = page.evaluate('window.__ld.S.unidades[5].s')
+    voltou, ultimo, fim_t = False, tempo(page), time.time() + 6
+    while time.time() < fim_t:
+        t = tempo(page)
+        if t < ultimo - 0.5:
+            voltou = True
+            assert abs(t - inicio_a) < 0.5, (t, inicio_a)
+            break
+        ultimo = t
+        time.sleep(0.03)
+    assert voltou, 'o trecho A–B não repetiu'
+    page.click('#btn-ab')
+    expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'false')
+    # menu da tradução
+    l1_com = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#caixa-l1')).fontSize)")
+    page.click('#btn-traducao')
+    expect(page.locator('#menu-traducao')).to_be_visible()
+    expect(page.locator('#menu-traducao [data-modo="sempre"]')).to_have_attribute('aria-checked', 'true')
+    page.click('#menu-traducao [data-modo="desligada"]')
+    expect(page.locator('#menu-traducao')).to_be_hidden()
+    expect(page.locator('#caixa-l2')).to_be_hidden()
+    l1_so = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#caixa-l1')).fontSize)")
+    assert l1_so > l1_com, (l1_so, l1_com)  # só a original: letra maior
+    page.click('#btn-traducao')
+    page.click('#menu-traducao [data-modo="pausado"]')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    expect(page.locator('#caixa-l2')).to_be_hidden()
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausado')
+    expect(page.locator('#caixa-l2')).to_be_visible()
+    assert page.evaluate("parseFloat(getComputedStyle(document.querySelector('#caixa-l1')).fontSize)") == l1_com
+    page.click('#btn-play')
+    expect(page.locator('#caixa-l2')).to_be_hidden()
+    page.keyboard.press('t')  # pausado -> desativada
+    page.keyboard.press('t')  # desativada -> sempre
+    expect(page.locator('#caixa-l2')).to_be_visible()
+    assert page.evaluate('window.__ld.S.ajustes.modoTraducao') == 'sempre'
+
+
 @caso('8. Recarregar: vídeo na biblioteca, posição e ajustes mantidos')
 def t_recarregar(page, url):
     page.locator('#titulo-video').click()
@@ -527,6 +596,14 @@ def t_capturas(browser, url, en, pt):
         page.evaluate('window.__ld.S.player.pausar()')
         time.sleep(0.3)
         page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-assistir.png'))
+        page.click('#btn-traducao')
+        time.sleep(0.2)
+        page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-menu-traducao.png'))
+        page.click('#menu-traducao [data-modo="desligada"]')
+        time.sleep(0.2)
+        page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-so-original.png'))
+        page.click('#btn-traducao')
+        page.click('#menu-traducao [data-modo="sempre"]')
         if w < 900:
             page.click('#btn-ajustes')
             time.sleep(0.3)
@@ -564,6 +641,7 @@ def main():
         t_toque(page)
         t_teclas(page)
         t_extras(page)
+        t_repeticao(page)
         t_recarregar(page, url)
         t_backup(page, url, pasta)
         t_compartilhar(page, base)

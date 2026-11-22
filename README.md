@@ -16,7 +16,7 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 
 ### Tela do vídeo
 
-De cima para baixo: o vídeo, o botão **tocar/pausar** com a barra do tempo, e uma caixa só com as duas linhas da legenda. A navegação é por gestos:
+De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**, **tocar/pausar** no centro e **文A** da tradução) e uma caixa só com as duas linhas da legenda. A navegação entre falas é por gestos:
 
 | Ação | Celular | Notebook |
 |---|---|---|
@@ -26,9 +26,14 @@ De cima para baixo: o vídeo, o botão **tocar/pausar** com a barra do tempo, e 
 | Tocar / pausar | Toque no vídeo, ou o botão amarelo | Espaço |
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
+| Repetir a fala atual sem parar | Botão **Loop** (seta com 1); toque de novo para desligar | L |
+| Repetir um trecho | Botão **A–B**: toque na fala onde começa (fica “A…”), depois na fala onde termina; toque de novo para parar | B |
+| Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
 | Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar) | Igual |
+
+Quando a tradução não está na tela (desativada, ou vídeo tocando no modo “só quando pausar”), a legenda original fica maior, ocupando o lugar das duas.
 
 Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela aparecer adiantada ou atrasada), tradução automática (para qual idioma, ou não traduzir), tamanho das letras e inverter a direção do arraste.
 

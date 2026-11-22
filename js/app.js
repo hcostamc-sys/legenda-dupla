@@ -41,6 +41,8 @@ const S = {
   memoriaNav: null,
   alvoNav: null,
   saltoEm: 0,
+  loop: { ligado: false, alvo: null }, // loop da fala atual
+  ab: { a: null, b: null }, // trecho A–B (índices das falas)
   velConfirmada: 1,
   velPedida: null,
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
@@ -575,6 +577,7 @@ function reprocessar() {
   S.automatica = r.automatica;
   S.memoriaNav = null;
   S.alvoNav = null;
+  if (S.ab.a !== null || S.loop.alvo !== null) zerarRepeticao(); // os índices das falas mudaram
   if (traducaoAutomaticaAtiva()) {
     aplicarMapa(S.unidades, mapaDaTraducao());
     iniciarTraducaoAuto();
@@ -598,6 +601,9 @@ async function abrirVideo(reg, inicio) {
   S.ajustouVelInicio = false;
   S.tituloConferido = false;
   cancelarToqueLivre();
+  zerarRepeticao();
+  fecharMenuTraducao();
+  atualizarBotaoTraducao();
   reprocessar();
   $('#titulo-video').textContent = tituloAtual();
   $('#erro-player').hidden = true;
@@ -662,6 +668,8 @@ function fecharVideo() {
   try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch { /* nada */ }
   S.registro = null;
   S.unidades = [];
+  zerarRepeticao();
+  fecharMenuTraducao();
   fecharCartao();
   document.body.classList.remove('gestos-ativos');
   renderBiblioteca();
@@ -826,6 +834,7 @@ function aoMudarEstado(st) {
     lerTitulo();
   }
   atualizarBotaoPlay();
+  if (S.tocandoLogico !== antes) renderLegenda(false); // modo "só quando pausar"
   if (S.tocandoLogico) {
     pedirTelaLigada();
     if (st === 1 && document.body.classList.contains('faixa-visivel')) mostrarFaixa(); // só reinicia os 3 s
@@ -912,6 +921,7 @@ function tique() {
   // A fala de destino de um salto vale até o vídeo chegar nela (ou ir para longe).
   const alvo = S.unidades[S.alvoNav];
   if (S.alvoNav !== null && performance.now() - S.saltoEm > 600 && (!alvo || t >= alvo.s || t < alvo.s - 1.5)) S.alvoNav = null;
+  if (st === 1) logicaRepeticao(t);
   renderLegenda(false);
   const agora = performance.now();
   if (agora - S.ultimoProgresso >= 250) {
@@ -951,15 +961,13 @@ function renderLegenda(forcar) {
   // Entre duas falas, a última continua na tela.
   const u = U[indice];
   const t1 = u ? u.texto : '';
-  const t2 = u ? u.trad || '' : '';
+  const t2 = textoLinha2(u);
   if (indice === S.exibida && t2 === S.exibidaTrad && !forcar) return;
-  const c2 = $('#caixa-l2');
   if (indice === S.exibida && !forcar) {
-    // Só chegou a tradução desta fala: não mexe na linha 1 (o cartão da palavra pode estar aberto).
+    // Só mudou a linha 2 (tradução chegou, ou tocou/pausou no modo "só quando pausar"):
+    // não mexe na linha 1, porque o cartão da palavra pode estar aberto.
     S.exibidaTrad = t2;
-    c2.textContent = t2;
-    c2.hidden = !t2;
-    $('#legenda-sobre .l2').textContent = t2;
+    mostrarLinha2(t2);
     return;
   }
   if (indice !== S.exibida) fecharCartao();
@@ -979,13 +987,28 @@ function renderLegenda(forcar) {
       c1.appendChild(span);
     }
   }
+  $('#caixa-legenda').scrollTop = 0;
+  $('#legenda-sobre .l1').textContent = t1; // legendas sobre o vídeo (deitado ou tela cheia)
+  mostrarLinha2(t2);
+}
+
+/** Texto da linha 2 conforme o modo da tradução (sempre, só quando pausar, desativada). */
+function textoLinha2(u) {
+  const trad = u?.trad || '';
+  const modo = S.ajustes.modoTraducao;
+  if (!trad || modo === 'desligada') return '';
+  if (modo === 'pausado' && S.tocandoLogico) return '';
+  return trad;
+}
+
+/** Mostra a linha 2 e ajusta o tamanho: sem tradução na tela, a linha 1 fica maior. */
+function mostrarLinha2(t2) {
+  const c2 = $('#caixa-l2');
   c2.textContent = t2;
   c2.hidden = !t2;
-  $('#caixa-legenda').scrollTop = 0;
-
-  // legendas sobre o vídeo (deitado ou tela cheia)
-  $('#legenda-sobre .l1').textContent = t1;
   $('#legenda-sobre .l2').textContent = t2;
+  $('#caixa-legenda').classList.toggle('so-original', !t2);
+  $('#legenda-sobre').classList.toggle('so-original', !t2);
 }
 
 function atualizarProgresso(forcar = false) {
@@ -1012,6 +1035,130 @@ function salvarPosicao() {
   salvarVideo(reg);
 }
 
+// ============================================================ loop da fala e trecho A–B
+
+/** Com o vídeo tocando: no fim da fala (ou do trecho A–B), volta para o começo dela. */
+function logicaRepeticao(t) {
+  const U = S.unidades;
+  if (!U.length || performance.now() - S.saltoEm < 350) return; // logo depois de um salto o tempo ainda é o antigo
+  const { a, b } = S.ab;
+  if (a !== null && b !== null) {
+    const fim = U[b];
+    if (fim && t >= fim.e - 0.05 && t < fim.e + 1) irParaIndice(a);
+    return;
+  }
+  if (!S.loop.ligado) return;
+  const atual = falaNoTempo(U, t).indice;
+  let alvo = U[S.loop.alvo];
+  // Foi para outro ponto (barra do tempo): o loop passa a ser da fala de lá.
+  if (!alvo || t > alvo.e + 1 || t < alvo.s - 2) {
+    S.loop.alvo = atual >= 0 ? atual : null;
+    alvo = U[S.loop.alvo];
+  }
+  if (alvo && t >= alvo.e - 0.05 && t < alvo.e + 1) irParaIndice(S.loop.alvo);
+}
+
+function falaAtual() {
+  return S.exibida >= 0 ? S.exibida : -1;
+}
+
+function atualizarBotoesRepeticao() {
+  const bl = $('#btn-loop');
+  bl.setAttribute('aria-pressed', String(S.loop.ligado));
+  const { a, b } = S.ab;
+  const ab = $('#btn-ab');
+  const completo = a !== null && b !== null;
+  ab.setAttribute('aria-pressed', String(completo));
+  ab.classList.toggle('meio', a !== null && b === null);
+  ab.textContent = a !== null && b === null ? 'A…' : 'A–B';
+  ab.setAttribute('aria-label', completo ? 'Parar o trecho A–B' : a !== null ? 'Marcar o fim do trecho (B)' : 'Repetir um trecho de A até B');
+}
+
+function alternarLoop() {
+  if (!S.unidades.length) return;
+  S.loop.ligado = !S.loop.ligado;
+  S.loop.alvo = S.loop.ligado ? (falaAtual() >= 0 ? falaAtual() : null) : null;
+  if (S.loop.ligado) S.ab = { a: null, b: null }; // um modo de repetição por vez
+  atualizarBotoesRepeticao();
+  toast(S.loop.ligado ? 'Loop da fala ligado' : 'Loop da fala desligado', 1200);
+}
+
+function tocarAB() {
+  const i = falaAtual();
+  const { a, b } = S.ab;
+  if (a !== null && b !== null) {
+    S.ab = { a: null, b: null };
+    atualizarBotoesRepeticao();
+    toast('Trecho A–B desligado', 1200);
+    return;
+  }
+  if (i < 0) { toast('Espere aparecer uma fala e toque de novo.'); return; }
+  if (a === null) {
+    S.ab = { a: i, b: null };
+    S.loop = { ligado: false, alvo: null };
+    atualizarBotoesRepeticao();
+    toast('Início (A) marcado. Vá até a fala final e toque de novo para marcar o fim (B).', 3500);
+    return;
+  }
+  S.ab = { a: Math.min(a, i), b: Math.max(a, i) };
+  atualizarBotoesRepeticao();
+  toast(`Repetindo de ${formatarTempo(S.unidades[S.ab.a].s)} até ${formatarTempo(S.unidades[S.ab.b].e)}. Toque em A–B para parar.`, 3500);
+}
+
+function zerarRepeticao() {
+  S.loop = { ligado: false, alvo: null };
+  S.ab = { a: null, b: null };
+  atualizarBotoesRepeticao();
+}
+
+// ============================================================ menu da tradução
+
+function atualizarBotaoTraducao() {
+  const modo = S.ajustes.modoTraducao;
+  const b = $('#btn-traducao');
+  b.classList.toggle('modo-desligada', modo === 'desligada');
+  b.querySelector('.marca-modo').textContent = modo === 'pausado' ? '⏸' : '';
+  const nomes = { sempre: 'mostrando sempre', pausado: 'só quando pausar', desligada: 'desativada' };
+  b.setAttribute('aria-label', `Opções da tradução (agora: ${nomes[modo]})`);
+  for (const op of $$('#menu-traducao [data-modo]')) op.setAttribute('aria-checked', String(op.dataset.modo === modo));
+}
+
+function abrirMenuTraducao() {
+  const menu = $('#menu-traducao');
+  if (!menu.hidden) { fecharMenuTraducao(); return; }
+  atualizarBotaoTraducao();
+  menu.hidden = false;
+  $('#btn-traducao').setAttribute('aria-expanded', 'true');
+  const r = $('#btn-traducao').getBoundingClientRect();
+  const larg = menu.offsetWidth;
+  const alt = menu.offsetHeight;
+  const esquerda = Math.min(window.innerWidth - larg - 8, Math.max(8, r.right - larg));
+  let topo = r.top - alt - 8;
+  if (topo < 8) topo = r.bottom + 8;
+  menu.style.left = `${esquerda}px`;
+  menu.style.top = `${topo}px`;
+}
+
+function fecharMenuTraducao() {
+  $('#menu-traducao').hidden = true;
+  $('#btn-traducao').setAttribute('aria-expanded', 'false');
+}
+
+function definirModoTraducao(modo) {
+  S.ajustes.modoTraducao = modo;
+  salvar();
+  atualizarBotaoTraducao();
+  fecharMenuTraducao();
+  renderLegenda(false);
+}
+
+function ciclarModoTraducao() {
+  const ordem = ['sempre', 'pausado', 'desligada'];
+  const novo = ordem[(ordem.indexOf(S.ajustes.modoTraducao) + 1) % 3];
+  definirModoTraducao(novo);
+  toast({ sempre: 'Tradução: mostrar sempre', pausado: 'Tradução: só quando pausar', desligada: 'Tradução desativada' }[novo], 1200);
+}
+
 // ============================================================ navegação por gesto (7.4)
 
 function direcaoDoArraste(dir) {
@@ -1033,6 +1180,7 @@ function navegarAcao(acao) {
     return;
   }
   S.memoriaNav = { indice: r.indice, quando: agora };
+  if (S.loop.ligado) S.loop.alvo = r.indice; // o loop acompanha a fala escolhida
   irParaIndice(r.indice);
   // Navegar sempre deixa o vídeo tocando.
   if (p.estado() !== 1) {
@@ -1292,6 +1440,7 @@ function aoTeclar(ev) {
   if (!$('#dialogo').hidden) return;
   if (ev.key === 'Escape') {
     fecharCartao();
+    fecharMenuTraducao();
     fecharPaineis();
     return;
   }
@@ -1313,6 +1462,9 @@ function aoTeclar(ev) {
   else if (k === '[') mudarVelocidadePasso(-1);
   else if (k === ']') mudarVelocidadePasso(1);
   else if (k === 'f' || k === 'F') alternarTelaCheia();
+  else if (k === 'l' || k === 'L') alternarLoop();
+  else if (k === 'b' || k === 'B') tocarAB();
+  else if (k === 't' || k === 'T') ciclarModoTraducao();
   else feito = false;
   if (feito) ev.preventDefault();
 }
@@ -1366,6 +1518,7 @@ function ligarEventos() {
   $('#btn-fechar-ajuda').addEventListener('click', fecharPaineis);
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest?.('.menu-item')) fecharMenusItens();
+    if (!ev.target.closest?.('#menu-traducao, #btn-traducao')) fecharMenuTraducao();
   });
   document.addEventListener('pointerdown', (ev) => {
     const c = $('#cartao-palavra');
@@ -1379,6 +1532,12 @@ function ligarEventos() {
     alternarPlay();
     if (document.body.classList.contains('imersivo')) mostrarFaixa();
   });
+  $('#btn-loop').addEventListener('click', alternarLoop);
+  $('#btn-ab').addEventListener('click', tocarAB);
+  $('#btn-traducao').addEventListener('click', (ev) => { ev.stopPropagation(); abrirMenuTraducao(); });
+  for (const op of $$('#menu-traducao [data-modo]')) {
+    op.addEventListener('click', (ev) => { ev.stopPropagation(); definirModoTraducao(op.dataset.modo); });
+  }
   $('#btn-tela-cheia').addEventListener('click', alternarTelaCheia);
   $('#btn-liberar').addEventListener('click', liberarToque);
   $('#btn-ajustes').addEventListener('click', () => abrirPainel('#painel-ajustes'));
