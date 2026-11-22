@@ -710,10 +710,15 @@ def t_prototipo(page, base):
     page.evaluate("""() => window.postMessage({ ldLegenda: true, via: 'xhr', status: 200, texto: '',
         url: 'https://www.youtube.com/api/timedtext?v=abc&lang=en' }, '*')""")
     expect(page.locator('.captura.vazia')).to_have_count(1)
+    # 429 (excesso de pedidos): recusado, mesmo com texto
+    page.evaluate("""() => window.postMessage({ ldLegenda: true, via: 'xhr', status: 429, texto: '<html><p>unusual traffic</p></html>',
+        url: 'https://www.youtube.com/api/timedtext?v=abc&lang=en&tlang=pt' }, '*')""")
+    expect(page.locator('.captura.vazia', has_text='recusou')).to_have_count(1)
+    expect(page.locator('.captura.boa')).to_have_count(1)
     page.evaluate("window.ldNativoViu('https://www.youtube.com/api/timedtext?v=abc&lang=fr&pot=1')")
     expect(page.locator('#msg-vistos')).to_contain_text('1.')
     rel = page.locator('#relatorio').input_value()
-    assert 'Capturas: 2' in rel and 'token sim' in rel and 'Pedidos de legenda vistos pelo Android: 1' in rel, rel
+    assert 'Capturas: 3' in rel and 'versão do teste 2' in rel and 'token sim' in rel and 'Pedidos de legenda vistos pelo Android: 1' in rel, rel
 
 
 @caso('10. Capturas de tela nos quatro tamanhos')

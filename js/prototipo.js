@@ -4,6 +4,9 @@
 
 import { lerLink, formatarTempo } from './legendas.js';
 import { lerTimedText, infoUrl } from './timedtext.js';
+import { traduzirLote } from './traducao.js';
+
+export const VERSAO_TESTE = 2;
 
 const $ = (sel) => document.querySelector(sel);
 const P = new URLSearchParams(location.search);
@@ -13,6 +16,7 @@ const VIDEO_PADRAO = 'https://www.youtube.com/watch?v=iG9CE55wbtY'; // palestra 
 
 const estado = {
   player: null,
+  videoId: '',
   faixas: [],
   traducoes: [],
   capturas: [],
@@ -34,10 +38,11 @@ function log(msg) {
 function resumoCaptura(c) {
   const i = c.info;
   const partes = [
+    c.anuncio ? `ANÚNCIO (vídeo ${i.video})` : `vídeo ${i.video || '?'}`,
     `idioma ${i.idioma || '?'}${i.automatica ? ' (automática)' : ''}`,
     i.traducao ? `tradução ${i.traducao}` : 'sem tradução',
     `formato ${c.r.formato || i.formato || '?'}`,
-    c.r.falas ? `${c.r.falas.length} falas` : `ERRO: ${c.r.erro}`,
+    c.r.falas && c.status === 200 ? `${c.r.falas.length} falas` : `ERRO: ${c.status !== 200 ? 'recusado pelo YouTube' : c.r.erro}`,
     `HTTP ${c.status}`,
     `${c.tamanho} caracteres`,
     `token ${i.token ? 'sim' : 'não'}`,
@@ -48,11 +53,11 @@ function resumoCaptura(c) {
 
 function atualizarRelatorio() {
   const linhas = [
-    'Relatório do protótipo — Legenda Dupla (app Android)',
+    `Relatório do protótipo — Legenda Dupla (app Android) · versão do teste ${VERSAO_TESTE}`,
     `Data: ${new Date().toLocaleString('pt-BR')}`,
     `No app Android: ${NO_APP ? 'sim' : 'não'} · gancho: ${P.get('gancho') || '?'} · ponte: ${P.get('ponte') || '?'} · WebView: ${P.get('wv') || '?'}`,
     `Navegador: ${navigator.userAgent}`,
-    `Vídeo: ${$('#campo-link')?.value || ''}`,
+    `Vídeo: ${$('#campo-link')?.value || ''} (id carregado: ${estado.videoId || '—'})`,
     `Faixas de legenda informadas pelo player: ${estado.faixas.length}${estado.faixas.length ? ` (${estado.faixas.map(nomeFaixa).join('; ')})` : ''}`,
     `Idiomas de tradução informados: ${estado.traducoes.length}`,
     `Pedidos de legenda vistos pelo Android: ${estado.vistos.length}`,
@@ -122,10 +127,12 @@ async function carregar() {
   const div = document.createElement('div');
   div.id = 'yt-teste';
   host.appendChild(div);
+  estado.videoId = link.videoId;
   log(`Carregando o vídeo ${link.videoId}…`);
   estado.player = new window.YT.Player('yt-teste', {
     videoId: link.videoId,
-    playerVars: { playsinline: 1, rel: 0, cc_load_policy: 1, iv_load_policy: 3 },
+    // Sem cc_load_policy: a legenda só é pedida quando o botão "Pegar" mandar (menos pedidos ao YouTube).
+    playerVars: { playsinline: 1, rel: 0, iv_load_policy: 3 },
     events: {
       onReady: () => {
         let titulo = '';
@@ -227,6 +234,11 @@ function pegar() {
     return;
   }
   const antes = estado.capturas.length;
+  let idNoPlayer = '';
+  try { idNoPlayer = p.getVideoData().video_id || ''; } catch { /* nada */ }
+  if (idNoPlayer && estado.videoId && idNoPlayer !== estado.videoId) {
+    log(`Atenção: o player está mostrando outro vídeo (${idNoPlayer}), provavelmente um anúncio.`);
+  }
   log(`Pedi a legenda ${nomeFaixa(t)}${destino ? `, traduzida para ${destino}` : ''}.`);
   clearTimeout(estado.esperando);
   estado.esperando = setTimeout(() => {
@@ -239,13 +251,16 @@ function pegar() {
 // ------------------------------------------------------------ capturas
 
 function registrarCaptura(url, texto, status, origem) {
+  const info = infoUrl(url);
   const c = {
     url,
-    info: infoUrl(url),
+    info,
     r: lerTimedText(texto),
-    status: status ?? '?',
+    status: Number(status) || status || '?',
     tamanho: String(texto || '').length,
     origem,
+    // A legenda de um anúncio vem com o id de outro vídeo.
+    anuncio: !!(info.video && estado.videoId && info.video !== estado.videoId),
   };
   estado.capturas.push(c);
   log(`Captura ${estado.capturas.length}: ${resumoCaptura(c)}`);
@@ -255,10 +270,14 @@ function registrarCaptura(url, texto, status, origem) {
 function mostrarCaptura(c) {
   $('#msg-capturas').textContent = `${estado.capturas.length} captura(s).`;
   const caixa = document.createElement('div');
-  const boa = !!c.r.falas?.length;
+  const recusado = c.status !== 200;
+  const boa = !!c.r.falas?.length && !recusado && !c.anuncio;
   caixa.className = `captura ${boa ? 'boa' : 'vazia'}`;
   const h = document.createElement('h3');
-  h.textContent = boa ? '✅ Legenda capturada' : '⚠ Pedido capturado, mas sem texto';
+  if (boa) h.textContent = '✅ Legenda capturada';
+  else if (recusado) h.textContent = `⛔ O YouTube recusou este pedido (HTTP ${c.status})`;
+  else if (c.anuncio) h.textContent = '📺 Legenda de um anúncio, não do vídeo. Espere o anúncio acabar e peça de novo.';
+  else h.textContent = '⚠ Pedido capturado, mas sem texto';
   const p = document.createElement('p');
   p.className = 'info';
   p.textContent = resumoCaptura(c);
@@ -287,6 +306,31 @@ function mostrarCaptura(c) {
       b.addEventListener('click', () => { mostrar(c.r.falas.length); b.remove(); });
       caixa.appendChild(b);
     }
+    // Teste da tradução pelo tradutor do app (o mesmo da tradução automática de hoje).
+    const bt = document.createElement('button');
+    bt.type = 'button';
+    bt.className = 'btn';
+    bt.textContent = 'Traduzir 8 falas com o tradutor do app';
+    const saida = document.createElement('ul');
+    saida.className = 'falas';
+    bt.addEventListener('click', async () => {
+      bt.disabled = true;
+      const amostra = c.r.falas.slice(0, 8);
+      try {
+        const trad = await traduzirLote(amostra.map((f) => f.t), 'auto', 'pt');
+        saida.textContent = '';
+        amostra.forEach((f, k) => {
+          const li = document.createElement('li');
+          li.textContent = `${formatarTempo(f.s)}  ${f.t}  →  ${trad[k] || '(vazio)'}`;
+          saida.appendChild(li);
+        });
+        log(`Tradutor do app: ${trad.filter(Boolean).length} de ${amostra.length} falas traduzidas. Ex.: “${trad[0] || ''}”`);
+      } catch (e) {
+        log(`Tradutor do app falhou: ${e.message}`);
+      }
+      bt.disabled = false;
+    });
+    caixa.append(bt, saida);
   }
   $('#capturas').prepend(caixa);
 }
@@ -305,7 +349,8 @@ window.addEventListener('message', (ev) => {
 window.ldNativoViu = (url) => {
   estado.vistos.push(url);
   const i = infoUrl(url);
-  log(`Android viu um pedido de legenda: idioma ${i.idioma || '?'}${i.traducao ? ` → ${i.traducao}` : ''} · formato ${i.formato || '?'} · token ${i.token ? 'sim' : 'não'}`);
+  const outro = i.video && estado.videoId && i.video !== estado.videoId;
+  log(`Android viu um pedido de legenda${outro ? ' (de um ANÚNCIO)' : ''}: vídeo ${i.video || '?'} · idioma ${i.idioma || '?'}${i.traducao ? ` → ${i.traducao}` : ''} · formato ${i.formato || '?'} · token ${i.token ? 'sim' : 'não'}`);
   $('#msg-vistos').textContent = `Pedidos de legenda que o Android viu passar: ${estado.vistos.length}.`;
   $('#btn-baixar-android').disabled = !window.LDNativo;
 };
