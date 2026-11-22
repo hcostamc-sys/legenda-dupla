@@ -508,6 +508,18 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   -webkit-user-select: none;
   text-align: center;
 }
+.caixa-legenda.marcando-ab { border: 2px dashed var(--ambar); cursor: pointer; }
+.dica-ab {
+  margin: 0 0 6px;
+  align-self: center;
+  background: var(--ambar);
+  color: #111;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  max-width: 100%;
+}
 .legenda-meio { margin: auto 0; display: flex; flex-direction: column; gap: 10px; }
 .caixa-legenda .linha { overflow-wrap: anywhere; line-height: 1.35; }
 .caixa-legenda .l1 { font-size: var(--fonte-l1); color: var(--texto); font-weight: 500; }

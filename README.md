@@ -27,7 +27,7 @@ De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**,
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
 | Repetir a fala atual sem parar | Botão **Loop** (seta com 1); toque de novo para desligar | L |
-| Repetir um trecho | Botão **A–B**: toque na fala onde começa (fica “A…”), depois na fala onde termina; toque de novo para parar | B |
+| Repetir um trecho | Toque em **A–B** (a legenda fica com borda tracejada). Toque **na legenda** na fala onde o trecho começa (A); avance até a fala final e toque **na legenda** de novo (B). O trecho começa a repetir. Toque em **A–B** para parar | B (inicia e marca) |
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
 | Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |

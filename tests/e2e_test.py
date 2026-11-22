@@ -321,12 +321,19 @@ def t_repeticao(page):
     page.click('#btn-loop')
     expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'false')
     esperar(lambda: exibida(page) == 5, limite=4, msg='seguiu sem loop')
-    # A–B: marca A na fala 6 e B na fala 7
+    # A–B: botão inicia; toque na legenda marca A (fala 6) e depois B (fala 7)
     page.click('#btn-ab')
-    expect(page.locator('#btn-ab')).to_have_text('A…')
+    expect(page.locator('#btn-ab')).to_have_text('A?')
+    expect(page.locator('#dica-ab')).to_be_visible()
+    esperar(lambda: exibida(page) == 5, limite=4, msg='chegou na fala 6')
+    tocar_rapido(page, '#caixa-legenda')
+    expect(page.locator('#btn-ab')).to_have_text('B?')
+    expect(page.locator('#cartao-palavra')).to_be_hidden()  # marcar não abre o cartão da palavra
     esperar(lambda: exibida(page) == 6, limite=4, msg='chegou na fala 7')
-    page.click('#btn-ab')
+    tocar_rapido(page, '#caixa-legenda')
     expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#dica-ab')).to_be_hidden()
+    assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b]') == [5, 6]
     inicio_a = page.evaluate('window.__ld.S.unidades[5].s')
     voltou, ultimo, fim_t = False, tempo(page), time.time() + 6
     while time.time() < fim_t:
