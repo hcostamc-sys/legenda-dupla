@@ -423,12 +423,45 @@
 <div id="tela-gestos" class="dialogo dialogo-gestos" hidden role="dialog" aria-modal="true" aria-labelledby="gestos-titulo">
   <div class="dialogo-caixa caixa-gestos">
     <h2 id="gestos-titulo">Como avançar e retroceder o vídeo</h2>
-    <!-- Demonstração animada: um vídeo com a barra do tempo e a legenda (modo lista). O polegar desliza
-         rápido sobre o vídeo, para um lado e para o outro; aparece o ícone de retroceder ou de avançar,
-         o ponto da barra do tempo volta ou vai para a frente e a legenda anda junto.
+    <!-- Demonstração animada: uma faixa fina de um vídeo de diálogo (desfocado), a barra do tempo e a legenda
+         (modo lista). O polegar desliza rápido sobre a legenda, entre a fala do meio e a de baixo, para um
+         lado e para o outro; aparece o ícone de retroceder ou de avançar, o ponto da barra do tempo volta ou
+         vai para a frente e a legenda anda junto.
          Com "Inverter direção do arraste", a classe .invertido troca os ícones e o sentido. -->
     <div id="demo-gestos" class="demo-gestos" aria-hidden="true">
       <div class="demo-video">
+        <!-- cena desenhada (duas pessoas conversando, de frente uma para a outra), desfocada como um vídeo -->
+        <svg class="demo-cena" viewBox="0 0 360 72" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="dc-parede" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#4a5a6b"/><stop offset="0.55" stop-color="#6b5d50"/><stop offset="1" stop-color="#8a6f55"/>
+            </linearGradient>
+            <radialGradient id="dc-luz" cx="0.82" cy="0.2" r="0.5">
+              <stop offset="0" stop-color="#ffe9c4" stop-opacity="0.85"/><stop offset="1" stop-color="#ffe9c4" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width="360" height="72" fill="url(#dc-parede)"/>
+          <rect x="262" y="-6" width="74" height="52" rx="3" fill="#d9e6ef" opacity="0.55"/>
+          <rect width="360" height="72" fill="url(#dc-luz)"/>
+          <rect x="18" y="8" width="40" height="34" rx="2" fill="#2f3b47" opacity="0.7"/>
+          <ellipse cx="190" cy="74" rx="190" ry="10" fill="#2a211b" opacity="0.6"/>
+          <!-- pessoa da esquerda (olhando para a direita) -->
+          <g class="dc-pessoa dc-p1">
+            <ellipse cx="112" cy="86" rx="40" ry="34" fill="#2f5f93"/>
+            <rect x="105" y="44" width="14" height="14" rx="5" fill="#b9856a"/>
+            <ellipse cx="115" cy="34" rx="15" ry="17" fill="#c9957a"/>
+            <path d="M99 32c0-12 8-19 18-19s15 6 15 13c-6-4-13-4-19-1-5 2-8 5-14 7z" fill="#231812"/>
+            <ellipse cx="129" cy="37" rx="3" ry="4" fill="#b9856a"/>
+          </g>
+          <!-- pessoa da direita (olhando para a esquerda) -->
+          <g class="dc-pessoa dc-p2">
+            <ellipse cx="246" cy="88" rx="38" ry="34" fill="#b4513d"/>
+            <rect x="240" y="44" width="13" height="14" rx="5" fill="#d6a886"/>
+            <ellipse cx="243" cy="33" rx="14" ry="16" fill="#e4b896"/>
+            <path d="M228 34c-2-13 6-21 16-21 11 0 17 8 16 20l1 18c-4 3-8 3-10 0l-1-15c-5-3-10-4-15-3-3 0-5 0-7 1z" fill="#6a4529"/>
+            <ellipse cx="229" cy="36" rx="3" ry="4" fill="#d6a886"/>
+          </g>
+        </svg>
         <div class="demo-icone demo-icone-1">
           <span class="demo-circulo">
             <svg class="ic-retroceder" viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
@@ -443,8 +476,6 @@
           </span>
           <span class="demo-rotulo"><span class="ic-avancar">Avançar</span><span class="ic-retroceder">Retroceder</span></span>
         </div>
-        <div class="demo-rastro"></div>
-        <div class="demo-toque"></div>
       </div>
       <div class="demo-tempo"><div class="demo-barra"><div class="demo-feito"></div><div class="demo-cursor"></div></div></div>
       <div class="demo-janela">
@@ -456,6 +487,9 @@
           <div class="demo-linha">Sure, let's go!</div>
         </div>
       </div>
+      <!-- rastro e ponto do toque: sobre a legenda, entre a fala do meio e a de baixo -->
+      <div class="demo-rastro"></div>
+      <div class="demo-toque"></div>
       <!-- polegar (desenho próprio), com a ponta no ponto do toque -->
       <div class="demo-polegar">
         <svg viewBox="0 0 44 96">

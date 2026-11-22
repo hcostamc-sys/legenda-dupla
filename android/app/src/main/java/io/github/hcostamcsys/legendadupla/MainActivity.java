@@ -40,6 +40,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.ServiceWorkerClientCompat;
 import androidx.webkit.ServiceWorkerControllerCompat;
@@ -87,12 +88,21 @@ import java.util.regex.Pattern;
  *    "Tentando reconectar à Internet…" e para o vídeo continuar sozinho.
  * 12) transições (versão 12): o YouTube da tela inicial entra e sai com animação suave (0,3 s / 0,24 s) e as
  *    abas do próprio YouTube trocam com esmaecimento (assets/youtube.js).
+ *    Versão 13: eixo horizontal compartilhado (Material Design): abrir um vídeo empurra o YouTube para a
+ *    esquerda e a página entra pela direita; voltar faz o contrário. As abas do YouTube deslizam no sentido
+ *    da aba tocada (youtube.js).
+ * 13) tela inicial estável (versão 13): o YouTube não recarrega mais sozinho ao voltar de um vídeo (a lista
+ *    antiga aparecia por uns 2 s e trocava, e o toque nesse meio-tempo se perdia). Atualizar só puxando a
+ *    lista para baixo; enquanto recarrega, uma capa com o ícone de recarregando cobre a lista antiga.
+ *    Nas páginas de histórico (Você, Histórico, playlists) a recarga depois de um vídeo continua, sob a capa.
+ *    O toque num vídeo é pego antes de o YouTube abrir a página dele (youtube.js + LDYoutube): a lista
+ *    fica exatamente como estava, sem ir e voltar.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 12; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 13; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -117,9 +127,19 @@ public class MainActivity extends Activity {
     private final AtomicBoolean historicoMudou = new AtomicBoolean(false);
     /** O YouTube está saindo da tela (animação de 0,24 s): para o app, já não está mais na tela. */
     private boolean ytFechando = false;
-    // Curvas padrão do Material Design: entrar desacelerando, sair acelerando.
-    private static final PathInterpolator CURVA_ENTRA = new PathInterpolator(0.2f, 0f, 0f, 1f);
-    private static final PathInterpolator CURVA_SAI = new PathInterpolator(0.4f, 0f, 1f, 1f);
+    // Curvas "enfatizadas" do Material Design 3: entrar desacelerando bem no fim, sair acelerando.
+    private static final PathInterpolator CURVA_ENTRA = new PathInterpolator(0.05f, 0.7f, 0.1f, 1f);
+    private static final PathInterpolator CURVA_SAI = new PathInterpolator(0.3f, 0f, 0.8f, 0.15f);
+    /** Atualizar puxando para baixo (envolve o YouTube da tela inicial). */
+    private SwipeRefreshLayout atualizadorYt;
+    /** Capa por cima do YouTube enquanto ele recarrega: a lista antiga nunca aparece. */
+    private View capaYt;
+    private boolean recarregandoYt = false;
+    private boolean recargaComecou = false;
+    private int geracaoRecarga = 0;
+    /** Elementos que indicam que a lista nova do YouTube já foi desenhada. */
+    private static final String ITENS_YT = "ytm-rich-item-renderer, ytm-video-with-context-renderer, "
+            + "ytm-compact-video-renderer, ytm-media-item, ytm-playlist-video-renderer, ytm-video-card-renderer";
     private ConnectivityManager conectividade;
     private ConnectivityManager.NetworkCallback ouvinteRede;
     private Boolean ultimoOnline;
@@ -382,6 +402,21 @@ public class MainActivity extends Activity {
             WebViewCompat.addDocumentStartJavaScript(ytWeb, scriptYoutube,
                     new HashSet<>(Arrays.asList("https://m.youtube.com", "https://www.youtube.com")));
         }
+        // Toque num vídeo: youtube.js avisa por aqui antes de o YouTube abrir a página do vídeo (a lista fica
+        // como estava). Sem esse recurso, o app pega a troca de endereço (doUpdateVisitedHistory) e volta.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(ytWeb, "LDYoutube",
+                    new HashSet<>(Arrays.asList("https://m.youtube.com", "https://www.youtube.com")),
+                    (view, mensagem, origem, quadroPrincipal, resposta) -> {
+                        if (!quadroPrincipal) return;
+                        final String url = mensagem.getData();
+                        if (url == null || url.isEmpty()) return;
+                        runOnUiThread(() -> {
+                            Uri u = Uri.parse(url);
+                            if ("https".equals(u.getScheme()) && ehVideo(u) && youtubeNaTela()) escolherVideo(url, false);
+                        });
+                    });
+        }
         // Durante a saída animada do YouTube, o toque não vai mais para ele (vai para o vídeo que está abrindo).
         ytWeb.setOnTouchListener((v, ev) -> ytFechando);
         ytWeb.setWebChromeClient(new WebChromeClient());
@@ -413,8 +448,14 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap icone) {
+                if (recarregandoYt) recargaComecou = true;
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 atualizarBotaoEntrar();
+                if (recarregandoYt && recargaComecou) esperarListaNova(geracaoRecarga, 20);
                 // Reforço (WebView sem script no início da página): o script não repete se já rodou.
                 if (!scriptYoutube.isEmpty() && url != null && url.contains("youtube.com")) {
                     view.evaluateJavascript(scriptYoutube, null);
@@ -425,7 +466,25 @@ public class MainActivity extends Activity {
         painelYt.addView(barra, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         painelYt.addView(linha, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
-        painelYt.addView(ytWeb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        // YouTube + capa de recarga, dentro do "puxar para atualizar".
+        FrameLayout caixaYt = new FrameLayout(this);
+        caixaYt.addView(ytWeb, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        capaYt = new View(this);
+        capaYt.setBackgroundColor(Color.parseColor("#111111"));
+        capaYt.setClickable(true); // enquanto recarrega, o toque não vai para a lista
+        capaYt.setVisibility(View.GONE);
+        caixaYt.addView(capaYt, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        atualizadorYt = new SwipeRefreshLayout(this);
+        atualizadorYt.setColorSchemeColors(Color.parseColor("#ffd54f"));
+        atualizadorYt.setProgressBackgroundColorSchemeColor(Color.parseColor("#262626"));
+        // Só puxa para atualizar com a lista no topo (o YouTube rola a página inteira).
+        atualizadorYt.setOnChildScrollUpCallback((pai, filho) -> recarregandoYt || ytWeb.canScrollVertically(-1));
+        atualizadorYt.setOnRefreshListener(() -> recarregarYoutube(false));
+        atualizadorYt.addView(caixaYt, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        painelYt.addView(atualizadorYt, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         painelYt.setVisibility(View.GONE);
         raiz.addView(painelYt, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -482,18 +541,6 @@ public class MainActivity extends Activity {
             if (!"https".equals(u.getScheme()) || !host.endsWith("youtube.com")) return;
         }
         if (painelYt == null) criarPainelYoutube();
-        // Transição suave: o YouTube sobe um pouco e aparece por cima da página (0,3 s).
-        boolean escondido = painelYt.getVisibility() != View.VISIBLE;
-        painelYt.animate().cancel();
-        ytFechando = false;
-        if (escondido) {
-            painelYt.setAlpha(0f);
-            painelYt.setTranslationY(dp(18));
-            painelYt.setVisibility(View.VISIBLE);
-        }
-        if (painelYt.getAlpha() < 1f || painelYt.getTranslationY() != 0f) {
-            painelYt.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(CURVA_ENTRA).start();
-        }
         ytWeb.onResume();
         atualizarBotaoEntrar();
         String alvo = (url == null || url.isEmpty()) ? (ultimoUrlYt.isEmpty() ? INICIO_YOUTUBE : null) : url;
@@ -501,27 +548,109 @@ public class MainActivity extends Activity {
             ultimoUrlYt = alvo;
             historicoMudou.set(false); // a página nova já vem atualizada
             ytWeb.loadUrl(alvo);
-        } else if (historicoMudou.get()) {
-            recarregarYoutubeDepoisDoHistorico();
+        } else if (historicoMudou.get() && paginaDeHistorico(ytWeb.getUrl())) {
+            // Página do histórico: recarrega por baixo da capa (a capa entra antes de o YouTube aparecer).
+            recarregarYoutube(true);
+        }
+        // A página inicial do YouTube fica exatamente como estava: sem recarregar (só puxando para baixo).
+        // Transição (eixo horizontal, voltando): o YouTube entra pela esquerda e a página sai pela direita.
+        boolean escondido = painelYt.getVisibility() != View.VISIBLE;
+        painelYt.animate().cancel();
+        ytFechando = false;
+        float d = dp(40);
+        if (escondido) {
+            painelYt.setAlpha(0f);
+            painelYt.setTranslationX(-d);
+            painelYt.setTranslationY(0f);
+            painelYt.setVisibility(View.VISIBLE);
+            if (web != null) {
+                web.animate().cancel();
+                web.animate().alpha(0f).translationX(d).setStartDelay(0).setDuration(200)
+                        .setInterpolator(CURVA_SAI).start();
+            }
+        }
+        if (painelYt.getAlpha() < 1f || painelYt.getTranslationX() != 0f) {
+            painelYt.animate().alpha(1f).translationX(0f).setStartDelay(escondido ? 50 : 0).setDuration(420)
+                    .setInterpolator(CURVA_ENTRA).withEndAction(this::restaurarPagina).start();
+        } else {
+            restaurarPagina();
         }
     }
 
+    /** A página por baixo do YouTube volta ao lugar (fica pronta para a próxima vez). */
+    private void restaurarPagina() {
+        if (web == null || !youtubeNaTela()) return;
+        web.animate().cancel();
+        web.setAlpha(1f);
+        web.setTranslationX(0f);
+    }
+
+    /** Páginas do YouTube que mostram o histórico: valem a recarga depois de assistir a um vídeo. */
+    private static boolean paginaDeHistorico(String url) {
+        if (url == null) return false;
+        String caminho = Uri.parse(url).getPath();
+        if (caminho == null) return false;
+        return caminho.startsWith("/feed/history") || caminho.startsWith("/feed/library")
+                || caminho.startsWith("/feed/you") || caminho.startsWith("/playlist");
+    }
+
     /**
-     * Um vídeo foi registrado no histórico: o YouTube da tela inicial ainda mostra a página de antes (sem o
-     * vídeo no histórico e sem a barrinha de progresso). Espera os últimos registros saírem (a fila "rede") e
-     * recarrega a página sozinho, sem a pessoa precisar puxar para atualizar.
+     * Recarrega o YouTube da tela inicial por baixo de uma capa com o ícone de recarregando: a lista antiga
+     * some na hora e a nova só aparece já desenhada. depoisDoHistorico: espera os últimos registros do
+     * histórico saírem (a fila "rede") e um instante para o YouTube processá-los.
      */
-    private void recarregarYoutubeDepoisDoHistorico() {
-        rede.execute(() -> runOnUiThread(() -> {
-            if (ytWeb == null || painelYt == null) return;
-            // Um instante para o YouTube processar o último registro.
-            ytWeb.postDelayed(() -> {
-                if (!youtubeNaTela() || !historicoMudou.getAndSet(false)) return;
-                String atual = ytWeb.getUrl();
-                if (atual == null || !atual.contains("youtube.com") || atual.contains("accounts.google")) return;
-                ytWeb.reload();
-            }, 700);
-        }));
+    private void recarregarYoutube(boolean depoisDoHistorico) {
+        if (ytWeb == null || capaYt == null) return;
+        String atual = ytWeb.getUrl();
+        if (atual == null || atual.isEmpty() || atual.contains("accounts.google")) {
+            atualizadorYt.setRefreshing(false);
+            return;
+        }
+        final int geracao = ++geracaoRecarga;
+        recarregandoYt = true;
+        recargaComecou = false;
+        historicoMudou.set(false);
+        capaYt.animate().cancel();
+        capaYt.setAlpha(1f);
+        capaYt.setVisibility(View.VISIBLE);
+        atualizadorYt.setRefreshing(true);
+        Runnable recarregar = () -> {
+            if (geracao != geracaoRecarga || ytWeb == null) return;
+            ytWeb.reload();
+        };
+        if (depoisDoHistorico) {
+            rede.execute(() -> runOnUiThread(() -> ytWeb.postDelayed(recarregar, 700)));
+        } else {
+            recarregar.run();
+        }
+        // Limite: a capa nunca fica mais de 15 s (internet lenta: aparece o que o YouTube tiver).
+        capaYt.postDelayed(() -> { if (geracao == geracaoRecarga && recarregandoYt) mostrarListaNova(); }, 15000);
+    }
+
+    /** Espera a lista nova estar desenhada (até ~3 s depois de a página carregar) e tira a capa. */
+    private void esperarListaNova(int geracao, int tentativas) {
+        if (geracao != geracaoRecarga || !recarregandoYt || ytWeb == null) return;
+        String js = "!!document.querySelector(" + JSONObject.quote(ITENS_YT) + ")";
+        ytWeb.evaluateJavascript(js, r -> {
+            if (geracao != geracaoRecarga || !recarregandoYt) return;
+            if ("true".equals(r) || tentativas <= 0) ytWeb.postDelayed(this::mostrarListaNova, 120);
+            else ytWeb.postDelayed(() -> esperarListaNova(geracao, tentativas - 1), 150);
+        });
+    }
+
+    /** Tira a capa de recarga com um esmaecimento curto. */
+    private void mostrarListaNova() {
+        if (capaYt == null) return;
+        recarregandoYt = false;
+        recargaComecou = false;
+        atualizadorYt.setRefreshing(false);
+        capaYt.animate().cancel();
+        capaYt.animate().alpha(0f).setStartDelay(0).setDuration(220).setInterpolator(CURVA_ENTRA)
+                .withEndAction(() -> {
+                    if (recarregandoYt) return; // outra recarga começou
+                    capaYt.setVisibility(View.GONE);
+                    capaYt.setAlpha(1f);
+                }).start();
     }
 
     private void pausarYoutube() {
@@ -535,21 +664,31 @@ public class MainActivity extends Activity {
         return painelYt != null && painelYt.getVisibility() == View.VISIBLE && !ytFechando;
     }
 
-    /** Esconde o YouTube com transição suave (apaga e desce um pouco em 0,24 s), mostrando a página. */
+    /**
+     * Esconde o YouTube com a transição de eixo horizontal (avançando): o YouTube sai para a esquerda,
+     * apagando rápido (0,2 s), e a página entra pela direita, desacelerando (0,4 s).
+     */
     private void fecharYoutube() {
         if (!youtubeNaTela()) return;
         pausarYoutube();
         ytFechando = true;
+        float d = dp(40);
         painelYt.animate().cancel();
-        painelYt.animate().alpha(0f).translationY(dp(12)).setDuration(240).setInterpolator(CURVA_SAI)
+        painelYt.animate().alpha(0f).translationX(-d).setStartDelay(0).setDuration(200).setInterpolator(CURVA_SAI)
                 .withEndAction(() -> {
                     if (!ytFechando) return; // voltou a aparecer no meio da animação
                     ytFechando = false;
                     painelYt.setVisibility(View.GONE);
                     painelYt.setAlpha(1f);
-                    painelYt.setTranslationY(0f);
+                    painelYt.setTranslationX(0f);
                     ytWeb.onPause();
                 }).start();
+        if (web != null) {
+            web.animate().cancel();
+            web.setAlpha(0f);
+            web.setTranslationX(d);
+            web.animate().alpha(1f).translationX(0f).setStartDelay(60).setDuration(400).setInterpolator(CURVA_ENTRA).start();
+        }
     }
 
     /** Vídeo tocado na lista do YouTube: fecha o YouTube e abre o vídeo no Legenda Dupla. */

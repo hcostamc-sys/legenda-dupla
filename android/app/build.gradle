@@ -10,8 +10,8 @@ android {
         applicationId 'io.github.hcostamcsys.legendadupla'
         minSdk 26
         targetSdk 35
-        versionCode 12
-        versionName '0.12'
+        versionCode 13
+        versionName '0.13'
     }
 
     // Chave fixa de teste: assim cada APK novo instala por cima do anterior, sem desinstalar.
@@ -39,4 +39,6 @@ android {
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
+    // Puxar para atualizar o YouTube da tela inicial (versão 13)
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
 }

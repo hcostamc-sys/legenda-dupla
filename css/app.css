@@ -1058,9 +1058,7 @@ body.imersivo:not(.faixa-visivel) .barra-botoes { opacity: 0; pointer-events: no
   border-radius: 18px 18px 0 0;
   display: flex;
   flex-direction: column;
-  animation: subir 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
-@keyframes subir { from { transform: translateY(48px); opacity: 0; } to { transform: none; opacity: 1; } }
 .painel-topo {
   display: flex;
   align-items: center;
@@ -1256,7 +1254,7 @@ html.i18n-carregando body { visibility: hidden; }
 /* ============================== COMO AVANÇAR E RETROCEDER O VÍDEO (explicação animada) ============================== */
 
 .dialogo-gestos { z-index: 46; background: rgba(0, 0, 0, 0.82); }
-.caixa-gestos { max-height: calc(100dvh - 32px); overflow-y: auto; animation: bloqueio-entra 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+.caixa-gestos { max-height: calc(100dvh - 32px); overflow-y: auto; }
 .caixa-gestos h2 { margin: 2px 0 10px; font-size: 20px; text-align: center; }
 .caixa-gestos .dica { margin: 0 0 8px; font-size: 15px; color: var(--texto-2); }
 .caixa-gestos .lista-gestos-demo { margin: 0 0 10px; font-size: 15px; color: var(--texto); }
@@ -1266,14 +1264,17 @@ html.i18n-carregando body { visibility: hidden; }
 
 .caixa-gestos .dica-pequena { font-size: 13px; margin-top: -4px; }
 
-/* Demonstração: vídeo (com o ícone de retroceder/avançar), barra do tempo e a legenda no modo lista.
+/* Demonstração: uma faixa fina do vídeo (diálogo desfocado, com o ícone de retroceder/avançar), barra do
+   tempo e a legenda no modo lista. O polegar desliza sobre a legenda, entre a fala do meio e a de baixo.
    Um ciclo de 4,4 s: 0–50% o polegar desliza da esquerda para a direita; 50–100%, da direita para a
    esquerda. Cada deslize dura uns 0,4 s (rápido, como o gesto de verdade). */
 .demo-gestos {
   --demo-ciclo: 4.4s;
-  --demo-video: 150px;
+  --demo-video: 68px;
+  --demo-tempo: 21px;
   --demo-fala: 44px;
-  --demo-toque-y: 72%;
+  /* ponto do toque: na divisa entre a fala do meio e a de baixo */
+  --demo-toque-y: calc(var(--demo-video) + var(--demo-tempo) + 2 * var(--demo-fala));
   position: relative;
   margin: 0 auto 14px;
   max-width: 360px;
@@ -1286,39 +1287,72 @@ html.i18n-carregando body { visibility: hidden; }
   position: relative;
   height: var(--demo-video);
   overflow: hidden;
-  background:
-    radial-gradient(120% 90% at 30% 20%, rgba(120, 160, 210, 0.35), transparent 60%),
-    radial-gradient(90% 80% at 80% 90%, rgba(255, 213, 79, 0.12), transparent 60%),
-    linear-gradient(160deg, #26303c, #11161d);
+  background: #2b3036;
 }
-/* ícone no meio do vídeo, como o do YouTube ao tocar duas vezes */
+/* a cena é maior que a faixa (o desfoque não deixa borda clara) e respira devagar, como um vídeo */
+.demo-cena {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: calc(100% + 24px);
+  height: calc(100% + 24px);
+  filter: blur(3.2px) saturate(1.1) brightness(0.78);
+  animation: demo-camera 9s ease-in-out infinite alternate;
+}
+/* quem fala mexe a cabeça de leve: a da esquerda na 1ª metade do ciclo, a da direita na 2ª */
+.dc-pessoa { transform-box: fill-box; transform-origin: 50% 100%; }
+.dc-p1 { animation: dc-fala-1 var(--demo-ciclo) ease-in-out infinite; }
+.dc-p2 { animation: dc-fala-2 var(--demo-ciclo) ease-in-out infinite; }
+@keyframes demo-camera { from { transform: scale(1) translateX(0); } to { transform: scale(1.06) translateX(-4px); } }
+@keyframes dc-fala-1 {
+  0%, 50%, 100% { transform: none; }
+  12% { transform: translateY(-1.5px) rotate(-1.5deg); }
+  25% { transform: translateY(0.5px) rotate(1deg); }
+  38% { transform: translateY(-1px) rotate(-1deg); }
+}
+@keyframes dc-fala-2 {
+  0%, 50%, 100% { transform: none; }
+  62% { transform: translateY(-1.5px) rotate(1.5deg); }
+  75% { transform: translateY(0.5px) rotate(-1deg); }
+  88% { transform: translateY(-1px) rotate(1deg); }
+}
+/* sombra nas bordas (cara de vídeo) e legibilidade do ícone */
+.demo-video::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(130% 160% at 50% 50%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+/* ícone no meio da faixa do vídeo, como o do YouTube ao tocar duas vezes */
 .demo-icone {
   position: absolute;
   z-index: 2;
   left: 50%;
-  top: 34%;
+  top: 50%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   transform: translate(-50%, -50%) scale(0.6);
   opacity: 0;
   pointer-events: none;
 }
 .demo-circulo {
-  width: 58px;
-  height: 58px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: rgba(0, 0, 0, 0.6);
   border: 2px solid var(--ambar);
 }
-.demo-circulo svg { width: 34px; height: 34px; fill: var(--ambar); }
+.demo-circulo svg { width: 24px; height: 24px; fill: var(--ambar); }
 .demo-rotulo {
-  padding: 2px 10px;
+  padding: 3px 11px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-size: 14px;
   font-weight: 700;
@@ -1332,7 +1366,7 @@ html.i18n-carregando body { visibility: hidden; }
 .demo-icone-2 { animation: demo-icone-2 var(--demo-ciclo) infinite; }
 .demo-rastro {
   position: absolute;
-  z-index: 1;
+  z-index: 3;
   top: calc(var(--demo-toque-y) - 2px);
   height: 4px;
   border-radius: 2px;
@@ -1355,7 +1389,8 @@ html.i18n-carregando body { visibility: hidden; }
   animation: demo-toque var(--demo-ciclo) infinite;
 }
 /* barra do tempo: o ponto volta (retroceder) e vai para a frente (avançar) */
-.demo-tempo { padding: 9px 14px 8px; background: #0d0d0d; }
+.demo-tempo { height: var(--demo-tempo); padding: 0 14px; display: flex; align-items: center; background: #0d0d0d; }
+.demo-tempo .demo-barra { flex: 1; }
 .demo-barra { position: relative; height: 4px; border-radius: 2px; background: #3a3a3a; }
 .demo-feito {
   position: absolute;
@@ -1408,7 +1443,7 @@ html.i18n-carregando body { visibility: hidden; }
 .demo-polegar {
   position: absolute;
   z-index: 4;
-  top: calc(var(--demo-video) * 0.72);
+  top: var(--demo-toque-y);
   left: 22%;
   width: 0;
   height: 0;
@@ -1520,6 +1555,7 @@ html.i18n-carregando body { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .caixa-gestos { animation: none; }
   .demo-gestos { --demo-ciclo: 8.8s; }
+  .demo-cena { animation: none; }
 }
 
 /* Vídeo já salvo esperando a explicação dos gestos fechar: fica escuro até a entrada suave */
@@ -1537,33 +1573,102 @@ html.i18n-carregando body { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .entrada-suave { animation: entrada-suave-leve 0.6s ease-out both; } }
 @keyframes entrada-suave-leve { from { opacity: 0; } to { opacity: 1; } }
 
-/* ============================== TRANSIÇÕES ENTRE TELAS E MENUS ==============================
-   Curvas padrão do Material Design: entrar desacelerando (0.2, 0, 0, 1), sair acelerando (0.4, 0, 1, 1).
-   Entradas de 0,22 a 0,3 s; saídas um pouco mais curtas. As saídas usam a classe .saindo (app.js:
-   esconderComAnimacao), que espera a animação terminar antes de esconder. */
+/* ============================== TRANSIÇÕES ENTRE TELAS, JANELAS E MENUS ==============================
+   Movimento no padrão do Material Design 3:
+   - curvas "enfatizadas": entrar desacelerando bem no fim (0.05, 0.7, 0.1, 1); sair acelerando (0.3, 0, 0.8, 0.15);
+   - entradas de 0,35 a 0,5 s; saídas curtas (0,15 a 0,25 s), para a tela responder rápido;
+   - janelas crescem do centro e sobem um pouco; o conteúdo delas entra em cascata (um item depois do outro);
+   - painéis de baixo (Ajustes, Ajuda) sobem da borda; menus crescem a partir do botão que os abriu.
+   Saída das janelas: o atributo hidden entra na hora (para o app a janela já fechou), mas ela continua
+   desenhada enquanto some (transition-behavior: allow-discrete, Chrome 117+; nos mais antigos some na hora).
+   Painéis e menus usam a classe .saindo (app.js: esconderComAnimacao). */
+:root {
+  --curva-entra: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --curva-sai: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --curva-padrao: cubic-bezier(0.2, 0, 0, 1);
+}
 @keyframes tr-aparece { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tr-some { from { opacity: 1; } to { opacity: 0; } }
-@keyframes tr-caixa-entra { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
-@keyframes tr-desce { from { transform: none; opacity: 1; } to { transform: translateY(48px); opacity: 0; } }
-@keyframes tr-menu-entra { from { opacity: 0; transform: translateY(8px) scale(0.92); } to { opacity: 1; transform: none; } }
-@keyframes tr-menu-sai { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(0.95); } }
-@keyframes tr-lista-entra { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes tr-janela-entra {
+  from { opacity: 0; transform: translateY(32px) scale(0.88); }
+  40% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tr-item-entra { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes tr-painel-sobe { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes tr-painel-desce { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes tr-menu-entra {
+  from { opacity: 0; transform: scale(0.6, 0.4); }
+  30% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tr-menu-sai { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.9); } }
+@keyframes tr-menu-item { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes tr-tela-sobe {
+  from { opacity: 0; transform: translateY(56px); }
+  35% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
 
-/* Troca entre Meus vídeos e o vídeo (só opacidade: não mexe na posição de nada que é fixo na tela) */
 /* saindo: o toque já passa para o que está embaixo */
 .saindo { pointer-events: none !important; }
-#tela-biblioteca, #tela-assistir { animation: tr-aparece 0.28s cubic-bezier(0.2, 0, 0, 1); }
-.fundo-painel { animation: tr-aparece 0.25s ease-out; }
-.fundo-painel.saindo { animation: tr-some 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
-.painel-ajustes.saindo { animation: tr-desce 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
-.menu-traducao { transform-origin: bottom right; animation: tr-menu-entra 0.22s cubic-bezier(0.2, 0, 0, 1); }
-.menu-traducao.saindo { animation: tr-menu-sai 0.15s cubic-bezier(0.4, 0, 1, 1) forwards; }
-.dialogo { animation: tr-aparece 0.22s ease-out; }
-.dialogo > .dialogo-caixa { animation: tr-caixa-entra 0.26s cubic-bezier(0.2, 0, 0, 1); }
-.dialogo-gestos > .caixa-gestos, .dialogo-bloqueio > .caixa-bloqueio { animation: bloqueio-entra 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-.tela-ab { animation: tr-lista-entra 0.3s cubic-bezier(0.2, 0, 0, 1); }
+
+/* Troca entre Meus vídeos e o vídeo (só opacidade: não mexe na posição de nada que é fixo na tela) */
+#tela-biblioteca, #tela-assistir { animation: tr-aparece 0.3s var(--curva-padrao); }
+
+/* ---- janelas (escolha do idioma, explicação dos gestos, carregando, avisos) ---- */
+.dialogo {
+  animation: tr-aparece 0.3s var(--curva-padrao);
+  transition: opacity 0.2s var(--curva-sai), display 0.2s allow-discrete;
+}
+.dialogo > .dialogo-caixa,
+.dialogo-gestos > .caixa-gestos,
+.dialogo-bloqueio > .caixa-bloqueio {
+  animation: tr-janela-entra 0.5s var(--curva-entra);
+  transition: opacity 0.2s var(--curva-sai), transform 0.2s var(--curva-sai);
+  will-change: transform;
+}
+/* conteúdo em cascata: cada item 40 ms depois do anterior (:where = sem peso: o que já tem animação
+   própria, como a roda de carregando, continua com a sua) */
+:where(.dialogo > .dialogo-caixa > *) { animation: tr-item-entra 0.45s var(--curva-entra) both; }
+:where(.dialogo > .dialogo-caixa > :nth-child(1)) { animation-delay: 0.06s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(2)) { animation-delay: 0.1s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(3)) { animation-delay: 0.14s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(4)) { animation-delay: 0.18s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(5)) { animation-delay: 0.22s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(6)) { animation-delay: 0.26s; }
+:where(.dialogo > .dialogo-caixa > :nth-child(n+7)) { animation-delay: 0.3s; }
+/* fechando: o fundo apaga e a caixa encolhe um pouco e desce */
+.dialogo[hidden] { opacity: 0; pointer-events: none; }
+.dialogo[hidden] > .dialogo-caixa { opacity: 0; transform: translateY(10px) scale(0.95); }
+
+/* ---- lista do trecho A–B (tela inteira): sobe da borda de baixo ---- */
+.tela-ab {
+  animation: tr-tela-sobe 0.45s var(--curva-entra);
+  transition: opacity 0.2s var(--curva-sai), transform 0.2s var(--curva-sai), display 0.2s allow-discrete;
+}
+.tela-ab[hidden] { opacity: 0; transform: translateY(40px); pointer-events: none; }
+
+/* ---- painéis de baixo (Ajustes, Ajuda) ---- */
+.fundo-painel { animation: tr-aparece 0.3s var(--curva-padrao); }
+.fundo-painel.saindo { animation: tr-some 0.25s var(--curva-sai) forwards; }
+.painel-ajustes { animation: tr-painel-sobe 0.5s var(--curva-entra); }
+.painel-ajustes.saindo { animation: tr-painel-desce 0.25s var(--curva-sai) forwards; }
+
+/* ---- menu da tradução: cresce a partir do botão (app.js põe a origem: em cima ou embaixo dele) ---- */
+.menu-traducao { transform-origin: bottom right; animation: tr-menu-entra 0.35s var(--curva-entra); }
+:where(.menu-traducao > *) { animation: tr-menu-item 0.3s var(--curva-entra) both; }
+:where(.menu-traducao > :nth-child(1)) { animation-delay: 0.05s; }
+:where(.menu-traducao > :nth-child(2)) { animation-delay: 0.08s; }
+:where(.menu-traducao > :nth-child(3)) { animation-delay: 0.11s; }
+:where(.menu-traducao > :nth-child(n+4)) { animation-delay: 0.14s; }
+.menu-traducao.saindo { animation: tr-menu-sai 0.15s var(--curva-sai) forwards; }
+.menu-traducao.saindo > * { animation: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  #tela-biblioteca, #tela-assistir, .fundo-painel, .painel-ajustes, .menu-traducao, .dialogo, .dialogo > .dialogo-caixa, .tela-ab,
+  #tela-biblioteca, #tela-assistir, .fundo-painel, .painel-ajustes, .menu-traducao, .menu-traducao > *,
+  .dialogo, .dialogo > .dialogo-caixa, .dialogo > .dialogo-caixa > :not(.roda), .tela-ab,
   .fundo-painel.saindo, .painel-ajustes.saindo, .menu-traducao.saindo,
   .dialogo-gestos > .caixa-gestos, .dialogo-bloqueio > .caixa-bloqueio { animation: none; }
+  .dialogo, .dialogo > .dialogo-caixa, .tela-ab { transition: none; }
 }

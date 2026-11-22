@@ -1293,6 +1293,8 @@ async function escolherLegendaYoutube(trocando = false) {
     salvar();
   }
   S.yt.fase = 'baixando';
+  // Vídeo novo: "Baixando a legenda" só aparece se demorar mais que a pausa entre as janelas.
+  S.yt.carregandoApos = trocando ? 0 : performance.now() + SAIDA_JANELA + PAUSA_ENTRE_JANELAS;
   mostrarCarregando();
   pedirFaixa(escolha.faixa);
 }
@@ -1406,6 +1408,14 @@ function mostrarCarregando() {
   const tela = $('#tela-carregando');
   if (!f || f === 'escolhendo' || f === 'gestos') { tela.hidden = true; return; }
   const a = S.anuncio;
+  // Logo depois da escolha do idioma: espera a pausa entre as janelas (com anúncio, aparece na hora).
+  const falta = (S.yt.carregandoApos || 0) - performance.now();
+  if (falta > 0 && (f === 'baixando' || f === 'procurando') && !a.ativo) {
+    tela.hidden = true;
+    clearTimeout(S.yt.timerCarregando);
+    S.yt.timerCarregando = setTimeout(mostrarCarregando, falta + 10);
+    return;
+  }
   let titulo = 'Carregando a legenda…';
   let texto = 'Aguarde: o vídeo começa quando a legenda estiver pronta.';
   if (f === 'baixando') titulo = 'Baixando a legenda…';
@@ -1468,6 +1478,15 @@ function cancelarCarregando() {
   voltarParaBiblioteca();
 }
 
+/**
+ * Pausa entre a saída da janela do idioma e a entrada da explicação dos gestos (pedido de 22/11): as janelas
+ * não emendam uma na outra. Conta a partir do fim da animação de saída da janela do idioma (0,2 s).
+ * A janela "Baixando a legenda" também espera esse tempo: se a legenda chegar antes, ela nem aparece.
+ */
+const PAUSA_ENTRE_JANELAS = 1000;
+const SAIDA_JANELA = 200;
+const esperarMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /** Janela de escolha: idioma da legenda (as faixas do vídeo) e tradução. Devolve { faixa, destino } ou null. */
 function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
   return new Promise((resolve) => {
@@ -1498,6 +1517,7 @@ function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
     $('#idioma-ok').focus();
     const fim = (r) => {
       tela.hidden = true;
+      S.idiomaSaiuEm = r ? performance.now() + SAIDA_JANELA : 0;
       $('#idioma-ok').onclick = null;
       $('#idioma-cancelar').onclick = null;
       trad.onchange = null;
@@ -1812,8 +1832,17 @@ function aplicarLegendaYoutube(cap) {
     // "não mostrar mais"). O vídeo espera parado, coberto; depois começa com entrada suave.
     if (!S.yt.trocando && (S.yt.preparando || S.yt.fase) && precisaExplicarGestos()) {
       S.yt.fase = 'gestos';
+      const carregandoAberto = !$('#tela-carregando').hidden;
       $('#tela-carregando').hidden = true;
       p?.pausar();
+      // 1 s entre a saída da janela do idioma e a explicação (e um instante depois de "Baixando a legenda").
+      let espera = S.idiomaSaiuEm ? S.idiomaSaiuEm + PAUSA_ENTRE_JANELAS - performance.now() : 0;
+      if (carregandoAberto) espera = Math.max(espera, SAIDA_JANELA + 250);
+      S.idiomaSaiuEm = 0;
+      if (espera > 0) {
+        await esperarMs(espera);
+        if (S.registro !== reg || S.player !== p || S.yt.fase !== 'gestos') return;
+      }
       const seguir = await mostrarExplicacaoGestos();
       if (!seguir || S.registro !== reg || S.player !== p || S.yt.fase !== 'gestos') return;
     }
@@ -3105,9 +3134,13 @@ function abrirMenuTraducao() {
   const alt = menu.offsetHeight;
   const esquerda = Math.min(window.innerWidth - larg - 8, Math.max(8, r.right - larg));
   let topo = r.top - alt - 8;
-  if (topo < 8) topo = r.bottom + 8;
+  let embaixo = false;
+  if (topo < 8) { topo = r.bottom + 8; embaixo = true; }
   menu.style.left = `${esquerda}px`;
   menu.style.top = `${topo}px`;
+  // O menu cresce a partir do botão: do canto mais perto dele.
+  const xOrigem = Math.min(larg, Math.max(0, r.left + r.width / 2 - esquerda));
+  menu.style.transformOrigin = `${Math.round(xOrigem)}px ${embaixo ? '0' : '100%'}`;
 }
 
 function fecharMenuTraducao() {
@@ -3541,9 +3574,10 @@ function abrirPainel(id) {
 }
 
 function fecharPaineis() {
-  esconderComAnimacao($('#fundo-painel'));
-  esconderComAnimacao($('#painel-ajustes'));
-  esconderComAnimacao($('#ajuda'));
+  // 0,25 s: o painel desce até sair da tela (css: tr-painel-desce)
+  esconderComAnimacao($('#fundo-painel'), 250);
+  esconderComAnimacao($('#painel-ajustes'), 250);
+  esconderComAnimacao($('#ajuda'), 250);
 }
 
 function aoMudarAjuste(el) {

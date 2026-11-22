@@ -741,7 +741,7 @@ def t_backup(page, url, pasta):
     # renomear
     page.click('.item-bib .menu-item .btn-topo')
     page.click('.menu-item-opcoes button:has-text("Renomear")')
-    page.fill('#dialogo-extra input', 'Aula de motores')
+    page.fill('#dialogo-extra input[type="text"]', 'Aula de motores')
     page.click('#dialogo-ok')
     expect(page.locator('.item-bib .titulo')).to_have_text('Aula de motores')
 
@@ -1907,6 +1907,72 @@ def t_capturas(browser, url, en, pt):
         ctx.close()
 
 
+@caso('20. Ajustes de 22/11 (4): toque no vídeo avisa o app sem o YouTube navegar; abas deslizam no sentido certo; 1 s entre as janelas')
+def t_ajustes_22_11_4(browser, base):
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'youtube.js')
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__yt = []; window.LDYoutube = { postMessage: (m) => window.__yt.push(m) };")
+    ctx.add_init_script(path=script)
+    page = ctx.new_page()
+    page.goto(base + 'tests/fixtures/nao_legenda.txt')
+    page.evaluate("""() => {
+      window.__navegou = 0;
+      document.body.innerHTML = `
+        <ytm-browse><a id="v1" href="https://m.youtube.com/watch?v=abcdefghijk"><span id="miniatura">Vídeo</span></a>
+          <a id="v2" href="https://m.youtube.com/watch?v=zzzzzzzzzzz"><button id="menu">⋮</button></a>
+          <a id="canal" href="https://m.youtube.com/@canal">Canal</a>
+          <a id="local" href="/watch?v=localocalxx">Fora do YouTube</a></ytm-browse>`;
+      // o "YouTube" abriria a página do vídeo no clique (fase de bolha)
+      document.addEventListener('click', (e) => { if (e.target.closest('a')) { window.__navegou++; e.preventDefault(); } });
+    }""")
+    page.click('#miniatura')
+    assert page.evaluate('window.__yt') == ['https://m.youtube.com/watch?v=abcdefghijk'], page.evaluate('window.__yt')
+    assert page.evaluate('window.__navegou') == 0  # o YouTube não chegou a abrir o vídeo
+    page.click('#menu')  # botão dentro do cartão: continua com o YouTube
+    page.click('#canal')  # link que não é vídeo: continua com o YouTube
+    page.click('#local')  # endereço fora do YouTube: não conta como vídeo
+    assert len(page.evaluate('window.__yt')) == 1
+    assert page.evaluate('window.__navegou') == 3
+    # Abas: Início → Você (à direita) vem da direita; Você → Início vem da esquerda; voltar vem da esquerda
+    page.evaluate("history.replaceState(null, '', '/')")
+    time.sleep(0.4)
+    page.evaluate("history.pushState(null, '', '/feed/you')")
+    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '1', msg='aba à direita')
+    time.sleep(1)
+    page.evaluate("history.pushState(null, '', '/')")
+    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '-1', msg='aba à esquerda')
+    time.sleep(1)
+    page.evaluate("history.pushState(null, '', '/feed/history')")
+    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '1', msg='página mais funda')
+    time.sleep(1)
+    page.evaluate("history.back()")
+    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '-1', msg='voltar')
+    esperar(lambda: not page.evaluate("document.documentElement.classList.contains('ld-saindo') || document.documentElement.classList.contains('ld-entrando')"),
+            msg='transição termina')
+    ctx.close()
+
+    # App Android, vídeo novo: a explicação dos gestos só aparece 1 s depois de a janela do idioma sair
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&gestos=1&app=android&apk=13&mockSoAsr=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=PAUSAJANELA')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.click('#idioma-ok')
+    t0 = time.time()
+    expect(page.locator('#tela-gestos')).to_be_visible(timeout=8000)
+    passou = time.time() - t0
+    assert passou >= 1.1, f'a explicação apareceu {passou:.2f} s depois da escolha do idioma'
+    expect(page.locator('#tela-carregando')).to_be_hidden()
+    page.click('#gestos-ok')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    assert not erros, erros
+    ctx.close()
+
+
 def main():
     srv, porta = subir_servidor()
     base = f'http://localhost:{porta}/'
@@ -1956,6 +2022,7 @@ def main():
         t_ajustes_22_11(browser, base, en, pt)
         t_permissao_erros(browser, base)
         t_ajustes_22_11_3(browser, base, en, pt)
+        t_ajustes_22_11_4(browser, base)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)
