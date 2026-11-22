@@ -47,7 +47,7 @@ export async function estadoPacote(id) {
  * Baixa um arquivo e grava direto no cache, sem juntar tudo na memória (o modelo tem até 210 MB):
  * os pedaços passam por um contador (progresso) a caminho do disco.
  */
-async function baixarArquivo(cache, url, tamanho, aoBytes, sinal) {
+async function baixarArquivo(cache, url, tamanho, aoBytes, sinal, chave = url) {
   const r = await fetch(url, { signal: sinal, credentials: 'omit', cache: 'no-store' });
   if (!r.ok) throw new Error(`O servidor respondeu ${r.status}.`);
   // Confere pelo tamanho conhecido do arquivo. O Content-Length não serve: quando o servidor manda
@@ -69,9 +69,9 @@ async function baixarArquivo(cache, url, tamanho, aoBytes, sinal) {
     recebidos = corpo.byteLength;
     aoBytes(recebidos);
   }
-  await cache.put(url, new Response(corpo, { headers: { 'Content-Type': 'application/octet-stream' } }));
+  await cache.put(chave, new Response(corpo, { headers: { 'Content-Type': 'application/octet-stream' } }));
   if (esperado && recebidos !== esperado) {
-    await cache.delete(url);
+    await cache.delete(chave);
     const e = new Error(`O download veio incompleto (${recebidos} de ${esperado} bytes).`);
     e.repetir = true;
     throw e;
@@ -118,6 +118,49 @@ export async function baixarPacote(id, { aoProgresso = () => {}, sinal } = {}) {
     if (e?.name === 'AbortError') throw e;
     const semEspaco = e?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message));
     throw new Error(semEspaco ? 'Falta espaço no celular para o pacote.' : e?.message || 'Não consegui baixar.');
+  }
+  aoProgresso(total, total);
+}
+
+/**
+ * App Android 9+: o próprio Android baixa (continua com o app em segundo plano, com a barra de
+ * progresso nas notificações). Esta é a lista que ele recebe: [{ url, bytes }], com o motor se faltar.
+ */
+export async function arquivosDoPacote(id) {
+  const p = PACOTES[id];
+  if (!p) throw new Error('Pacote desconhecido.');
+  const lista = [];
+  if (!(await temArquivo(URL_WASM))) lista.push({ url: URL_WASM, bytes: BYTES_WASM });
+  lista.push({ url: p.sp, bytes: p.bytesSp }, { url: p.modelo, bytes: p.bytesModelo });
+  return lista;
+}
+
+/**
+ * Passa para o cache os arquivos que o Android já baixou. arquivos: [{ url, local, bytes }]; "local" é o
+ * endereço pelo qual o app entrega o arquivo do celular. Fica guardado com o endereço original (url),
+ * igual ao download feito pela página. Se algo falhar, não deixa o pacote pela metade.
+ */
+export async function instalarArquivosBaixados(id, arquivos, { aoProgresso = () => {}, sinal } = {}) {
+  const p = PACOTES[id];
+  if (!p) throw new Error('Pacote desconhecido.');
+  if (!suportado()) throw new Error('Este aparelho não consegue guardar o pacote.');
+  const validos = new Set([URL_WASM, p.sp, p.modelo]);
+  const lista = (Array.isArray(arquivos) ? arquivos : []).filter((a) => a && validos.has(a.url) && typeof a.local === 'string');
+  if (!lista.some((a) => a.url === p.modelo) || !lista.some((a) => a.url === p.sp)) throw new Error('O download veio incompleto.');
+  try { await navigator.storage?.persist?.(); } catch { /* nada */ }
+  const cache = await caches.open(CACHE_MODELOS);
+  const total = lista.reduce((s, a) => s + (Number(a.bytes) || 0), 0);
+  let feitos = 0;
+  aoProgresso(0, total);
+  try {
+    for (const a of lista) {
+      await baixarArquivo(cache, a.local, Number(a.bytes) || 0, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); }, sinal, a.url);
+    }
+  } catch (e) {
+    await Promise.all([cache.delete(p.modelo), cache.delete(p.sp)]).catch(() => {});
+    if (e?.name === 'AbortError') throw e;
+    const semEspaco = e?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message));
+    throw new Error(semEspaco ? 'Falta espaço no celular para o pacote.' : e?.message || 'Não consegui instalar o pacote.');
   }
   aoProgresso(total, total);
 }

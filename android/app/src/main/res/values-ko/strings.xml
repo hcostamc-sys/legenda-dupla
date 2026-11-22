@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">내 동영상: 이미 공부한 동영상</string>
     <string name="entrar">로그인</string>
     <string name="entrar_desc">YouTube 계정에 로그인</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">다운로드</string>
+    <string name="modelos_baixando">향상된 문장부호 다운로드 중</string>
+    <string name="modelos_progresso">%1$s / %2$s MB</string>
+    <string name="modelos_preparando">준비 중…</string>
+    <string name="modelos_cancelar">취소</string>
+    <string name="modelos_pronto">향상된 문장부호 다운로드 완료</string>
+    <string name="modelos_pronto_texto">탭하여 앱을 열고 설치를 마치세요.</string>
+    <string name="modelos_falhou">다운로드 실패</string>
 </resources>

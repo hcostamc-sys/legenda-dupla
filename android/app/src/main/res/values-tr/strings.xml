@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">Videolarım: çalıştığınız videolar</string>
     <string name="entrar">Oturum aç</string>
     <string name="entrar_desc">YouTube hesabınızda oturum açın</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">İndirilenler</string>
+    <string name="modelos_baixando">Gelişmiş noktalama indiriliyor</string>
+    <string name="modelos_progresso">%1$s / %2$s MB</string>
+    <string name="modelos_preparando">Hazırlanıyor…</string>
+    <string name="modelos_cancelar">İptal</string>
+    <string name="modelos_pronto">Gelişmiş noktalama indirildi</string>
+    <string name="modelos_pronto_texto">Uygulamayı açıp kurulumu bitirmek için dokunun.</string>
+    <string name="modelos_falhou">İndirme başarısız</string>
 </resources>

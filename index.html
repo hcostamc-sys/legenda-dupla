@@ -123,6 +123,10 @@
     </div>
     <button id="btn-tocar-grande" type="button" class="btn-tocar-grande">▶ Tocar</button>
     <p id="aviso-toque" class="aviso-toque" hidden>Toque no vídeo para começar</p>
+    <!-- App Android: cobre o vídeo enquanto a legenda é preparada (o vídeo toca sem som por baixo) -->
+    <div id="video-preparando" class="video-preparando" hidden role="status" aria-label="Carregando o vídeo">
+      <div class="roda" aria-hidden="true"></div>
+    </div>
     <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
     <!-- Selo dos botões de controle (loop, A–B, tradução, lista, velocidade) -->
     <div id="selo-controle" class="selo-controle" role="status" aria-live="polite"><span class="selo-icone" hidden></span><span class="selo-texto"></span></div>

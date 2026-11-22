@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">I miei video: i video che hai già studiato</string>
     <string name="entrar">Accedi</string>
     <string name="entrar_desc">Accedi al tuo account YouTube</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Download</string>
+    <string name="modelos_baixando">Download della punteggiatura migliorata</string>
+    <string name="modelos_progresso">%1$s di %2$s MB</string>
+    <string name="modelos_preparando">Preparazione…</string>
+    <string name="modelos_cancelar">Annulla</string>
+    <string name="modelos_pronto">Punteggiatura migliorata scaricata</string>
+    <string name="modelos_pronto_texto">Tocca per aprire l\'app e completare l\'installazione.</string>
+    <string name="modelos_falhou">Download non riuscito</string>
 </resources>

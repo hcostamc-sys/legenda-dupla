@@ -328,7 +328,20 @@ body.android .tela-ab { padding-top: 0; }
 .gestos-ativos .camada-gestos { pointer-events: auto; }
 .toque-livre .camada-gestos { pointer-events: none; }
 /* Toque de verdade do app Android no "Pular" do YouTube: tudo que fica por cima do player deixa o toque passar */
-.toque-nativo .camada-gestos, .toque-nativo .dialogo, .toque-nativo .selo-anuncio, .toque-nativo .btn-tocar-grande { pointer-events: none !important; }
+.toque-nativo .camada-gestos, .toque-nativo .dialogo, .toque-nativo .selo-anuncio, .toque-nativo .btn-tocar-grande,
+.toque-nativo .video-preparando { pointer-events: none !important; }
+
+/* App Android: o vídeo fica coberto (só a roda girando) até a legenda ficar pronta */
+.video-preparando {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fundo);
+}
+.video-preparando .roda { margin: 0; }
 
 /* Anúncio do YouTube (app Android) */
 .selo-anuncio {

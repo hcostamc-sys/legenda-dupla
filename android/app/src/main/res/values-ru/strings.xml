@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">Мои видео: видео, которые вы уже изучали</string>
     <string name="entrar">Войти</string>
     <string name="entrar_desc">Войти в аккаунт YouTube</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Загрузки</string>
+    <string name="modelos_baixando">Загрузка улучшенной пунктуации</string>
+    <string name="modelos_progresso">%1$s из %2$s МБ</string>
+    <string name="modelos_preparando">Подготовка…</string>
+    <string name="modelos_cancelar">Отмена</string>
+    <string name="modelos_pronto">Улучшенная пунктуация загружена</string>
+    <string name="modelos_pronto_texto">Нажмите, чтобы открыть приложение и завершить установку.</string>
+    <string name="modelos_falhou">Ошибка загрузки</string>
 </resources>

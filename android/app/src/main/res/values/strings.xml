@@ -6,4 +6,13 @@
     <string name="meus_videos_desc">My videos: the videos you have already studied</string>
     <string name="entrar">Sign in</string>
     <string name="entrar_desc">Sign in to your YouTube account</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Downloads</string>
+    <string name="modelos_baixando">Downloading improved punctuation</string>
+    <string name="modelos_progresso">%1$s of %2$s MB</string>
+    <string name="modelos_preparando">Preparing…</string>
+    <string name="modelos_cancelar">Cancel</string>
+    <string name="modelos_pronto">Improved punctuation downloaded</string>
+    <string name="modelos_pronto_texto">Tap to open the app and finish installing.</string>
+    <string name="modelos_falhou">Download failed</string>
 </resources>

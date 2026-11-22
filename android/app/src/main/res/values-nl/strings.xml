@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">Mijn video\'s: de video\'s die je al hebt bestudeerd</string>
     <string name="entrar">Inloggen</string>
     <string name="entrar_desc">Inloggen op je YouTube-account</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Downloads</string>
+    <string name="modelos_baixando">Verbeterde interpunctie downloaden</string>
+    <string name="modelos_progresso">%1$s van %2$s MB</string>
+    <string name="modelos_preparando">Voorbereiden…</string>
+    <string name="modelos_cancelar">Annuleren</string>
+    <string name="modelos_pronto">Verbeterde interpunctie gedownload</string>
+    <string name="modelos_pronto_texto">Tik om de app te openen en de installatie af te ronden.</string>
+    <string name="modelos_falhou">Download mislukt</string>
 </resources>

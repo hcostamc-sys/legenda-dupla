@@ -1,8 +1,11 @@
 package io.github.hcostamcsys.legendadupla;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.graphics.Color;
@@ -32,6 +35,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.webkit.JavaScriptReplyProxy;
+import androidx.webkit.ServiceWorkerClientCompat;
+import androidx.webkit.ServiceWorkerControllerCompat;
 import androidx.webkit.WebMessageCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -61,12 +66,14 @@ import java.util.concurrent.Executors;
  * 7) no YouTube da tela inicial, esconde o botão e as prateleiras de Shorts (assets/youtube.js).
  *    Shorts e vídeos ao vivo abertos mesmo assim mostram um aviso na página.
  * 8) textos no idioma do celular (res/values-xx/strings.xml); a página traduz os dela.
+ * 9) download dos pacotes de pontuação melhorada pelo Android (ServicoModelos): continua com o app em
+ *    segundo plano, com o andamento nas notificações; a página recebe o estado e copia os arquivos.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 8; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 9; // a página usa para saber o que o app sabe fazer
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
     private WebView web;
@@ -164,6 +171,7 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest pedido) {
                 String url = pedido.getUrl().toString();
+                if (url.startsWith(ServicoModelos.PREFIXO_LOCAL)) return ServicoModelos.responder(MainActivity.this, url);
                 if (url.contains("/api/timedtext")) {
                     runOnUiThread(() -> chamarPagina("ldNativoViu", url));
                 }
@@ -185,6 +193,20 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+
+        // A página tem service worker: pedidos feitos por ele passam por aqui (os arquivos dos pacotes).
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
+                && WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST)) {
+            ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(new ServiceWorkerClientCompat() {
+                @Override
+                public WebResourceResponse shouldInterceptRequest(WebResourceRequest pedido) {
+                    return ServicoModelos.responder(MainActivity.this, pedido.getUrl().toString());
+                }
+            });
+        }
+
+        // Andamento do download dos pacotes: vai para a página.
+        ServicoModelos.ouvinte = json -> runOnUiThread(() -> chamarPagina("ldModelosEstado", json));
 
         String versaoWebView = "?";
         PackageInfo pacote = WebViewCompat.getCurrentWebViewPackage(this);
@@ -496,7 +518,23 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        ServicoModelos.appVisivel = true;
+        // De volta ao app: o aviso de "download concluído" já não precisa ficar nas notificações.
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancel(ServicoModelos.NOTIF_FIM);
+    }
+
+    @Override
+    protected void onPause() {
+        ServicoModelos.appVisivel = false;
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
+        ServicoModelos.ouvinte = null;
         rede.shutdownNow();
         if (ytWeb != null) ytWeb.destroy();
         if (web != null) web.destroy();
@@ -530,6 +568,32 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> tocarNaPagina(x, y, largura));
                 return;
             }
+            String acao = o.optString("acao");
+            if ("baixarModelos".equals(acao)) {
+                runOnUiThread(() -> iniciarDownloadModelos(dados));
+                return;
+            }
+            if ("cancelarModelos".equals(acao)) {
+                runOnUiThread(() -> {
+                    try {
+                        startService(new Intent(this, ServicoModelos.class).setAction(ServicoModelos.ACAO_CANCELAR));
+                    } catch (Exception e) {
+                        // nada
+                    }
+                });
+                return;
+            }
+            if ("estadoModelos".equals(acao)) {
+                rede.execute(() -> {
+                    String json = ServicoModelos.estadoAtual(this);
+                    runOnUiThread(() -> chamarPagina("ldModelosEstado", json));
+                });
+                return;
+            }
+            if ("apagarModelos".equals(acao)) {
+                rede.execute(() -> ServicoModelos.apagarTudo(this));
+                return;
+            }
             if ("telaLigada".equals(o.optString("acao"))) {
                 if (o.optBoolean("ligada")) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -551,6 +615,31 @@ public class MainActivity extends Activity {
             });
         } catch (Exception e) {
             // mensagem inválida: ignora
+        }
+    }
+
+    /** Começa o download dos pacotes (serviço em primeiro plano, com a notificação de andamento). */
+    private void iniciarDownloadModelos(String pedido) {
+        // Android 13+: pede a permissão de notificação (sem ela, o download funciona, mas sem a barra).
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
+        }
+        try {
+            Intent i = new Intent(this, ServicoModelos.class)
+                    .setAction(ServicoModelos.ACAO_BAIXAR)
+                    .putExtra(ServicoModelos.EXTRA_PEDIDO, pedido);
+            startForegroundService(i);
+        } catch (Exception e) {
+            String id = "";
+            try {
+                id = new JSONObject(pedido).optString("id", "");
+            } catch (Exception ignorar) {
+                // nada
+            }
+            String json = "{\"estado\":\"erro\",\"id\":" + JSONObject.quote(id)
+                    + ",\"erro\":" + JSONObject.quote("O Android não deixou começar o download: " + e.getMessage()) + "}";
+            chamarPagina("ldModelosEstado", json);
         }
     }
 

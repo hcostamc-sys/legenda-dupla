@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">فيديوهاتي: الفيديوهات التي درستها</string>
     <string name="entrar">تسجيل الدخول</string>
     <string name="entrar_desc">تسجيل الدخول إلى حسابك على YouTube</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">التنزيلات</string>
+    <string name="modelos_baixando">جارٍ تنزيل علامات الترقيم المحسّنة</string>
+    <string name="modelos_progresso">%1$s من %2$s ميغابايت</string>
+    <string name="modelos_preparando">جارٍ التحضير…</string>
+    <string name="modelos_cancelar">إلغاء</string>
+    <string name="modelos_pronto">تم تنزيل علامات الترقيم المحسّنة</string>
+    <string name="modelos_pronto_texto">انقر لفتح التطبيق وإكمال التثبيت.</string>
+    <string name="modelos_falhou">فشل التنزيل</string>
 </resources>

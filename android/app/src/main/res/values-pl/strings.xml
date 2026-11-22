@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">Moje filmy: filmy, z których już się uczyłeś</string>
     <string name="entrar">Zaloguj się</string>
     <string name="entrar_desc">Zaloguj się na konto YouTube</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Pobrane</string>
+    <string name="modelos_baixando">Pobieranie lepszej interpunkcji</string>
+    <string name="modelos_progresso">%1$s z %2$s MB</string>
+    <string name="modelos_preparando">Przygotowywanie…</string>
+    <string name="modelos_cancelar">Anuluj</string>
+    <string name="modelos_pronto">Lepsza interpunkcja pobrana</string>
+    <string name="modelos_pronto_texto">Dotknij, aby otworzyć aplikację i dokończyć instalację.</string>
+    <string name="modelos_falhou">Pobieranie nie powiodło się</string>
 </resources>

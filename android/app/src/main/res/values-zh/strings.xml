@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">我的视频：你学习过的视频</string>
     <string name="entrar">登录</string>
     <string name="entrar_desc">登录你的 YouTube 账号</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">下载</string>
+    <string name="modelos_baixando">正在下载增强标点</string>
+    <string name="modelos_progresso">%1$s / %2$s MB</string>
+    <string name="modelos_preparando">正在准备…</string>
+    <string name="modelos_cancelar">取消</string>
+    <string name="modelos_pronto">增强标点已下载</string>
+    <string name="modelos_pronto_texto">点按打开应用并完成安装。</string>
+    <string name="modelos_falhou">下载失败</string>
 </resources>

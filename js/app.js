@@ -8,6 +8,7 @@ import {
 } from './legendas.js';
 import {
   PACOTES, pacoteDoIdioma, pontuacaoSuportada, estadoPacote, baixarPacote, apagarPacote, pontuarPalavras, tamanhoDownload,
+  arquivosDoPacote, instalarArquivosBaixados,
 } from './modelos.js';
 import { textosPendentes, aplicarMapa, traduzirTodos, detectarIdiomaTexto, significadoPalavra } from './traducao.js';
 import {
@@ -85,7 +86,7 @@ const S = {
   // pontuação melhorada: { reg, ctrl, feitas, total } enquanto o modelo trabalha
   modelo: null,
   pacotes: {}, // estado de cada pacote: 'pronto' | 'ausente'
-  download: null, // { id, feitos, total, ctrl } | { id, erro }
+  download: null, // { id, feitos, total, ctrl, nativo?, instalando? } | { id, erro }
   player: null,
   pronto: false,
   primeiroPlay: false,
@@ -832,7 +833,11 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   $('#titulo-video').textContent = tituloAtual();
   $('#erro-player').hidden = true;
   $('#aviso-toque').hidden = true;
-  $('#btn-tocar-grande').hidden = false;
+  // App Android, vídeo novo: a legenda vem do próprio vídeo. Até ela ficar pronta, o vídeo fica coberto
+  // pela roda girando, sem botão "Tocar": ele começa sozinho depois de "Começar" na escolha do idioma.
+  const preparar = ANDROID && !reg.estudo;
+  mostrarPreparandoVideo(preparar);
+  $('#btn-tocar-grande').hidden = preparar;
   document.body.classList.remove('gestos-ativos');
   atualizarBotaoPlay();
   $('#barra-progresso').value = 0;
@@ -883,7 +888,13 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   atualizarProgresso(true);
 }
 
+/** Roda girando por cima do vídeo (app Android, enquanto a legenda é preparada). */
+function mostrarPreparandoVideo(sim) {
+  $('#video-preparando').hidden = !sim;
+}
+
 function encerrarPlayer() {
+  mostrarPreparandoVideo(false);
   salvarPosicao();
   cancelAnimationFrame(S.raf);
   S.raf = 0;
@@ -942,6 +953,7 @@ function mostrarErroPlayer(codigo, texto) {
   link.hidden = !proibido;
   if (proibido && S.registro) link.href = `https://www.youtube.com/watch?v=${S.registro.id}`;
   $('#erro-player').hidden = false;
+  mostrarPreparandoVideo(false);
   $('#btn-tocar-grande').hidden = true;
   $('#aviso-toque').hidden = true;
 }
@@ -1166,6 +1178,14 @@ async function escolherLegendaYoutube(trocando = false) {
   if (!vale()) return;
   S.yt.fase = 'escolhendo';
   $('#tela-carregando').hidden = true;
+  // O vídeo não toca atrás da janela de escolha: para aqui e só começa depois de "Começar"
+  // (finalizarPreparo, quando a legenda chega). Cancelar devolve como estava.
+  if (!S.yt.preparando) {
+    S.yt.retorno = { tempo: trocando ? p.tempo() : S.inicio, tocava: trocando && p.estado() === 1 };
+    S.yt.preparando = true;
+  }
+  p.silenciar?.(true);
+  p.pausar();
   const escolha = await perguntarIdioma(r.faixas, trocando, idiomaAudio);
   if (!vale()) return;
   if (!escolha) {
@@ -1272,6 +1292,7 @@ function finalizarPreparo(tocar) {
   const ret = S.yt.retorno;
   S.yt.fase = null;
   $('#tela-carregando').hidden = true;
+  mostrarPreparandoVideo(false);
   if (!p || !S.yt.preparando) return;
   S.yt.preparando = false;
   S.yt.retorno = null;
@@ -1784,6 +1805,7 @@ const MB = (bytes) => formatarNumero(bytes / 1e6, 0); // MB como o Hugging Face 
 
 async function baixarPacoteUI(id) {
   if (S.download?.ctrl) return;
+  if (downloadNativo()) { baixarPacoteNativo(id); return; }
   const ctrl = new AbortController();
   S.download = { id, feitos: 0, total: await tamanhoDownload(id), ctrl };
   renderPacotes();
@@ -1804,6 +1826,100 @@ async function baixarPacoteUI(id) {
     pontuarAoFundo(); // o vídeo aberto já ganha a pontuação nova
   } catch (e) {
     S.download = e?.name === 'AbortError' ? null : { id, erro: e?.message || 'Não consegui baixar.' };
+    renderPacotes();
+  }
+}
+
+// ---- App Android 9+: quem baixa é o Android ----
+// O download continua com o app em segundo plano (a barra de progresso fica nas notificações).
+// O app avisa o andamento em window.ldModelosEstado; no fim, a página copia os arquivos para o cache.
+
+/** O app Android sabe baixar os pacotes sozinho? */
+function downloadNativo() {
+  return ANDROID && APK >= 9 && !!window.LDNativo;
+}
+
+function mandarAoApp(msg) {
+  try { window.LDNativo?.postMessage(JSON.stringify(msg)); return true; } catch { return false; }
+}
+
+/** Download em andamento pelo app: o "Cancelar download" da página pede ao app para parar. */
+function novoDownloadNativo(id, total = 0) {
+  const ctrl = new AbortController();
+  ctrl.signal.addEventListener('abort', () => mandarAoApp({ acao: 'cancelarModelos' }), { once: true });
+  S.download = { id, feitos: 0, total, ctrl, nativo: true };
+  return S.download;
+}
+
+async function baixarPacoteNativo(id) {
+  let arquivos;
+  try {
+    arquivos = await arquivosDoPacote(id);
+  } catch (e) {
+    S.download = { id, erro: e?.message || 'Não consegui baixar.' };
+    renderPacotes();
+    return;
+  }
+  if (S.download?.ctrl) return;
+  novoDownloadNativo(id, arquivos.reduce((s, a) => s + a.bytes, 0));
+  renderPacotes();
+  const ok = mandarAoApp({ acao: 'baixarModelos', id, nome: PACOTES[id].nome, arquivos });
+  if (!ok) { S.download = { id, erro: 'O app não respondeu.' }; renderPacotes(); }
+}
+
+/** O app Android chama esta função com o estado do download: { id, estado, feitos, total, erro, arquivos }. */
+window.ldModelosEstado = (texto) => {
+  let e;
+  try { e = JSON.parse(texto); } catch { return; }
+  if (!e || typeof e !== 'object') return;
+  const id = e.id;
+  const d = S.download;
+  if (e.estado === 'nada') return;
+  if (!PACOTES[id]) return;
+  if (e.estado === 'baixando') {
+    if (d?.instalando) return;
+    // Página aberta (ou recarregada) com o download já em andamento: mostra a barra.
+    const atual = d?.ctrl && d.id === id ? d : novoDownloadNativo(id);
+    atual.feitos = Number(e.feitos) || 0;
+    atual.total = Number(e.total) || atual.total;
+    renderPacotes();
+  } else if (e.estado === 'pronto') {
+    instalarPacoteNativo(id, e.arquivos);
+  } else if (e.estado === 'erro') {
+    if (d?.instalando) return;
+    S.download = { id, erro: String(e.erro || 'Não consegui baixar.') };
+    renderPacotes();
+  } else if (e.estado === 'cancelado') {
+    if (d?.nativo && d.id === id && !d.instalando) { S.download = null; renderPacotes(); }
+  }
+};
+
+/** O app terminou o download: copia os arquivos para o cache dos pacotes e pede ao app para apagar os dele. */
+async function instalarPacoteNativo(id, arquivos) {
+  if (S.download?.instalando) return;
+  const d = S.download?.ctrl && S.download.id === id ? S.download : novoDownloadNativo(id);
+  d.instalando = true;
+  d.feitos = 0;
+  renderPacotes();
+  try {
+    await instalarArquivosBaixados(id, arquivos, {
+      sinal: d.ctrl.signal,
+      aoProgresso: (feitos, total) => {
+        if (S.download !== d) return;
+        d.feitos = feitos;
+        d.total = total;
+        renderPacotes();
+      },
+    });
+    mandarAoApp({ acao: 'apagarModelos' });
+    if (S.download === d) S.download = null;
+    S.pacotes[id] = 'pronto';
+    toast(`Pontuação melhorada (${PACOTES[id].nome}) instalada.`, 3000);
+    renderPacotes();
+    pontuarAoFundo();
+  } catch (e) {
+    mandarAoApp({ acao: 'apagarModelos' }); // não fica tentando instalar de novo a cada abertura
+    if (S.download === d) S.download = e?.name === 'AbortError' ? null : { id, erro: e?.message || 'Não consegui instalar.' };
     renderPacotes();
   }
 }
@@ -1839,7 +1955,11 @@ function desenharPacote(bloco, id) {
     const pct = d.total ? Math.floor((100 * d.feitos) / d.total) : 0;
     barra.firstElementChild.style.width = `${pct}%`;
     est.textContent = `${pct}%`;
-    txt.textContent = `Baixando… ${MB(d.feitos)} de ${MB(d.total)} MB. Pode começar o vídeo: a pontuação entra quando terminar.`;
+    txt.textContent = d.instalando
+      ? `Instalando… ${MB(d.feitos)} de ${MB(d.total)} MB.`
+      : d.nativo
+        ? `Baixando… ${MB(d.feitos)} de ${MB(d.total)} MB. Pode começar o vídeo ou sair do app: o download continua (o andamento fica nas notificações).`
+        : `Baixando… ${MB(d.feitos)} de ${MB(d.total)} MB. Pode começar o vídeo: a pontuação entra quando terminar.`;
   } else if (pronto) {
     est.textContent = 'Instalada';
     txt.textContent = 'O modelo roda no celular, sem internet.';
@@ -3364,6 +3484,7 @@ async function iniciar() {
   }
   mostrarBiblioteca();
   atualizarEstadoPacotes(); // sem esperar: só olha o cache do aparelho
+  if (downloadNativo()) mandarAoApp({ acao: 'estadoModelos' }); // download do app em andamento ou terminado
   await renderBiblioteca();
   if (await estaSoNaMemoria()) $('#aviso-memoria').hidden = false;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

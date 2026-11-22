@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">मेरे वीडियो: वे वीडियो जिनसे आप पढ़ चुके हैं</string>
     <string name="entrar">साइन इन</string>
     <string name="entrar_desc">अपने YouTube खाते में साइन इन करें</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">डाउनलोड</string>
+    <string name="modelos_baixando">बेहतर विराम चिह्न डाउनलोड हो रहे हैं</string>
+    <string name="modelos_progresso">%2$s में से %1$s MB</string>
+    <string name="modelos_preparando">तैयारी हो रही है…</string>
+    <string name="modelos_cancelar">रद्द करें</string>
+    <string name="modelos_pronto">बेहतर विराम चिह्न डाउनलोड हो गए</string>
+    <string name="modelos_pronto_texto">ऐप खोलकर इंस्टॉलेशन पूरा करने के लिए टैप करें।</string>
+    <string name="modelos_falhou">डाउनलोड विफल रहा</string>
 </resources>

@@ -5,4 +5,13 @@
     <string name="meus_videos_desc">Meus vídeos: os vídeos que você já estudou</string>
     <string name="entrar">Entrar</string>
     <string name="entrar_desc">Entrar na sua conta do YouTube</string>
+    <!-- Download da pontuação melhorada (notificações) -->
+    <string name="canal_downloads">Downloads</string>
+    <string name="modelos_baixando">Baixando a pontuação melhorada</string>
+    <string name="modelos_progresso">%1$s de %2$s MB</string>
+    <string name="modelos_preparando">Preparando…</string>
+    <string name="modelos_cancelar">Cancelar</string>
+    <string name="modelos_pronto">Pontuação melhorada baixada</string>
+    <string name="modelos_pronto_texto">Toque para abrir o app e terminar a instalação.</string>
+    <string name="modelos_falhou">O download falhou</string>
 </resources>

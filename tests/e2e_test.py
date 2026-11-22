@@ -927,10 +927,20 @@ def t_android(browser, base):
     page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
     expect(page.locator('#btn-abrir')).to_be_enabled()  # sem arquivo: basta o link
     page.click('#btn-abrir')
+    # logo ao abrir: o vídeo fica coberto pela roda girando, sem o botão "Tocar"
+    expect(page.locator('#video-preparando')).to_be_visible()
+    expect(page.locator('#btn-tocar-grande')).to_be_hidden()
     # o player só informa as legendas depois de começar: o vídeo toca sem som atrás da janela
     expect(page.locator('#tela-idioma')).to_be_visible()
     assert page.evaluate('window.__ld.S.player.mudo') is True
     assert page.evaluate('window.__ld.S.yt.preparando') is True
+    # com a janela de escolha aberta, o vídeo fica parado (só começa depois de "Começar")
+    esperar(lambda: estado(page) != 1, msg='pausado na escolha')
+    t_escolha = tempo(page)
+    time.sleep(0.6)
+    assert estado(page) != 1 and abs(tempo(page) - t_escolha) < 0.05, (estado(page), tempo(page), t_escolha)
+    expect(page.locator('#video-preparando')).to_be_visible()
+    expect(page.locator('#btn-tocar-grande')).to_be_hidden()
     # sugerida: inglês feita por pessoa (a automática indica o idioma falado)
     expect(page.locator('#sel-legenda-video')).to_have_value('1')
     expect(page.locator('#sel-legenda-video option')).to_have_text(['Inglês (automática)', 'Inglês', 'Português (Brasil)'])
@@ -949,6 +959,8 @@ def t_android(browser, base):
     # com a legenda pronta: volta ao começo, com som, tocando
     assert page.evaluate('window.__ld.S.player.mudo') is False
     esperar(lambda: estado(page) == 1, msg='tocando')
+    expect(page.locator('#video-preparando')).to_be_hidden()
+    expect(page.locator('#btn-tocar-grande')).to_be_hidden()
     assert tempo(page) < 2, tempo(page)
     expect(page.locator('#caixa-l1')).to_contain_text('from YouTube')
     expect(page.locator('#caixa-l2')).to_contain_text('PT: Line')  # tradução do app
@@ -1281,6 +1293,88 @@ def t_pontuacao_modelo(browser, base):
     ctx.close()
 
 
+@caso('15b. App Android 9: o download dos pacotes é feito pelo Android (segue em segundo plano)')
+def t_pontuacao_nativa(browser, base):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    pasta_modelo = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'modelo')
+    hf_pedidos = []
+    page.route('https://huggingface.co/**', lambda route: (hf_pedidos.append(route.request.url), route.abort()))
+    # Arquivos "baixados pelo Android": o app entrega cada um num endereço próprio (__ld_modelo/N)
+    locais = {}
+
+    def local(route):
+        n = route.request.url.split('__ld_modelo/')[1].split('?')[0]
+        url = locais.get(n)
+        if url is None:
+            route.fulfill(status=404, body='')
+            return
+        if url.endswith('.wasm'):
+            caminho = os.path.join(RAIZ, 'vendor', 'ort', 'ort-wasm-simd-threaded.wasm')
+        else:
+            caminho = os.path.join(pasta_modelo, 'falso.onnx' if url.endswith('.onnx') else 'falso.spmodel')
+        with open(caminho, 'rb') as f:
+            route.fulfill(status=200, body=f.read(), headers={'Content-Type': 'application/octet-stream'})
+    page.route('**/__ld_modelo/**', local)
+    page.goto(base + '?mock=1&app=android&apk=9&mockSoAsr=1&mockPalavras=1')
+    # ao abrir, a página pergunta ao app se há download em andamento
+    esperar(lambda: any(m.get('acao') == 'estadoModelos' for m in page.evaluate('window.__msgs')), msg='pediu o estado')
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ estado: 'nada' }))")
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=NATIVO00000')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.evaluate(f"""(() => {{ const p = window.__ld.PACOTES.en;
+      p.bytesModelo = {os.path.getsize(os.path.join(pasta_modelo, 'falso.onnx'))};
+      p.bytesSp = {os.path.getsize(os.path.join(pasta_modelo, 'falso.spmodel'))}; }})()""")
+    cartao = page.locator('#cartao-pontuacao')
+    cartao.locator('.pm-baixar').click()
+    esperar(lambda: any(m.get('acao') == 'baixarModelos' for m in page.evaluate('window.__msgs')), msg='pediu o download ao app')
+    pedido = [m for m in page.evaluate('window.__msgs') if m.get('acao') == 'baixarModelos'][0]
+    assert pedido['id'] == 'en' and pedido['nome'], pedido
+    urls = [a['url'] for a in pedido['arquivos']]
+    assert urls[-1].endswith('.onnx') and urls[-2].endswith('.model'), urls
+    assert all(a['bytes'] > 0 for a in pedido['arquivos'])
+    total = sum(a['bytes'] for a in pedido['arquivos'])
+    expect(cartao).to_have_attribute('data-estado', 'baixando')
+    expect(cartao.locator('.pm-texto')).to_contain_text('notificações')
+    # andamento vindo do app
+    page.evaluate(f"window.ldModelosEstado(JSON.stringify({{ id: 'en', estado: 'baixando', feitos: {total // 2}, total: {total} }}))")
+    expect(cartao.locator('.pm-estado')).to_have_text('50%')
+    # cancelar: a página pede ao app; o app confirma
+    cartao.locator('.pm-cancelar').click()
+    esperar(lambda: any(m.get('acao') == 'cancelarModelos' for m in page.evaluate('window.__msgs')), msg='pediu para cancelar')
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'en', estado: 'cancelado' }))")
+    expect(cartao).to_have_attribute('data-estado', 'ausente')
+    # de novo, agora até o fim: o app avisa "pronto" e a página copia os arquivos para o cache
+    page.evaluate('window.__msgs.length = 0')
+    cartao.locator('.pm-baixar').click()
+    esperar(lambda: any(m.get('acao') == 'baixarModelos' for m in page.evaluate('window.__msgs')), msg='pediu de novo')
+    arquivos = []
+    for i, a in enumerate(pedido['arquivos']):
+        locais[str(i)] = a['url']
+        arquivos.append({'url': a['url'], 'bytes': a['bytes'], 'local': f'{base}__ld_modelo/{i}'})
+    page.evaluate("(e) => window.ldModelosEstado(JSON.stringify(e))",
+                  {'id': 'en', 'estado': 'pronto', 'feitos': total, 'total': total, 'arquivos': arquivos})
+    expect(cartao).to_have_attribute('data-estado', 'pronto', timeout=15000)
+    esperar(lambda: any(m.get('acao') == 'apagarModelos' for m in page.evaluate('window.__msgs')), msg='pediu para apagar a cópia do app')
+    guardados = page.evaluate("caches.open('modelos-pontuacao-v1').then((c) => c.keys()).then((k) => k.map((r) => r.url))")
+    assert sorted(guardados) == sorted(urls), guardados  # guardados com o endereço original
+    assert not hf_pedidos, hf_pedidos  # a página não baixou nada do Hugging Face
+    page.click('#idioma-ok')
+    esperar(lambda: page.evaluate('window.__ld.S.pontuadaModelo') is True, msg='pontuação do modelo aplicada', limite=20)
+    # erro vindo do app (ex.: sem espaço): o cartão mostra e oferece baixar de novo
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'latinas', estado: 'erro', erro: 'Falta espaço no celular para o pacote.' }))")
+    page.click('#btn-ajustes')
+    linha = page.locator('#grupo-pontuacao [data-pacote="latinas"]')
+    expect(linha).to_have_attribute('data-estado', 'erro')
+    expect(linha.locator('.pm-texto')).to_contain_text('Falta espaço')
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('16. Celular em inglês: a interface é traduzida (e guardada); legendas e títulos ficam como estão')
 def t_interface_idioma(browser, base):
     from urllib.parse import parse_qs
@@ -1574,6 +1668,7 @@ def main():
         t_velocidade_fina(browser, base)
         t_dublado(browser, base)
         t_pontuacao_modelo(browser, base)
+        t_pontuacao_nativa(browser, base)
         t_interface_idioma(browser, base)
         t_ao_vivo_shorts(browser, base)
         t_gancho(browser, base)

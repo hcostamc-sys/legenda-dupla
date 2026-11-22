@@ -1,6 +1,6 @@
 // sw.js — rede primeiro, cache como reserva, só para arquivos do próprio site (PLANO.md seção 4).
 // Ao mudar qualquer arquivo do site, troque o nome do cache (ld-v2, ld-v4...).
-const CACHE = 'ld-v19';
+const CACHE = 'ld-v20';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -47,6 +47,8 @@ self.addEventListener('fetch', (ev) => {
   if (url.origin !== self.location.origin) return;
   // O motor da pontuação melhorada (15 MB) fica no cache dos pacotes (js/modelos.js), não aqui.
   if (url.pathname.endsWith('.wasm')) return;
+  // Pacote baixado pelo app Android, entregue pelo próprio app (centenas de MB): passa direto.
+  if (url.pathname.includes('/__ld_modelo/')) return;
   ev.respondWith(
     // no-cache: confere com o servidor, para nunca misturar arquivos novos com antigos do cache HTTP.
     fetch(req, { cache: 'no-cache' })
