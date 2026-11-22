@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>diag</title></head>
+<body><pre id="o">rodando...</pre>
+<script type="module">
+const o = document.getElementById('o');
+const log = (s) => { o.textContent += '\n' + s; };
+const linhas = ['Hello world.', 'How are you?', 'Gary Marcus is a professor emeritus at New York University.'];
+async function t(nome, url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    const txt = await r.text();
+    log(`### ${nome} status=${r.status}\n${txt.slice(0, 900)}`);
+  } catch (e) { log(`### ${nome} ERRO ${e}`); }
+}
+const q = encodeURIComponent(linhas.join('\n'));
+await t('single', `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=pt&dt=t&q=${q}`);
+await t('t-multi', `https://translate.googleapis.com/translate_a/t?client=gtx&sl=en&tl=pt&${linhas.map((l) => 'q=' + encodeURIComponent(l)).join('&')}`);
+await t('t-post', 'https://translate.googleapis.com/translate_a/t?client=gtx&sl=en&tl=pt', {
+  method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: linhas.map((l) => 'q=' + encodeURIComponent(l)).join('&'),
+});
+await t('mymemory', `https://api.mymemory.translated.net/get?langpair=en|pt-BR&q=${encodeURIComponent(linhas[2])}`);
+log('### Translator API: ' + ('Translator' in self));
+log('FIM');
+</script></body></html>
