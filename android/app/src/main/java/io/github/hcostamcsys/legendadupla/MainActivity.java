@@ -30,6 +30,7 @@ import android.widget.TextView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -84,12 +85,14 @@ import java.util.regex.Pattern;
  *    sozinho ao voltar, para mostrar o histórico e a barrinha vermelha de progresso já atualizados.
  * 11) internet (versão 11): o Android avisa a página quando a internet cai ou volta (ldRede), para o aviso
  *    "Tentando reconectar à Internet…" e para o vídeo continuar sozinho.
+ * 12) transições (versão 12): o YouTube da tela inicial entra e sai com animação suave (0,3 s / 0,24 s) e as
+ *    abas do próprio YouTube trocam com esmaecimento (assets/youtube.js).
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 11; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 12; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -112,6 +115,11 @@ public class MainActivity extends Activity {
     private boolean avisouBloqueio;
     /** Algum vídeo foi registrado no histórico do YouTube desde a última vez que o YouTube apareceu. */
     private final AtomicBoolean historicoMudou = new AtomicBoolean(false);
+    /** O YouTube está saindo da tela (animação de 0,24 s): para o app, já não está mais na tela. */
+    private boolean ytFechando = false;
+    // Curvas padrão do Material Design: entrar desacelerando, sair acelerando.
+    private static final PathInterpolator CURVA_ENTRA = new PathInterpolator(0.2f, 0f, 0f, 1f);
+    private static final PathInterpolator CURVA_SAI = new PathInterpolator(0.4f, 0f, 1f, 1f);
     private ConnectivityManager conectividade;
     private ConnectivityManager.NetworkCallback ouvinteRede;
     private Boolean ultimoOnline;
@@ -374,6 +382,8 @@ public class MainActivity extends Activity {
             WebViewCompat.addDocumentStartJavaScript(ytWeb, scriptYoutube,
                     new HashSet<>(Arrays.asList("https://m.youtube.com", "https://www.youtube.com")));
         }
+        // Durante a saída animada do YouTube, o toque não vai mais para ele (vai para o vídeo que está abrindo).
+        ytWeb.setOnTouchListener((v, ev) -> ytFechando);
         ytWeb.setWebChromeClient(new WebChromeClient());
         ytWeb.setWebViewClient(new WebViewClient() {
             @Override
@@ -472,7 +482,18 @@ public class MainActivity extends Activity {
             if (!"https".equals(u.getScheme()) || !host.endsWith("youtube.com")) return;
         }
         if (painelYt == null) criarPainelYoutube();
-        painelYt.setVisibility(View.VISIBLE);
+        // Transição suave: o YouTube sobe um pouco e aparece por cima da página (0,3 s).
+        boolean escondido = painelYt.getVisibility() != View.VISIBLE;
+        painelYt.animate().cancel();
+        ytFechando = false;
+        if (escondido) {
+            painelYt.setAlpha(0f);
+            painelYt.setTranslationY(dp(18));
+            painelYt.setVisibility(View.VISIBLE);
+        }
+        if (painelYt.getAlpha() < 1f || painelYt.getTranslationY() != 0f) {
+            painelYt.animate().alpha(1f).translationY(0f).setDuration(300).setInterpolator(CURVA_ENTRA).start();
+        }
         ytWeb.onResume();
         atualizarBotaoEntrar();
         String alvo = (url == null || url.isEmpty()) ? (ultimoUrlYt.isEmpty() ? INICIO_YOUTUBE : null) : url;
@@ -495,7 +516,7 @@ public class MainActivity extends Activity {
             if (ytWeb == null || painelYt == null) return;
             // Um instante para o YouTube processar o último registro.
             ytWeb.postDelayed(() -> {
-                if (painelYt.getVisibility() != View.VISIBLE || !historicoMudou.getAndSet(false)) return;
+                if (!youtubeNaTela() || !historicoMudou.getAndSet(false)) return;
                 String atual = ytWeb.getUrl();
                 if (atual == null || !atual.contains("youtube.com") || atual.contains("accounts.google")) return;
                 ytWeb.reload();
@@ -509,11 +530,26 @@ public class MainActivity extends Activity {
                 "document.querySelectorAll('video').forEach(function(v){try{v.pause()}catch(e){}})", null);
     }
 
+    /** O YouTube está na tela (e não saindo dela). */
+    private boolean youtubeNaTela() {
+        return painelYt != null && painelYt.getVisibility() == View.VISIBLE && !ytFechando;
+    }
+
+    /** Esconde o YouTube com transição suave (apaga e desce um pouco em 0,24 s), mostrando a página. */
     private void fecharYoutube() {
-        if (painelYt == null || painelYt.getVisibility() != View.VISIBLE) return;
+        if (!youtubeNaTela()) return;
         pausarYoutube();
-        painelYt.setVisibility(View.GONE);
-        ytWeb.onPause();
+        ytFechando = true;
+        painelYt.animate().cancel();
+        painelYt.animate().alpha(0f).translationY(dp(12)).setDuration(240).setInterpolator(CURVA_SAI)
+                .withEndAction(() -> {
+                    if (!ytFechando) return; // voltou a aparecer no meio da animação
+                    ytFechando = false;
+                    painelYt.setVisibility(View.GONE);
+                    painelYt.setAlpha(1f);
+                    painelYt.setTranslationY(0f);
+                    ytWeb.onPause();
+                }).start();
     }
 
     /** Vídeo tocado na lista do YouTube: fecha o YouTube e abre o vídeo no Legenda Dupla. */
@@ -553,7 +589,7 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (telaCheia != null) { sairTelaCheia(); return; }
-        if (painelYt != null && painelYt.getVisibility() == View.VISIBLE) {
+        if (youtubeNaTela()) {
             if (ytWeb.canGoBack()) ytWeb.goBack();
             else super.onBackPressed(); // o YouTube é a tela inicial: voltar daqui sai do app
             return;

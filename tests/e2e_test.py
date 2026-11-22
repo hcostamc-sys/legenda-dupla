@@ -1580,10 +1580,14 @@ def t_ajustes_22_11(browser, base, en, pt):
     page.click('#btn-tocar-grande')
     expect(page.locator('#tela-gestos')).to_be_visible()
     assert estado(page) != 1  # o vídeo espera a explicação
-    expect(page.locator('#gestos-acao-direita')).to_have_text('volta para a fala anterior')
-    expect(page.locator('#gestos-acao-esquerda')).to_have_text('avança para a próxima fala')
+    expect(page.locator('#gestos-titulo')).to_have_text('Como avançar e retroceder o vídeo')
+    expect(page.locator('#gestos-acao-direita')).to_have_text('retrocede o vídeo')
+    expect(page.locator('#gestos-acao-esquerda')).to_have_text('avança o vídeo')
     expect(page.locator('#gestos-nao-mostrar')).not_to_be_checked()
-    page.wait_for_timeout(2400)  # meio da animação: o selo "Fala anterior" aparece
+    # 1º deslize (da esquerda para a direita): ícone de retroceder; o de avançar não aparece nele
+    assert page.locator('.demo-icone-1 svg.ic-retroceder').is_visible()
+    assert not page.locator('.demo-icone-1 svg.ic-avancar').is_visible()
+    page.wait_for_timeout(1250)  # ícone de retroceder no meio do vídeo (logo depois do 1º deslize)
     os.makedirs(CAPTURAS, exist_ok=True)
     page.screenshot(path=os.path.join(CAPTURAS, 'gestos-explicacao.png'))
     page.click('#gestos-ok')
@@ -1619,7 +1623,8 @@ def t_ajustes_22_11(browser, base, en, pt):
     esperar(lambda: estado(page) == 2, msg='Ajustes pausou')
     chips = page.locator('#linha-velocidade .chip').all_text_contents()
     assert all(not c.startswith(('0,25', '0,5×', '0,50', '0,55')) for c in chips), chips
-    # "Ver como passar as falas" nos Ajustes; marcar "não mostrar mais"
+    # "Ver como avançar e retroceder o vídeo" nos Ajustes; marcar "não mostrar mais"
+    expect(page.locator('#btn-ver-gestos')).to_have_text('Ver como avançar e retroceder o vídeo')
     page.click('#btn-ver-gestos')
     expect(page.locator('#tela-gestos')).to_be_visible()
     page.check('#gestos-nao-mostrar')
@@ -1659,6 +1664,27 @@ def t_ajustes_22_11(browser, base, en, pt):
     assert page.evaluate('window.ldVoltar()') == 'ok'
     expect(page.locator('#tela-gestos')).to_be_hidden()
     expect(page.locator('#tela-assistir')).to_be_hidden()
+
+    # Vídeo já salvo tocado no histórico: a explicação aparece na hora (vídeo escuro por trás, sem o botão
+    # de tocar); ao Concluir, entrada suave e o vídeo toca sozinho.
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HISTORICO00')")
+    expect(page.locator('#tela-gestos')).to_be_visible(timeout=6000)
+    expect(page.locator('#tela-idioma')).to_be_hidden()
+    expect(page.locator('#btn-tocar-grande')).to_be_hidden()
+    assert page.evaluate("document.querySelector('#area-video').classList.contains('antes-da-entrada')")
+    time.sleep(0.8)
+    assert estado(page) != 1  # espera a explicação
+    page.click('#gestos-ok')
+    esperar(lambda: estado(page) == 1, msg='vídeo salvo tocando sozinho depois de Concluir')
+    assert page.evaluate("document.querySelector('#area-video').classList.contains('entrada-suave')")
+    assert not page.evaluate("document.querySelector('#area-video').classList.contains('antes-da-entrada')")
+    # Com "não mostrar mais": entrada suave já no toque e o vídeo começa sozinho
+    page.evaluate("window.__ld.S.ajustes.gestosExplicados = true")
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HISTORICO00')")
+    esperar(lambda: page.evaluate("document.querySelector('#area-video').classList.contains('entrada-suave')"), msg='entrada suave no toque')
+    expect(page.locator('#tela-gestos')).to_be_hidden()
+    expect(page.locator('#btn-tocar-grande')).to_be_hidden()
+    esperar(lambda: estado(page) == 1, msg='vídeo salvo tocando sozinho')
     assert not erros, erros
     ctx.close()
 
@@ -1772,7 +1798,7 @@ def t_ajustes_22_11_3(browser, base, en, pt):
     assert 'Com o vídeo pausado' not in page.inner_text('#tela-gestos')
     trilha_y = lambda: page.evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.demo-trilha')).transform).m42")
     y0 = trilha_y()
-    time.sleep(3.2)  # depois do 1º arraste (da esquerda para a direita): fala anterior, a lista desce
+    time.sleep(1.2)  # depois do 1º deslize rápido (da esquerda para a direita): retrocede, a lista desce
     assert trilha_y() > y0 + 30, (y0, trilha_y())
     page.click('#gestos-ok')
     esperar(lambda: estado(page) == 1, msg='tocando')

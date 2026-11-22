@@ -2,7 +2,7 @@
 // json3, srv3 (XML com <p t= d=>), formato 1 (XML com <text start= dur=>) ou WebVTT.
 // Usado pelo protótipo do app Android (prototipo.html). Sem DOM: funciona também no Node (testes).
 
-import { lerLegenda, corrigirSequencia } from './legendas.js';
+import { lerLegenda, corrigirSequencia, tirarTags } from './legendas.js';
 
 const ENTIDADES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -63,14 +63,15 @@ function lerJson3(obj) {
   const falas = [];
   for (const ev of obj.events || []) {
     if (!Array.isArray(ev.segs)) continue;
-    const t = limpar(ev.segs.map((s) => s.utf8 || '').join(''));
+    // Legenda enviada pelo autor pode trazer <i>…</i>, <b>, <font>: o texto vem sem esses códigos.
+    const t = limpar(tirarTags(ev.segs.map((s) => s.utf8 || '').join('')));
     if (!t) continue;
     const t0 = Number(ev.tStartMs) || 0;
     const fimMs = t0 + (Number(ev.dDurationMs) || 0);
     const s = t0 / 1000;
     const e = fimMs / 1000;
     const fala = { s, e, t };
-    const ps = palavrasReais(ev.segs.map((sg) => ({ texto: sg.utf8 || '', ms: t0 + (sg.tOffsetMs === undefined ? (sg === ev.segs[0] ? 0 : NaN) : Number(sg.tOffsetMs)) })), fimMs, t);
+    const ps = palavrasReais(ev.segs.map((sg) => ({ texto: tirarTags(sg.utf8 || ''), ms: t0 + (sg.tOffsetMs === undefined ? (sg === ev.segs[0] ? 0 : NaN) : Number(sg.tOffsetMs)) })), fimMs, t);
     if (ps) fala.ps = ps;
     falas.push(fala);
   }
@@ -84,7 +85,7 @@ function lerSrv3(xml) {
   while ((m = re.exec(xml))) {
     const t0 = Number(atributo(m[1], 't'));
     const d = Number(atributo(m[1], 'd'));
-    const t = limpar(decodificarEntidades(m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')));
+    const t = limpar(tirarTags(decodificarEntidades(m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ''))));
     if (!t || !Number.isFinite(t0)) continue;
     const fimMs = t0 + (Number.isFinite(d) ? d : 0);
     const fala = { s: t0 / 1000, e: fimMs / 1000, t };
@@ -94,7 +95,7 @@ function lerSrv3(xml) {
     let n;
     while ((n = reS.exec(m[2]))) {
       const off = atributo(n[1], 't');
-      pedacos.push({ texto: decodificarEntidades(n[2].replace(/<[^>]+>/g, '')), ms: t0 + (off === null ? (pedacos.length ? NaN : 0) : Number(off)) });
+      pedacos.push({ texto: tirarTags(decodificarEntidades(n[2].replace(/<[^>]+>/g, ''))), ms: t0 + (off === null ? (pedacos.length ? NaN : 0) : Number(off)) });
     }
     const ps = palavrasReais(pedacos, fimMs, t);
     if (ps) fala.ps = ps;
@@ -111,7 +112,7 @@ function lerFormato1(xml) {
     const s = Number(atributo(m[1], 'start'));
     const d = Number(atributo(m[1], 'dur'));
     // o formato 1 vem com entidades escapadas duas vezes (&amp;#39;)
-    const t = limpar(decodificarEntidades(decodificarEntidades(m[2])).replace(/<[^>]+>/g, ''));
+    const t = limpar(tirarTags(decodificarEntidades(decodificarEntidades(m[2])).replace(/<[^>]+>/g, '')));
     if (!t || !Number.isFinite(s)) continue;
     falas.push({ s, e: s + (Number.isFinite(d) ? d : 0), t });
   }

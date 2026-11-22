@@ -404,3 +404,15 @@ test('tituloDoArquivo e comparação de títulos', () => {
   assert.equal(chaveTitulo('Ação | Teste?'), 'acao teste');
   assert.ok(titulosParecidos('', 'qualquer'));
 });
+
+test('processar: códigos de formatação saem também de vídeos já salvos (estudo e tradução)', async () => {
+  const { processar, tirarTags } = await import('../js/legendas.js');
+  assert.equal(tirarTags('ALPHA: <i>Hello.</i>'), 'ALPHA: Hello.');
+  assert.equal(tirarTags('&lt;i&gt;Olá&lt;/i&gt;'), 'Olá');
+  assert.equal(tirarTags('2 < 3 e 5 > 4'), '2 < 3 e 5 > 4'); // sinais soltos ficam
+  const r = processar({
+    estudo: { arquivo: '[English] x', falas: [{ s: 1, e: 2, t: 'ALPHA: <i>Hello.</i>' }, { s: 3, e: 4, t: '<i></i>' }] },
+    traducao: { arquivo: '[Portuguese] x', falas: [{ s: 1, e: 2, t: 'ALFA: <i>Olá.</i>' }] },
+  }, { modoFrases: 'desligado', esconderMarcacoes: true });
+  assert.deepEqual(r.unidades.map((u) => [u.texto, u.trad]), [['ALPHA: Hello.', 'ALFA: Olá.']]);
+});

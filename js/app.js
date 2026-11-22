@@ -210,10 +210,56 @@ function selo(msg, ms = 1300, icone = '', desligado = false) {
   timerSelo = setTimeout(() => el.classList.remove('visivel'), ms);
 }
 
+// ============================================================ transições (entrada pelo CSS; saída aqui)
+
+const REDUZIR_MOVIMENTO = (() => {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+})();
+
+/** Mostra um elemento (cancela a saída animada, se ela estava em andamento). A entrada é animada pelo CSS. */
+function mostrarComAnimacao(el) {
+  if (!el) return;
+  if (el._saida) { clearTimeout(el._saida); el._saida = 0; }
+  el.classList.remove('saindo');
+  el.hidden = false;
+}
+
+/** Esconde com a animação de saída (.saindo no CSS) e só depois põe hidden. */
+function esconderComAnimacao(el, ms = 200) {
+  if (!el || el.hidden || el._saida) return;
+  if (REDUZIR_MOVIMENTO) { el.hidden = true; return; }
+  el.classList.add('saindo');
+  el._saida = setTimeout(() => {
+    el._saida = 0;
+    el.classList.remove('saindo');
+    el.hidden = true;
+  }, ms);
+}
+
+/** Saindo (animação de saída em andamento) conta como fechado. */
+function aberto(el) {
+  return !!el && !el.hidden && !el._saida;
+}
+
 let timerRetorno = null;
-function mostrarRetorno(texto) {
+// Ícones de retroceder e avançar (os mesmos da explicação dos gestos).
+const SVG_RETROCEDER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>';
+const SVG_AVANCAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>';
+
+/** Aviso rápido no meio do vídeo depois de um gesto. acao 'voltar' ou 'avancar' põe o ícone. */
+function mostrarRetorno(texto, acao = '') {
   const el = $('#retorno-gesto');
-  el.textContent = texto;
+  el.textContent = '';
+  const rotulo = document.createElement('span');
+  rotulo.textContent = texto;
+  if (acao === 'voltar' || acao === 'avancar') {
+    const ic = document.createElement('span');
+    ic.className = 'retorno-icone';
+    ic.innerHTML = acao === 'voltar' ? SVG_RETROCEDER : SVG_AVANCAR;
+    if (acao === 'voltar') el.append(ic, rotulo); else el.append(rotulo, ic);
+  } else {
+    el.append(rotulo);
+  }
   el.classList.add('visivel');
   clearTimeout(timerRetorno);
   timerRetorno = setTimeout(() => el.classList.remove('visivel'), 500);
@@ -850,8 +896,12 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   // App Android, vídeo novo: a legenda vem do próprio vídeo. Até ela ficar pronta, o vídeo fica coberto
   // pela roda girando, sem botão "Tocar": ele começa sozinho depois de "Começar" na escolha do idioma.
   const preparar = ANDROID && !reg.estudo;
+  // App Android, vídeo já salvo (tocado no histórico do YouTube ou em Meus vídeos): começa sozinho, sem o
+  // botão de tocar. Antes, a explicação dos gestos (se ainda não foi marcada "não mostrar mais").
+  const sozinho = APP_NOVO && !!reg.estudo;
   mostrarPreparandoVideo(preparar);
-  $('#btn-tocar-grande').hidden = preparar;
+  $('#btn-tocar-grande').hidden = preparar || sozinho;
+  esconderParaEntrada(false);
   document.body.classList.remove('gestos-ativos');
   atualizarBotaoPlay();
   $('#barra-progresso').value = 0;
@@ -895,6 +945,7 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   p.on('autoplayBloqueado', mostrarAvisoToque);
   if (ANDROID && !reg.estudo) p.manterLegendas?.(true);
   iniciarLaco();
+  if (sozinho) iniciarSozinho(p);
   try {
     await p.carregar(reg.id, inicio);
   } catch (e) {
@@ -938,6 +989,7 @@ function encerrarPlayer() {
 
 function fecharVideo() {
   S.fimExplicacao?.(false);
+  esconderParaEntrada(false);
   zerarRede();
   zerarLegendaYoutube();
   zerarAnuncio();
@@ -988,6 +1040,7 @@ function mostrarErroPlayer(codigo, texto) {
   link.hidden = !proibido;
   if (proibido && S.registro) link.href = `https://www.youtube.com/watch?v=${S.registro.id}`;
   $('#erro-player').hidden = false;
+  esconderParaEntrada(false);
   mostrarPreparandoVideo(false);
   $('#btn-tocar-grande').hidden = true;
   $('#aviso-toque').hidden = true;
@@ -1755,7 +1808,7 @@ function aplicarLegendaYoutube(cap) {
   S.tituloConferido = true; // a legenda veio do próprio vídeo: não há o que conferir
   p?.esconderLegendas?.();
   const concluir = async () => {
-    // Vídeo novo: antes de começar, a explicação de como passar as falas (até a pessoa marcar
+    // Vídeo novo: antes de começar, a explicação de como avançar e retroceder o vídeo (até a pessoa marcar
     // "não mostrar mais"). O vídeo espera parado, coberto; depois começa com entrada suave.
     if (!S.yt.trocando && (S.yt.preparando || S.yt.fase) && precisaExplicarGestos()) {
       S.yt.fase = 'gestos';
@@ -2232,7 +2285,7 @@ function alternarPlay() {
   if (p.estado() === 1) p.pausar(); else p.tocar();
 }
 
-// ============================================================ como passar as falas (explicação) e entrada suave
+// ============================================================ como avançar e retroceder o vídeo (explicação) e entrada suave
 
 function precisaExplicarGestos() {
   return !S.ajustes.gestosExplicados && (!MOCK || GESTOS_MOCK);
@@ -2246,13 +2299,12 @@ function mostrarExplicacaoGestos() {
   if (S.fimExplicacao) S.fimExplicacao(false);
   return new Promise((resolve) => {
     const inv = !!S.ajustes.inverterArraste;
-    const anterior = 'volta para a fala anterior';
-    const proxima = 'avança para a próxima fala';
-    $('#gestos-acao-direita').textContent = inv ? proxima : anterior;
-    $('#gestos-acao-esquerda').textContent = inv ? anterior : proxima;
-    $('#demo-selo-1').textContent = inv ? 'Próxima fala ▶' : '◀ Fala anterior';
-    $('#demo-selo-2').textContent = inv ? '◀ Fala anterior' : 'Próxima fala ▶';
-    // As falas da demonstração andam no sentido do gesto: com a direção invertida, o arraste para a direita avança.
+    const retroceder = 'retrocede o vídeo';
+    const avancar = 'avança o vídeo';
+    $('#gestos-acao-direita').textContent = inv ? avancar : retroceder;
+    $('#gestos-acao-esquerda').textContent = inv ? retroceder : avancar;
+    // Ícones, barra do tempo e legenda da demonstração andam no sentido do gesto: com a direção invertida,
+    // deslizar para a direita avança.
     $('#demo-gestos').classList.toggle('invertido', inv);
     const caixa = $('#gestos-nao-mostrar');
     caixa.checked = !!S.ajustes.gestosExplicados;
@@ -2274,8 +2326,36 @@ function mostrarExplicacaoGestos() {
   });
 }
 
+/**
+ * Vídeo já salvo aberto no app Android: começa sozinho. Com a explicação dos gestos pendente, ela aparece
+ * na hora (o vídeo carrega escondido por trás); ao fechar, entrada suave e o vídeo toca. Sem a explicação,
+ * a entrada suave começa já no toque do vídeo e ele toca assim que o player estiver pronto.
+ */
+async function iniciarSozinho(p) {
+  if (precisaExplicarGestos() && !S.gestosNestaAbertura) {
+    S.gestosNestaAbertura = true;
+    esconderParaEntrada(true);
+    const seguir = await mostrarExplicacaoGestos();
+    if (!seguir || S.player !== p) return;
+  }
+  entradaSuave();
+  // Espera o player carregar (no máximo 30 s; sem internet, o aviso de reconexão cuida do resto).
+  for (let i = 0; i < 300 && S.player === p && !S.pronto; i++) await espera(100);
+  if (S.player !== p || !S.pronto || S.primeiroPlay) return;
+  p.tocar();
+  setTimeout(() => {
+    if (S.player === p && !S.primeiroPlay && [-1, 5].includes(p.estado())) mostrarAvisoToque();
+  }, 1500);
+}
+
+/** Vídeo e legenda escondidos (escuros) até a entrada suave começar. */
+function esconderParaEntrada(sim) {
+  for (const el of [$('#area-video'), $('#caixa-legenda')]) el.classList.toggle('antes-da-entrada', sim);
+}
+
 /** Vídeo e legenda aparecem devagar (fade in) quando o vídeo começa. */
 function entradaSuave() {
+  esconderParaEntrada(false);
   for (const el of [$('#area-video'), $('#caixa-legenda')]) {
     el.classList.remove('entrada-suave');
     void el.offsetWidth; // reinicia a animação
@@ -2698,11 +2778,12 @@ function irParaVizinha(el) {
   S.memoriaNav = { indice: i, quando: performance.now() };
   if (S.loop.ligado) S.loop.alvo = i;
   const pausado = S.primeiroPlay && p.estado() === 2; // pausado continua pausado (como nos gestos)
+  const acao = i < S.exibida ? 'voltar' : 'avancar'; // antes de ir (depois, a exibida já é a nova)
   irParaIndice(i);
   if (!pausado && p.estado() !== 1 && p.estado() !== 3) {
     if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
   }
-  mostrarRetorno(i < S.exibida ? TEXTO_RETORNO.voltar : TEXTO_RETORNO.avancar);
+  mostrarRetorno(TEXTO_RETORNO[acao], acao);
   vibrar();
 }
 
@@ -3015,9 +3096,9 @@ function atualizarBotaoTraducao() {
 
 function abrirMenuTraducao() {
   const menu = $('#menu-traducao');
-  if (!menu.hidden) { fecharMenuTraducao(); return; }
+  if (aberto(menu)) { fecharMenuTraducao(); return; }
   atualizarBotaoTraducao();
-  menu.hidden = false;
+  mostrarComAnimacao(menu);
   $('#btn-traducao').setAttribute('aria-expanded', 'true');
   const r = $('#btn-traducao').getBoundingClientRect();
   const larg = menu.offsetWidth;
@@ -3030,7 +3111,7 @@ function abrirMenuTraducao() {
 }
 
 function fecharMenuTraducao() {
-  $('#menu-traducao').hidden = true;
+  esconderComAnimacao($('#menu-traducao'), 150);
   $('#btn-traducao').setAttribute('aria-expanded', 'false');
 }
 
@@ -3062,7 +3143,7 @@ function direcaoDoArraste(dir) {
   return dir === 'esquerda' ? esquerda : direita;
 }
 
-const TEXTO_RETORNO = { voltar: '◀ Fala anterior', avancar: 'Próxima fala ▶', repetir: '↻ Repetindo' };
+const TEXTO_RETORNO = { voltar: 'Retroceder', avancar: 'Avançar', repetir: '↻ Repetindo' };
 
 function navegarAcao(acao) {
   const p = S.player;
@@ -3082,7 +3163,7 @@ function navegarAcao(acao) {
   if (!pausado && p.estado() !== 1 && p.estado() !== 3) {
     if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
   }
-  mostrarRetorno(TEXTO_RETORNO[acao]);
+  mostrarRetorno(TEXTO_RETORNO[acao], acao);
   vibrar();
 }
 
@@ -3453,16 +3534,16 @@ function trocarFaixaDireto(faixa) {
 }
 
 function abrirPainel(id) {
-  fecharPaineis();
+  for (const outro of ['#painel-ajustes', '#ajuda']) if (outro !== id) $(outro).hidden = true;
   if (id === '#painel-ajustes') sincronizarPainel();
-  $('#fundo-painel').hidden = false;
-  $(id).hidden = false;
+  mostrarComAnimacao($('#fundo-painel'));
+  mostrarComAnimacao($(id));
 }
 
 function fecharPaineis() {
-  $('#fundo-painel').hidden = true;
-  $('#painel-ajustes').hidden = true;
-  $('#ajuda').hidden = true;
+  esconderComAnimacao($('#fundo-painel'));
+  esconderComAnimacao($('#painel-ajustes'));
+  esconderComAnimacao($('#ajuda'));
 }
 
 function aoMudarAjuste(el) {
@@ -3665,9 +3746,9 @@ window.ldVoltar = () => {
   if (!$('#dialogo').hidden) { $('#dialogo-cancelar').click(); return 'ok'; }
   if (!$('#tela-carregando').hidden) { cancelarCarregando(); return 'ok'; }
   if (!$('#tela-idioma').hidden) { $('#idioma-cancelar').click(); return 'ok'; }
-  if (!$('#painel-ajustes').hidden || !$('#ajuda').hidden) { fecharPaineis(); return 'ok'; }
+  if (aberto($('#painel-ajustes')) || aberto($('#ajuda'))) { fecharPaineis(); return 'ok'; }
   if (!$('#cartao-palavra').hidden) { fecharCartao(); return 'ok'; }
-  if (!$('#menu-traducao').hidden) { fecharMenuTraducao(); return 'ok'; }
+  if (aberto($('#menu-traducao'))) { fecharMenuTraducao(); return 'ok'; }
   if (telaABAberta()) { cancelarTelaAB(); return 'ok'; }
   if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return 'ok'; }
   if (!$('#tela-assistir').hidden) { voltarParaBiblioteca(); return 'ok'; }

@@ -88,3 +88,22 @@ test('faixaSugerida: idioma da legenda automática, preferindo a feita por pesso
   assert.equal(faixaSugerida([{ languageCode: 'de' }]), 0);
   assert.equal(faixaSugerida([]), -1);
 });
+
+test('legenda enviada pelo autor: códigos <i>…</i>, <b>, <font> e {\\an8} não aparecem como texto', () => {
+  const json = JSON.stringify({
+    events: [
+      { tStartMs: 1000, dDurationMs: 1500, segs: [{ utf8: 'ALPHA: <i>Hello.</i>' }] },
+      { tStartMs: 3000, dDurationMs: 2000, segs: [{ utf8: 'LOVE: Can you help me write code?' }] },
+      { tStartMs: 5000, dDurationMs: 2000, segs: [{ utf8: 'ALPHA: <i>I was trained</i>\n<i>to answer questions,</i>' }] },
+      { tStartMs: 7000, dDurationMs: 1000, segs: [{ utf8: '<font color="#ffff00">{\\an8}<b>Yes</b></font>' }] },
+      { tStartMs: 8000, dDurationMs: 1000, segs: [{ utf8: '<i></i>' }] },
+    ],
+  });
+  const r = lerTimedText(json);
+  assert.deepEqual(r.falas.map((f) => f.t), [
+    'ALPHA: Hello.', 'LOVE: Can you help me write code?', 'ALPHA: I was trained to answer questions,', 'Yes',
+  ]);
+  // srv3 com o código escapado (&lt;i&gt;)
+  const xml = '<timedtext format="3"><body><p t="0" d="900">&lt;i&gt;Hi there&lt;/i&gt;</p></body></timedtext>';
+  assert.deepEqual(lerTimedText(xml).falas.map((f) => f.t), ['Hi there']);
+});

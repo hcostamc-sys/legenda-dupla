@@ -20,8 +20,8 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 
 | Ação | Celular | Notebook |
 |---|---|---|
-| Avançar uma fala | Arrastar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda (como virar página) | Seta → |
-| Voltar uma fala | Arrastar para a **direita** | Seta ← |
+| Avançar o vídeo (até a próxima fala) | Deslizar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda (como virar página) | Seta → |
+| Retroceder o vídeo (até a fala anterior) | Deslizar para a **direita** | Seta ← |
 | Repetir a fala | Segurar o dedo no vídeo | R ou ↓ |
 | Tocar / pausar | Toque no vídeo, ou o botão amarelo | Espaço |
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
@@ -36,9 +36,11 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 
 Padrão de quem acabou de instalar: falas em **Lista** e tradução **Mostrar sempre**.
 
-Com o vídeo **pausado**, passar as falas (arrastar, setas, segurar) não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Tocando, continua tocando. Abrir **⚙ Ajustes** pausa o vídeo na hora.
+Com o vídeo **pausado**, avançar ou retroceder (deslizar, setas, segurar) não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Tocando, continua tocando. Abrir **⚙ Ajustes** pausa o vídeo na hora.
 
-Antes de o vídeo começar aparece uma explicação animada de como passar as falas: uma caixa de legenda no modo lista, com 3 falas de exemplo em inglês (anterior, atual e próxima); o dedo amarelo desliza para um lado e para o outro e as falas andam no sentido do gesto (voltam ou avançam). Ela volta a cada vídeo até você marcar **Não mostrar mais esta explicação** e tocar em **Concluir**; dá para ver de novo em ⚙ Ajustes → **Ver como passar as falas**. Quando o vídeo começa, o vídeo e a legenda aparecem devagar (entrada suave, de uns 2,4 s: escuro no começo, clareando aos poucos).
+Antes de o vídeo começar aparece uma explicação animada de **como avançar e retroceder o vídeo**: um vídeo de exemplo com a barra do tempo e a legenda no modo lista (3 falas em inglês). Um polegar desliza rápido (uns 0,4 s) para um lado e para o outro; a cada deslize aparece no meio do vídeo o ícone de **Retroceder** (⏪) ou de **Avançar** (⏩), o ponto da barra do tempo volta ou vai para a frente e a legenda anda junto. Ela volta a cada vídeo até você marcar **Não mostrar mais esta explicação** e tocar em **Concluir**; dá para ver de novo em ⚙ Ajustes → **Ver como avançar e retroceder o vídeo**. Ao deslizar no vídeo de verdade, o aviso rápido no meio da tela também mostra o ícone com **Retroceder** ou **Avançar**. Quando o vídeo começa, o vídeo e a legenda aparecem devagar (entrada suave, de uns 2,4 s: escuro no começo, clareando aos poucos).
+
+No app Android, um vídeo que já está em Meus vídeos (tocado no **histórico do YouTube** ou em **Meus vídeos**) começa sozinho: a entrada suave começa no toque e o vídeo toca assim que carregar, sem precisar do botão de tocar. Se a explicação ainda não foi marcada como “não mostrar mais”, ela aparece primeiro (com o vídeo escuro por trás) e, ao tocar em **Concluir**, vem a entrada suave e o vídeo toca.
 
 **Internet fraca ou caída:** em vez de o vídeo ficar parado sem explicação, aparece por cima dele um aviso animado (o símbolo do Wi‑Fi acendendo) com **Sem Internet. Tentando reconectar…** ou **Internet fraca. Tentando reconectar…**. Os gestos continuam funcionando. Enquanto o vídeo estiver travado, o app pede o trecho de novo ao YouTube (aos 8 s e depois a cada 10 s; na 4ª vez recria o player no mesmo ponto). Quando a internet volta, o vídeo continua sozinho de onde parou.
 
@@ -110,6 +112,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Versão 8:** nomes de todos os idiomas nas listas (antes alguns apareciam só como “Ps”, “Qu”, “Rw”), velocidade de 0,05 em 0,05 abaixo de 1× e legenda automática com tempo exato por palavra e pontuação aproximada.
 - **Versão 10:** o vídeo assistido no app entra no **histórico do YouTube** da conta conectada (o player embutido não grava no histórico; o app avisa o YouTube como o app oficial faz, ao começar o vídeo, a cada 20 s, ao pausar e ao sair). Precisa estar conectado (**Entrar**) e com o histórico ligado na conta. Também: permissão de notificações obrigatória para o download dos pacotes, erros explicados, explicação animada dos gestos e entrada suave do vídeo.
 - **Versão 11:** o histórico do YouTube fica em dia quase na hora: o app busca os endereços de registro assim que o vídeo abre (o registro sai no instante em que o vídeo começa, sem esperar baixar a página do vídeo), manda o progresso a cada 10 s, ao pausar, ao pular na barra (inclusive para trás) e ao sair, tenta de novo se o registro inicial falhar, e o YouTube da tela inicial recarrega sozinho ao voltar, mostrando o vídeo no histórico e a barrinha vermelha de progresso sem precisar puxar para atualizar. O próprio YouTube pode levar alguns segundos para processar. Também: o Android avisa a página quando a internet cai ou volta (aviso de reconexão).
+- **Versão 12:** transições suaves: o YouTube da tela inicial aparece subindo levemente e some apagando ao abrir um vídeo (curvas padrão do Material Design, 0,3 s e 0,24 s), e as abas do próprio YouTube (Início, Inscrições, Você, Histórico, busca) trocam com esmaecimento (o conteúdo antigo apaga em 0,15 s e o novo aparece em 0,32 s). Na página, Meus vídeos e a tela do vídeo aparecem com esmaecimento; o painel ⚙ Ajustes sobe e desce, o menu 文A abre e fecha com zoom curto, as janelas aparecem com leve aumento e a lista do A–B sobe. Também: códigos de formatação das legendas enviadas pelo autor do vídeo (como `<i>Hello.</i>`, `<b>`, `<font>`, `{\an8}`) não aparecem mais como texto, inclusive em vídeos já salvos.
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 

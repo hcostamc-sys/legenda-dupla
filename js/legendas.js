@@ -496,6 +496,43 @@ export function tirarColchetes(texto) {
   return String(texto || '').replace(RE_COLCHETES, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Códigos de formatação que o autor do vídeo põe na legenda que ele mesmo enviou ao YouTube: itálico
+// <i>…</i>, negrito <b>, sublinhado <u>, <font color="…">, <c.amarelo>, <v Nome>, tempos internos
+// <00:01.000> e os códigos {\an8} {\i1} das legendas ASS. Às vezes chegam escapados (&lt;i&gt;).
+// O player do YouTube aplica esses códigos; o app não usa, então tira (antes apareciam como texto).
+const RE_TAG = /<\/?[a-zA-Z][a-zA-Z0-9.:_-]*(?:\s[^<>]*)?\/?>|<\/?\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>/g;
+const RE_TAG_ESCAPADA = /&lt;\/?[a-zA-Z][a-zA-Z0-9.:_-]*(?:\s(?:(?!&gt;)[^<>])*)?\/?&gt;/gi;
+const RE_TAG_ASS = /\{\\[^{}]*\}/g;
+
+/** Tira os códigos de formatação (<i>, </i>, <b>, <font …>, {\an8}…) de um texto de legenda. */
+export function tirarTags(texto) {
+  const t = String(texto ?? '');
+  if (!/[<{&]/.test(t)) return t;
+  return t.replace(RE_TAG_ESCAPADA, '').replace(RE_TAG, '').replace(RE_TAG_ASS, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Falas sem os códigos de formatação (também nas palavras com tempo). Falas que ficam vazias somem. */
+export function tirarTagsFalas(falas) {
+  if (!Array.isArray(falas)) return falas;
+  const saida = [];
+  for (const f of falas) {
+    const t = tirarTags(f.t);
+    if (t === f.t) { saida.push(f); continue; }
+    if (!t) continue;
+    const g = { ...f, t };
+    if (f.ps) {
+      const ps = [];
+      for (const p of f.ps) {
+        const w = tirarTags(p.w);
+        if (w) ps.push(w === p.w ? p : { ...p, w });
+      }
+      if (ps.map((p) => p.w).join(' ') === t) g.ps = ps; else delete g.ps;
+    }
+    saida.push(g);
+  }
+  return saida;
+}
+
 /** Palavras com tempo sem as que estão entre colchetes ("[clears" e "throat]" somem juntas). */
 function palavrasSemColchetes(ps) {
   const saida = [];
@@ -1166,8 +1203,9 @@ export function processar(entrada, opcoes = {}) {
   const automatica = ehAutomatica(brutasEstudo, entrada.estudo?.arquivo || '');
   const frases = modo === 'ligado' || (modo === 'auto' && automatica);
 
-  let estudo = aplicarAjuste(brutasEstudo, entrada.ajusteEstudo);
-  let trad = entrada.traducao?.falas ? aplicarAjuste(entrada.traducao.falas, entrada.ajusteTraducao) : [];
+  // Códigos de formatação (<i>…</i>) saem sempre, inclusive dos vídeos já salvos antes desta correção.
+  let estudo = tirarTagsFalas(aplicarAjuste(brutasEstudo, entrada.ajusteEstudo));
+  let trad = entrada.traducao?.falas ? tirarTagsFalas(aplicarAjuste(entrada.traducao.falas, entrada.ajusteTraducao)) : [];
   if (opcoes.esconderMarcacoes) {
     estudo = esconderMarcacoes(estudo);
     trad = esconderMarcacoes(trad);
@@ -1207,7 +1245,7 @@ export function processar(entrada, opcoes = {}) {
 export function palavrasParaPontuar(entrada, opcoes = {}) {
   const brutas = entrada.estudo?.falas || [];
   if (!ehAutomatica(brutas, entrada.estudo?.arquivo || '')) return null;
-  let estudo = brutas;
+  let estudo = tirarTagsFalas(brutas);
   if (opcoes.esconderMarcacoes) estudo = esconderMarcacoes(estudo);
   if (!temTempoDePalavra(estudo) || legendaPontuada(estudo)) return null;
   const palavras = itensDasFalas(estudo).filter((it) => it.p).map((it) => it.p.w);

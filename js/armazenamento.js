@@ -25,7 +25,7 @@ export const AJUSTES_PADRAO = Object.freeze({
   velocidade: 1,
   // Pontuação melhorada (modelo baixado à parte): usar quando o pacote do idioma estiver no aparelho.
   pontuacaoModelo: true,
-  // A explicação animada de como passar as falas (antes do vídeo) já foi marcada "não mostrar mais".
+  // A explicação animada de como avançar e retroceder o vídeo (antes do vídeo) já foi marcada "não mostrar mais".
   gestosExplicados: false,
 });
 
