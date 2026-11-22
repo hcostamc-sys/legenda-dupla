@@ -14,8 +14,9 @@ export const AJUSTES_PADRAO = Object.freeze({
   idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
   destino: 'pt', // idioma da tradução automática; 'nao' = não traduzir
   inverterArraste: false,
+  // Padrões de quem acabou de instalar (22/11/2026): tradução "mostrar sempre" e as falas em lista.
   modoTraducao: 'sempre', // sempre | pausado (só com o vídeo parado) | desligada
-  modoLegenda: 'uma', // uma (uma fala por vez) | lista (anterior, atual e próxima)
+  modoLegenda: 'lista', // lista (anterior, atual e próxima) | uma (uma fala por vez)
   fonteL1: 19, // a linha 2 usa 85% deste tamanho
   velocidade: 1,
 });

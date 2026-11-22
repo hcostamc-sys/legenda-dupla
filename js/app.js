@@ -75,6 +75,7 @@ const S = {
   ab: { a: null, b: null }, // trecho A–B (índices das falas)
   marcandoAB: null, // null | 'a' | 'b': na tela de escolha do A–B, o próximo toque marca esse ponto
   abTocava: false, // o vídeo tocava quando a tela do A–B abriu
+  abAvisoTimer: 0, // some com o aviso de B inválido
   abHistorico: false, // a tela do A–B pôs uma entrada no histórico (para o voltar do celular)
   velConfirmada: 1,
   velPedida: null,
@@ -422,6 +423,7 @@ function limparFormulario() {
 }
 
 async function abrirDoFormulario() {
+  if (ANDROID && ehShorts($('#campo-link').value)) { mostrarBloqueio('shorts'); return; }
   const link = lerLink($('#campo-link').value);
   if (!link || (!S.escolha.estudo && !ANDROID)) return;
   const existente = await obterVideo(link.videoId);
@@ -726,6 +728,7 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   if (S.player) encerrarPlayer();
   zerarLegendaYoutube();
   zerarAnuncio();
+  $('#tela-bloqueio').hidden = true;
   S.origem = origem;
   $('#btn-voltar').setAttribute('aria-label', !APP_NOVO ? 'Voltar para a biblioteca' : origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar para Meus vídeos');
   const corrigido = corrigirPapeisSalvos(reg);
@@ -1278,6 +1281,7 @@ function aoReceberDoGancho(ev) {
     video: texto(d.video), faixas, fontes: Array.isArray(d.fontes) ? d.fontes.map(texto).join('+') : '',
     status: texto(d.status), semCaptions: !!d.semCaptions, temResposta: !!d.temResposta,
     getPlayerResponse: !!d.getPlayerResponse, versao: Number(d.versao) || 0,
+    aoVivo: d.aoVivo === true, agendado: d.agendado === true,
   };
   const antes = S.yt.gancho;
   if (!S.yt.vistoGancho) diag(`gancho v${novo.versao} respondeu`);
@@ -1286,6 +1290,77 @@ function aoReceberDoGancho(ev) {
     diag(`gancho: vídeo ${novo.video || '?'}, ${faixas.length} faixas (${faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${novo.fontes || '—'}, resposta ${novo.temResposta ? novo.status || 'sim' : 'não'}${novo.semCaptions ? ', SEM legendas' : ''}`);
   }
   S.yt.gancho = novo;
+  conferirAoVivo();
+}
+
+// ============================================================ vídeos não suportados: ao vivo e Shorts
+
+/** Link de um vídeo Shorts (youtube.com/shorts/...). */
+function ehShorts(texto) {
+  return /(^|[/.])youtube\.com\/shorts\//i.test(String(texto || ''));
+}
+
+/**
+ * Transmissão ao vivo (ou agendada): o app precisa da legenda inteira do vídeo, que uma live ainda não tem.
+ * Fontes: o gancho do app (resposta do YouTube: isLive/isUpcoming) e o player (getVideoData().isLive).
+ */
+function conferirAoVivo() {
+  const reg = S.registro;
+  const p = S.player;
+  if (!ANDROID || !reg || !p || reg.estudo || !$('#tela-bloqueio').hidden) return;
+  const g = S.yt.gancho;
+  const doGancho = !!g && g.video === reg.id && (g.aoVivo || g.agendado);
+  let doPlayer = false;
+  try { doPlayer = !!p.aoVivo?.(); } catch { /* nada */ }
+  if (!doGancho && !doPlayer) return;
+  diag(`vídeo ao vivo (${doGancho ? 'gancho' : 'player'}${g?.agendado ? ', agendado' : ''}): não suportado`);
+  // Para tudo o que esperava a legenda (janelas, tentativas) e o próprio vídeo.
+  clearTimeout(S.yt.timer);
+  S.yt.geracao++;
+  S.yt.estado = 'ocioso';
+  S.yt.fase = null;
+  S.yt.faixa = null;
+  S.yt.preparando = false;
+  $('#tela-carregando').hidden = true;
+  if (!$('#tela-idioma').hidden) $('#idioma-cancelar').click(); // a espera da escolha termina sem efeito
+  try { p.silenciar?.(true); p.pausar(); } catch { /* nada */ }
+  atualizarAviso();
+  mostrarBloqueio(g?.agendado && !g?.aoVivo ? 'agendado' : 'aoVivo');
+}
+
+/** Janela "não suportado" com um botão só, que volta ao YouTube. */
+function mostrarBloqueio(tipo) {
+  const textos = {
+    aoVivo: ['Vídeos ao vivo não são suportados',
+      'Esta é uma transmissão ao vivo. O Legenda Dupla precisa da legenda completa do vídeo para montar as falas, e uma live ainda não tem. Quando a transmissão terminar e ficar salva no canal, tente de novo.'],
+    agendado: ['Vídeos ao vivo não são suportados',
+      'Esta transmissão ao vivo ainda não começou. O Legenda Dupla só abre vídeos já gravados: quando a live terminar e ficar salva no canal, tente de novo.'],
+    shorts: ['Vídeos Shorts não são suportados',
+      'O Legenda Dupla é feito para os vídeos normais do YouTube. Volte e escolha outro vídeo.'],
+  };
+  const [titulo, texto] = textos[tipo] || textos.aoVivo;
+  $('#bloqueio-selo').dataset.tipo = tipo === 'shorts' ? 'shorts' : 'aoVivo';
+  $('#bloqueio-titulo').textContent = titulo;
+  $('#bloqueio-texto').textContent = texto;
+  $('#bloqueio-voltar').textContent = APP_NOVO ? 'Voltar ao YouTube' : 'Voltar';
+  fecharPaineis();
+  fecharCartao();
+  fecharMenuTraducao();
+  $('#tela-bloqueio').hidden = false;
+  $('#bloqueio-voltar').focus();
+  try { navigator.vibrate?.(30); } catch { /* nada */ }
+}
+
+/** Único botão da janela: sai do vídeo (se abriu) e volta ao YouTube. */
+function sairDoBloqueio() {
+  $('#tela-bloqueio').hidden = true;
+  if (S.registro) {
+    const doYoutube = S.origem === 'youtube';
+    voltarParaBiblioteca(); // o vídeo veio do YouTube: a rota fecha o vídeo e volta para lá
+    if (APP_NOVO && !doYoutube) abrirYoutube('');
+  } else if (APP_NOVO) {
+    abrirYoutube('');
+  }
 }
 
 /** Texto do diagnóstico para o usuário colar na conversa. */
@@ -1572,6 +1647,7 @@ function tique() {
   if (agora - S.ultimoProgresso >= 250) {
     S.ultimoProgresso = agora;
     atualizarProgresso();
+    conferirAoVivo();
   }
   if (st === 1 && agora - S.ultimoSalvamento >= 5000) {
     S.ultimoSalvamento = agora;
@@ -1939,29 +2015,78 @@ function atualizarTelaAB() {
   const a = S.ab.a;
   $('#ab-titulo').textContent = escolhendoB ? 'Agora o fim (B)' : 'Escolha o início (A)';
   $('#ab-sub').textContent = escolhendoB
-    ? `A em ${formatarTempo(S.unidades[a]?.s)}. Toque na fala onde o trecho termina (pode ser a mesma).`
+    ? `A em ${formatarTempo(S.unidades[a]?.s)}. Toque numa fala depois do A, onde o trecho termina.`
     : 'Role a lista e toque na fala onde o trecho começa.';
   $('#ab-refazer').hidden = !escolhendoB;
   for (const bt of $$('#ab-lista .ab-fala')) {
     const i = Number(bt.dataset.i);
     const ehA = escolhendoB && i === a;
     bt.classList.toggle('marca-a', ehA);
+    // Escolhendo o B: as falas antes do A ficam apagadas (não podem ser o fim do trecho).
+    bt.classList.toggle('antes-a', escolhendoB && i < a);
     bt.querySelector('.ab-selo').textContent = ehA ? 'A' : bt.classList.contains('agora') ? 'agora' : '';
   }
 }
 
-/** Toque numa fala da lista: marca A; no segundo toque marca B, volta ao vídeo e repete. */
+/** Aviso flutuante da tela A–B (some sozinho) e a fala tocada balança em vermelho. */
+function avisarAB(titulo, texto, bt) {
+  const av = $('#ab-aviso');
+  $('#ab-aviso-titulo').textContent = titulo;
+  $('#ab-aviso-texto').textContent = texto;
+  av.hidden = false;
+  av.classList.remove('saindo', 'entrando');
+  void av.offsetWidth; // reinicia a animação se o aviso já estava na tela
+  av.classList.add('entrando');
+  clearTimeout(S.abAvisoTimer);
+  S.abAvisoTimer = setTimeout(() => {
+    av.classList.add('saindo');
+    S.abAvisoTimer = setTimeout(esconderAvisoAB, 260);
+  }, 3600);
+  if (bt) {
+    bt.classList.remove('recusada');
+    void bt.offsetWidth;
+    bt.classList.add('recusada');
+    setTimeout(() => bt.classList.remove('recusada'), 700);
+  }
+  try { navigator.vibrate?.([35, 60, 35]); } catch { /* nada */ }
+}
+
+function esconderAvisoAB() {
+  clearTimeout(S.abAvisoTimer);
+  const av = $('#ab-aviso');
+  av.hidden = true;
+  av.classList.remove('entrando', 'saindo');
+}
+
+/**
+ * Toque numa fala da lista: marca A; no segundo toque marca B, volta ao vídeo e repete.
+ * O trecho tem no mínimo 2 falas: B na mesma fala do A, ou antes dele, mostra um aviso.
+ */
 function escolherPontoAB(i) {
   if (!S.unidades[i] || !S.marcandoAB) return;
-  vibrar();
+  const bt = $(`#ab-lista .ab-fala[data-i="${i}"]`);
   if (S.marcandoAB === 'a') {
+    vibrar();
+    esconderAvisoAB();
     S.ab = { a: i, b: null };
     S.marcandoAB = 'b';
     atualizarTelaAB();
     return;
   }
   const a = S.ab.a;
-  S.ab = { a: Math.min(a, i), b: Math.max(a, i) };
+  if (i === a) {
+    avisarAB('O trecho precisa de 2 falas ou mais',
+      'Você tocou na mesma fala do A. Toque numa fala mais abaixo para ser o fim (B).', bt);
+    return;
+  }
+  if (i < a) {
+    avisarAB('O B tem que vir depois do A',
+      `Essa fala é anterior ao início (A em ${formatarTempo(S.unidades[a].s)}). Toque numa fala mais abaixo, ou em Refazer A.`, bt);
+    return;
+  }
+  vibrar();
+  esconderAvisoAB();
+  S.ab = { a, b: i };
   S.marcandoAB = null;
   fecharTelaAB(false);
   atualizarBotoesRepeticao();
@@ -1974,6 +2099,7 @@ function escolherPontoAB(i) {
 }
 
 function refazerA() {
+  esconderAvisoAB();
   S.ab = { a: null, b: null };
   S.marcandoAB = 'a';
   atualizarTelaAB();
@@ -1991,6 +2117,7 @@ function cancelarTelaAB(peloVoltar = false) {
 }
 
 function fecharTelaAB(peloVoltar) {
+  esconderAvisoAB();
   $('#tela-ab').hidden = true;
   $('#ab-lista').textContent = '';
   if (S.abHistorico) {
@@ -2002,6 +2129,7 @@ function fecharTelaAB(peloVoltar) {
 function zerarRepeticao() {
   if (telaABAberta()) {
     // Fechando o vídeo ou trocando as falas: some sem mexer no histórico nem voltar a tocar.
+    esconderAvisoAB();
     $('#tela-ab').hidden = true;
     $('#ab-lista').textContent = '';
     S.abHistorico = false;
@@ -2391,6 +2519,7 @@ function lerCompartilhamento() {
   if (p.get('mockErro')) limpo.set('mockErro', p.get('mockErro'));
   const q = limpo.toString();
   history.replaceState(null, '', location.pathname + (q ? `?${q}` : '') + '#biblioteca');
+  if (ANDROID && ehShorts(texto)) { mostrarBloqueio('shorts'); return; }
   if (!link) {
     toast(MSG_LINK_INVALIDO);
     return;
@@ -2462,6 +2591,7 @@ function abrirYoutube(url) {
 
 /** O app Android chama esta função quando um vídeo é tocado no YouTube de dentro do app. */
 window.ldAbrirDoYoutube = (url) => {
+  if (ehShorts(url)) { mostrarBloqueio('shorts'); return; }
   const link = lerLink(String(url || ''));
   if (!link) return;
   if (S.registro) fecharVideo();
@@ -2473,6 +2603,7 @@ window.ldAbrirDoYoutube = (url) => {
 
 /** O app Android chama esta função no botão "Meus vídeos" (em cima do YouTube). */
 window.ldMostrarBiblioteca = () => {
+  $('#tela-bloqueio').hidden = true;
   if (S.registro) {
     fecharVideo();
     history.replaceState(null, '', location.pathname + location.search + '#biblioteca');
@@ -2487,6 +2618,7 @@ window.ldMostrarBiblioteca = () => {
  * (fechou uma janela ou saiu do vídeo) e 'nao' se não há o que fazer (o app volta ao YouTube).
  */
 window.ldVoltar = () => {
+  if (!$('#tela-bloqueio').hidden) { sairDoBloqueio(); return 'ok'; }
   if (!$('#dialogo').hidden) { $('#dialogo-cancelar').click(); return 'ok'; }
   if (!$('#tela-carregando').hidden) { cancelarCarregando(); return 'ok'; }
   if (!$('#tela-idioma').hidden) { $('#idioma-cancelar').click(); return 'ok'; }
@@ -2558,6 +2690,7 @@ function ligarEventos() {
   $('#btn-loop').addEventListener('click', alternarLoop);
   $('#btn-ab').addEventListener('click', tocarAB);
   $('#ab-cancelar').addEventListener('click', () => cancelarTelaAB());
+  $('#bloqueio-voltar').addEventListener('click', sairDoBloqueio);
   $('#ab-refazer').addEventListener('click', refazerA);
   $('#ab-lista').addEventListener('click', (ev) => {
     const bt = ev.target.closest?.('.ab-fala');
@@ -2619,7 +2752,7 @@ function ligarEventos() {
   });
 
   // tela cheia ou deitado: tocar na faixa mantém ela visível por mais 3 s
-  for (const sel of ['#faixa', '#barra-topo']) {
+  for (const sel of ['#faixa', '#barra-botoes', '#barra-topo']) {
     $(sel).addEventListener('pointerdown', () => {
       if (document.body.classList.contains('imersivo')) mostrarFaixa();
     });

@@ -10,7 +10,7 @@
 (function () {
   if (window.__ldGancho) return;
   window.__ldGancho = true;
-  var VERSAO = 2;
+  var VERSAO = 3; // 3: avisa também se o vídeo é transmissão ao vivo (ou agendada)
   var noPlayer = window.top !== window && /^\/embed\//.test(location.pathname);
   var contagemLegendas = 0; // legendas vistas (para saber se o player já baixou)
 
@@ -153,6 +153,16 @@
     var resp = respostaDoPlayer(p, video);
     var status = '';
     var semCaptions = false;
+    var aoVivo = false;
+    var agendado = false;
+    try {
+      var dados = p && p.getVideoData && p.getVideoData();
+      if (dados && dados.isLive === true) aoVivo = true;
+    } catch (e) { /* nada */ }
+    if (resp && resp.videoDetails) {
+      if (resp.videoDetails.isLive === true) aoVivo = true;
+      if (resp.videoDetails.isUpcoming === true) agendado = true;
+    }
     if (resp) {
       status = (resp.playabilityStatus && resp.playabilityStatus.status) || '';
       if (!video && resp.videoDetails) video = resp.videoDetails.videoId || '';
@@ -189,7 +199,7 @@
     }
     return {
       ldFaixas: true, versao: VERSAO, video: video, faixas: lista, fontes: fontes, status: status,
-      semCaptions: semCaptions, temResposta: !!resp,
+      semCaptions: semCaptions, temResposta: !!resp, aoVivo: aoVivo, agendado: agendado,
       getPlayerResponse: !!(p && typeof p.getPlayerResponse === 'function'), token: !!token,
     };
   }

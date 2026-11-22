@@ -249,6 +249,11 @@ export class PlayerYouTube extends Emissor {
     try { return (this.yt?.getVideoData?.().title || '').trim(); } catch { return ''; }
   }
 
+  /** Transmissão ao vivo agora? (getVideoData().isLive do player; não documentado, só confia em true) */
+  aoVivo() {
+    try { return this.yt?.getVideoData?.().isLive === true; } catch { return false; }
+  }
+
   velocidades() {
     try {
       const v = this.yt?.getAvailablePlaybackRates?.();
@@ -421,6 +426,9 @@ export class PlayerFalso extends Emissor {
   estado() { return this._estado; }
   titulo() { return 'Vídeo de teste'; }
 
+  /** ?mockAoVivo=1: transmissão ao vivo (o player só informa depois de carregar). */
+  aoVivo() { return !!this.opcoes.aoVivo && this._estado !== -1; }
+
   manterLegendas() {}
 
   /** Faixas de teste: inglês automática, inglês feita por pessoa e português. ?mockSemLegenda=1: nenhuma. */
@@ -510,6 +518,7 @@ export function criarPlayer(container) {
       semLegenda: p.get('mockSemLegenda') === '1',
       anuncio: p.get('mockAnuncio') === 'teimoso' ? 'teimoso' : p.get('mockAnuncio') === '1',
       soAsr: p.get('mockSoAsr') === '1',
+      aoVivo: p.get('mockAoVivo') === '1',
     });
   }
   return new PlayerYouTube(container);

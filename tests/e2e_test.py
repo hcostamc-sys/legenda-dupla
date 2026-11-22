@@ -418,6 +418,10 @@ def t_repeticao(page):
 @caso('6c. Modo lista: anterior, atual e próxima; tamanhos com a tradução; toque na vizinha')
 def t_lista(page):
     page.locator('#titulo-video').click()
+    # padrão de quem acabou de instalar: falas em lista; a tecla V volta para uma fala por vez
+    expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'true')
+    page.keyboard.press('v')
+    expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'false')
     expect(page.locator('#fala-ant')).to_be_hidden()
     expect(page.locator('#fala-prox')).to_be_hidden()
     page.click('#btn-modo-legenda')
@@ -479,6 +483,162 @@ def t_lista(page):
     expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'false')
     expect(page.locator('#fala-ant')).to_be_hidden()
     expect(page.locator('#fala-prox')).to_be_hidden()
+
+
+@caso('6d. A–B: B na mesma fala do A ou antes dele mostra aviso; selo "agora" alinhado; botões embaixo da legenda')
+def t_ab_invalido(page):
+    page.locator('#titulo-video').click()
+    # botões embaixo da caixa da legenda; a barra do tempo continua logo abaixo do vídeo
+    r = lambda sel: page.evaluate(f"(() => {{ const r = document.querySelector('{sel}').getBoundingClientRect(); return [r.top, r.bottom]; }})()")
+    video, tempo_b, caixa, botoes = r('#area-video'), r('#faixa'), r('#caixa-legenda'), r('#barra-botoes')
+    assert video[1] <= tempo_b[0] + 1 and tempo_b[1] <= caixa[0] + 1 and caixa[1] < botoes[0], (video, tempo_b, caixa, botoes)
+    assert botoes[1] <= page.evaluate('window.innerHeight') + 1, botoes
+    if estado(page) == 1:
+        page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausado')
+    page.evaluate('window.__ld.S.player.irPara(12)')
+    esperar(lambda: exibida(page) == 5, msg='fala 6')
+    page.click('#btn-ab')
+    expect(page.locator('#tela-ab')).to_be_visible()
+    # selo "agora" centralizado embaixo do tempo
+    geo = page.evaluate("""() => {
+      const b = document.querySelector('#ab-lista .ab-fala.agora');
+      const t = b.querySelector('.ab-tempo').getBoundingClientRect();
+      const s = b.querySelector('.ab-selo').getBoundingClientRect();
+      const tx = document.createRange(); tx.selectNodeContents(b.querySelector('.ab-tempo').firstChild);
+      const r = tx.getBoundingClientRect();
+      return { tempo: r.left + r.width / 2, selo: s.left + s.width / 2, coluna: t.left + t.width / 2, larg: s.width };
+    }""")
+    assert abs(geo['tempo'] - geo['selo']) < 1.5 and abs(geo['coluna'] - geo['selo']) < 1.5, geo
+    page.screenshot(path=os.path.join(CAPTURAS, 'ab-selo-agora.png'))
+    page.locator('#ab-lista .ab-fala[data-i="5"]').click()  # A
+    expect(page.locator('#ab-titulo')).to_have_text('Agora o fim (B)')
+    expect(page.locator('#ab-lista .ab-fala[data-i="3"]')).to_have_class(re.compile(r'antes-a'))
+    expect(page.locator('#ab-lista .ab-fala[data-i="7"]')).not_to_have_class(re.compile(r'antes-a'))
+    # B na mesma fala: aviso, continua escolhendo o B
+    page.locator('#ab-lista .ab-fala[data-i="5"]').click()
+    expect(page.locator('#ab-aviso')).to_be_visible()
+    expect(page.locator('#ab-aviso-titulo')).to_have_text('O trecho precisa de 2 falas ou mais')
+    expect(page.locator('#ab-lista .ab-fala[data-i="5"]')).to_have_class(re.compile(r'recusada'))
+    assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b, window.__ld.S.marcandoAB]') == [5, None, 'b']
+    expect(page.locator('#tela-ab')).to_be_visible()
+    time.sleep(0.35)
+    page.screenshot(path=os.path.join(CAPTURAS, 'ab-aviso-mesma-fala.png'))
+    # B antes do A: outro aviso
+    page.locator('#ab-lista .ab-fala[data-i="3"]').click()
+    expect(page.locator('#ab-aviso-titulo')).to_have_text('O B tem que vir depois do A')
+    expect(page.locator('#ab-aviso-texto')).to_contain_text('Refazer A')
+    assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b]') == [5, None]
+    time.sleep(0.35)
+    page.screenshot(path=os.path.join(CAPTURAS, 'ab-aviso-antes-do-a.png'))
+    # o aviso some sozinho
+    expect(page.locator('#ab-aviso')).to_be_hidden(timeout=6000)
+    # B válido: trecho de 3 falas
+    page.locator('#ab-lista .ab-fala[data-i="7"]').click()
+    expect(page.locator('#tela-ab')).to_be_hidden()
+    assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b]') == [5, 7]
+    expect(page.locator('#dica-ab')).to_contain_text('3 falas')
+    page.click('#btn-ab')
+    expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'false')
+    if estado(page) == 1:
+        page.click('#btn-play')
+
+
+@caso('12d. App novo: vídeo ao vivo e Shorts não abrem (aviso com volta ao YouTube); padrões novos')
+def t_ao_vivo_shorts(browser, base):
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    msgs = lambda: page.evaluate('window.__msgs')
+    os.makedirs(CAPTURAS, exist_ok=True)
+    # padrões de quem acabou de instalar: falas em lista e tradução "mostrar sempre"
+    page.goto(base + '?mock=1&app=android&apk=6')
+    page.evaluate('localStorage.clear()')
+    page.reload()
+    page.wait_for_function('!!window.__ld')
+    assert page.evaluate('[window.__ld.S.ajustes.modoLegenda, window.__ld.S.ajustes.modoTraducao]') == ['lista', 'sempre']
+    # sem link para a página de teste nos ajustes
+    assert page.locator('#painel-ajustes a[href*="prototipo"]').count() == 0
+
+    # ao vivo, visto pelo player (getVideoData().isLive)
+    page.goto(base + '?mock=1&app=android&apk=6&mockAoVivo=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=KKKKKKKKKKK')")
+    expect(page.locator('#tela-bloqueio')).to_be_visible(timeout=6000)
+    expect(page.locator('#bloqueio-titulo')).to_have_text('Vídeos ao vivo não são suportados')
+    expect(page.locator('#bloqueio-selo .selo-vivo')).to_be_visible()
+    expect(page.locator('#bloqueio-voltar')).to_have_text('Voltar ao YouTube')
+    expect(page.locator('#tela-carregando')).to_be_hidden()
+    expect(page.locator('#tela-idioma')).to_be_hidden()
+    esperar(lambda: estado(page) != 1, msg='vídeo parado')
+    time.sleep(0.4)
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-ao-vivo.png'))
+    n = len(msgs())
+    page.click('#bloqueio-voltar')
+    expect(page.locator('#tela-bloqueio')).to_be_hidden()
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    esperar(lambda: {'acao': 'youtube', 'url': ''} in msgs()[n:], limite=3, msg='voltou ao YouTube')
+    expect(page.locator('.item-bib')).to_have_count(0)  # não entra em "Meus vídeos"
+
+    # ao vivo, visto pelo gancho (resposta do YouTube) com a escolha do idioma aberta
+    page.goto(base + '?mock=1&app=android&apk=6')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=LLLLLLLLLLL')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.evaluate("""window.postMessage({ ldFaixas: true, versao: 3, video: 'LLLLLLLLLLL', faixas: [], fontes: ['resposta'],
+      status: 'OK', temResposta: true, semCaptions: false, aoVivo: true, agendado: false }, '*')""")
+    expect(page.locator('#tela-bloqueio')).to_be_visible(timeout=3000)
+    expect(page.locator('#tela-idioma')).to_be_hidden()
+    n = len(msgs())
+    assert page.evaluate('window.ldVoltar()') == 'ok'  # o voltar do celular faz o mesmo que o botão
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    esperar(lambda: {'acao': 'youtube', 'url': ''} in msgs()[n:], limite=3, msg='voltou ao YouTube')
+
+    # Shorts tocado no YouTube do app (ou pelo histórico)
+    n = len(msgs())
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/shorts/abcdefghijk')")
+    expect(page.locator('#tela-bloqueio')).to_be_visible()
+    expect(page.locator('#bloqueio-titulo')).to_have_text('Vídeos Shorts não são suportados')
+    expect(page.locator('#bloqueio-selo .selo-shorts')).to_be_visible()
+    expect(page.locator('#bloqueio-selo .selo-vivo')).to_be_hidden()
+    expect(page.locator('#tela-assistir')).to_be_hidden()
+    time.sleep(0.4)
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-shorts.png'))
+    page.click('#bloqueio-voltar')
+    expect(page.locator('#tela-bloqueio')).to_be_hidden()
+    assert {'acao': 'youtube', 'url': ''} in msgs()[n:], msgs()[n:]
+    # Shorts pelo Compartilhar do app do YouTube
+    page.goto(base + '?mock=1&app=android&apk=6&text=' + 'https%3A%2F%2Fyoutube.com%2Fshorts%2Fabcdefghijk%3Fsi%3Dx')
+    expect(page.locator('#tela-bloqueio')).to_be_visible(timeout=4000)
+    expect(page.locator('#tela-assistir')).to_be_hidden()
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('15. YouTube do app: o botão e as prateleiras de Shorts somem')
+def t_youtube_sem_shorts(browser, base):
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'youtube.js')
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx.add_init_script(path=script)
+    page = ctx.new_page()
+    page.goto(base + 'tests/fixtures/nao_legenda.txt')
+    page.evaluate("""() => {
+      document.body.innerHTML = `
+        <ytm-reel-shelf-renderer id="prateleira">Shorts</ytm-reel-shelf-renderer>
+        <ytm-video-with-context-renderer id="video">Vídeo normal</ytm-video-with-context-renderer>
+        <ytm-pivot-bar-renderer>
+          <ytm-pivot-bar-item-renderer id="p-inicio"><div class="pivot-bar-item-tab pivot-w2w">Início</div></ytm-pivot-bar-item-renderer>
+          <ytm-pivot-bar-item-renderer id="p-shorts"><div class="pivot-bar-item-tab pivot-shorts">Shorts</div></ytm-pivot-bar-item-renderer>
+          <ytm-pivot-bar-item-renderer id="p-voce"><div class="pivot-bar-item-tab pivot-library">Você</div></ytm-pivot-bar-item-renderer>
+        </ytm-pivot-bar-renderer>`;
+    }""")
+    expect(page.locator('#p-shorts')).to_be_hidden()
+    expect(page.locator('#prateleira')).to_be_hidden()
+    expect(page.locator('#p-inicio')).to_be_visible()
+    expect(page.locator('#p-voce')).to_be_visible()
+    expect(page.locator('#video')).to_be_visible()
+    ctx.close()
 
 
 @caso('8. Recarregar: vídeo na biblioteca, posição e ajustes mantidos')
@@ -1070,8 +1230,7 @@ def t_capturas(browser, url, en, pt):
         page.click('#btn-traducao')
         page.click('#menu-traducao [data-modo="sempre"]')
         if nome != 'celular-deitado-915':
-            page.click('#btn-modo-legenda')
-            time.sleep(0.3)
+            expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'true')  # lista é o padrão
             page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista.png'))
             page.click('#btn-ab')  # tela de escolha do trecho, pelo fluxo real
             time.sleep(0.3)
@@ -1087,6 +1246,8 @@ def t_capturas(browser, url, en, pt):
             page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista-ab-ativo.png'))
             page.click('#btn-ab')
             page.click('#btn-modo-legenda')
+            time.sleep(0.3)
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-uma-fala.png'))
         if w < 900:
             page.click('#btn-ajustes')
             time.sleep(0.3)
@@ -1126,6 +1287,7 @@ def main():
         t_extras(page)
         t_repeticao(page)
         t_lista(page)
+        t_ab_invalido(page)
         t_recarregar(page, url)
         t_backup(page, url, pasta)
         t_compartilhar(page, base)
@@ -1138,7 +1300,9 @@ def main():
         t_android(browser, base)
         t_app_novo(browser, base)
         t_so_automatica(browser, base)
+        t_ao_vivo_shorts(browser, base)
         t_gancho(browser, base)
+        t_youtube_sem_shorts(browser, base)
         t_busca(browser, base)
         browser.close()
     srv.shutdown()

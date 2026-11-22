@@ -56,13 +56,15 @@ import java.util.concurrent.Executors;
  * 3) oferece à página o objeto LDNativo: tela ligada e, no teste, baixar de novo uma legenda;
  * 4) tela cheia (deitado) quando a página pede;
  * 5) o YouTube como tela inicial (com botão Entrar e Meus vídeos): tocar num vídeo abre o vídeo no Legenda Dupla;
- * 6) toque de verdade no botão "Pular anúncio" do player, quando a página pede.
+ * 6) toque de verdade no botão "Pular anúncio" do player, quando a página pede;
+ * 7) no YouTube da tela inicial, esconde o botão e as prateleiras de Shorts (assets/youtube.js).
+ *    Shorts e vídeos ao vivo abertos mesmo assim mostram um aviso na página.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 5; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 6; // a página usa para saber o que o app sabe fazer
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
     private WebView web;
@@ -70,6 +72,7 @@ public class MainActivity extends Activity {
     private LinearLayout painelYt;
     private WebView ytWeb;
     private String ultimoUrlYt = "";
+    private String scriptYoutube = "";
     private TextView botaoEntrar;
     private String ultimoVideo = "";
     private long ultimoVideoEm = 0;
@@ -313,6 +316,12 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(true); // a lista não começa a tocar sozinha
         CookieManager.getInstance().setAcceptThirdPartyCookies(ytWeb, true);
+        // Sem Shorts: o botão da barra de baixo e as prateleiras somem (antes do código do YouTube rodar).
+        scriptYoutube = lerAsset("youtube.js");
+        if (!scriptYoutube.isEmpty() && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(ytWeb, scriptYoutube,
+                    new HashSet<>(Arrays.asList("https://m.youtube.com", "https://www.youtube.com")));
+        }
         ytWeb.setWebChromeClient(new WebChromeClient());
         ytWeb.setWebViewClient(new WebViewClient() {
             @Override
@@ -344,6 +353,10 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 atualizarBotaoEntrar();
+                // Reforço (WebView sem script no início da página): o script não repete se já rodou.
+                if (!scriptYoutube.isEmpty() && url != null && url.contains("youtube.com")) {
+                    view.evaluateJavascript(scriptYoutube, null);
+                }
             }
         });
 
