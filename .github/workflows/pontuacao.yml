@@ -1,0 +1,60 @@
+# Testa a pontuação por modelo (Hugging Face) e publica os resultados na release "ci-pontuacao".
+# Roda aqui porque o ambiente do Claude não acessa o Hugging Face.
+name: Pontuação por modelo (teste)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tests/pontuacao_ci/**'
+      - 'js/pontuador.js'
+      - 'js/pontuador-worker.js'
+      - '.github/workflows/pontuacao.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar o Python de referência
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install punctuators onnx onnxruntime sentencepiece protobuf omegaconf huggingface_hub numpy
+
+      - name: Referência (biblioteca oficial)
+        run: |
+          set -o pipefail
+          mkdir -p saida
+          python tests/pontuacao_ci/referencia.py saida 2>&1 | tee saida/referencia-log.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Teste do código do app (JavaScript)
+        if: hashFiles('tests/pontuacao_ci/testar_js.mjs') != ''
+        run: |
+          set -o pipefail
+          npm install --no-save --prefix /tmp/ort onnxruntime-web@$(cat tests/pontuacao_ci/versao-ort.txt)
+          node tests/pontuacao_ci/testar_js.mjs saida /tmp/ort/node_modules/onnxruntime-web 2>&1 | tee saida/js.txt
+
+      - name: Publicar os resultados
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p saida
+          tar -czf ci-pontuacao.tar.gz saida
+          gh release view ci-pontuacao >/dev/null 2>&1 || \
+            gh release create ci-pontuacao --prerelease --target "$GITHUB_SHA" \
+              --title "Teste da pontuação por modelo" --notes "Resultados do teste automático da pontuação por modelo."
+          gh release upload ci-pontuacao ci-pontuacao.tar.gz --clobber
