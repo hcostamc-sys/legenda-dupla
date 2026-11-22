@@ -504,8 +504,8 @@ def t_lista(page):
     i = exibida(page)
     tocar_rapido(page, '#fala-prox')
     esperar(lambda: exibida(page) == i + 1, msg='foi para a próxima')
-    if estado(page) == 1:
-        page.click('#btn-play')
+    time.sleep(0.6)
+    assert estado(page) == 2, 'tocar na vizinha com o vídeo pausado fez tocar'
     # A–B no modo lista: a vizinha fora do trecho fica mais apagada
     page.evaluate('window.__ld.S.ab = { a: window.__ld.S.exibida, b: window.__ld.S.exibida + 1 }')
     expect(page.locator('#fala-ant')).to_have_class(re.compile(r'fora-ab'))
@@ -1167,7 +1167,7 @@ def t_velocidade_fina(browser, base):
     esperar(lambda: estado(page) == 1, msg='tocando')
     page.click('#btn-ajustes')
     chips = page.locator('#linha-velocidade .chip').all_text_contents()
-    lentas = [f'0,{k:02d}×' for k in range(25, 100, 5)]
+    lentas = [f'0,{k:02d}×' for k in range(60, 100, 5)]  # nada abaixo de 0,60×
     assert chips == lentas + ['1×', '1,25×', '1,5×', '1,75×', '2×'], chips
     page.locator('#linha-velocidade .chip', has_text='0,95×').click()
     expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('0,95×')
@@ -1254,8 +1254,9 @@ def t_pontuacao_modelo(browser, base):
       p.bytesSp = {os.path.getsize(os.path.join(pasta_modelo, 'falso.spmodel'))}; }})()""")
     cartao.locator('.pm-baixar').click()
     expect(cartao).to_have_attribute('data-estado', 'erro', timeout=8000)
-    expect(cartao.locator('.pm-texto')).to_contain_text('503')
-    expect(cartao.locator('.pm-baixar')).to_have_text('Baixar de novo')
+    expect(cartao.locator('.pm-texto')).to_contain_text('fora do ar')  # explicado, sem código técnico
+    assert '503' not in cartao.locator('.pm-texto').inner_text()
+    expect(cartao.locator('.pm-baixar')).to_have_text('Tentar de novo')
     cartao.locator('.pm-baixar').click()
     expect(cartao).to_have_attribute('data-estado', 'pronto', timeout=15000)
     expect(page.locator('#pm-usar')).to_be_visible()
@@ -1565,6 +1566,194 @@ def t_busca(browser, base):
     ctx.close()
 
 
+@caso('17. Ajustes de 22/11 (2): explicação dos gestos, entrada suave, pausa mantida, Ajustes pausa, histórico')
+def t_ajustes_22_11(browser, base, en, pt):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    # Vídeo aberto pelos arquivos: a explicação aparece antes de tocar
+    page.goto(base + '?mock=1&gestos=1')
+    page.fill('#campo-link', f'https://youtu.be/{ID}')
+    page.set_input_files('#arq-estudo', [en, pt])
+    page.click('#btn-abrir')
+    page.click('#btn-tocar-grande')
+    expect(page.locator('#tela-gestos')).to_be_visible()
+    assert estado(page) != 1  # o vídeo espera a explicação
+    expect(page.locator('#gestos-acao-direita')).to_have_text('volta para a fala anterior')
+    expect(page.locator('#gestos-acao-esquerda')).to_have_text('avança para a próxima fala')
+    expect(page.locator('#gestos-nao-mostrar')).not_to_be_checked()
+    page.wait_for_timeout(2400)  # meio da animação: o selo "Fala anterior" aparece
+    os.makedirs(CAPTURAS, exist_ok=True)
+    page.screenshot(path=os.path.join(CAPTURAS, 'gestos-explicacao.png'))
+    page.click('#gestos-ok')
+    expect(page.locator('#tela-gestos')).to_be_hidden()
+    esperar(lambda: estado(page) == 1, msg='tocando depois de Concluir')
+    assert page.evaluate("document.querySelector('#area-video').classList.contains('entrada-suave')")
+    assert page.evaluate('window.__ld.S.ajustes.gestosExplicados') is False  # não marcou: mostra de novo
+    # Pausado + arrastar: continua pausado (só o play volta a tocar)
+    esperar(lambda: page.evaluate("getComputedStyle(document.querySelector('#camada-gestos')).pointerEvents") == 'auto', msg='gestos ativos')
+    esperar(lambda: exibida(page) >= 1, msg='na fala 2', limite=10)
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausou')
+    i0 = exibida(page)
+    arrastar(page, '#camada-gestos', -150)
+    esperar(lambda: exibida(page) == i0 + 1, msg='avançou pausado')
+    time.sleep(0.8)
+    assert estado(page) == 2, 'voltou a tocar sozinho depois do arraste'
+    arrastar(page, '#caixa-legenda', 150)
+    esperar(lambda: exibida(page) == i0, msg='voltou pausado')
+    time.sleep(0.8)
+    assert estado(page) == 2, 'voltou a tocar sozinho'
+    page.keyboard.press('r')  # repetir também não toca
+    time.sleep(0.5)
+    assert estado(page) == 2
+    # Tocando + arrastar: continua tocando
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando de novo')
+    arrastar(page, '#camada-gestos', -150)
+    time.sleep(0.6)
+    assert estado(page) == 1
+    # Abrir os Ajustes pausa na hora; velocidades lentas só até 0,60×
+    page.click('#btn-ajustes')
+    esperar(lambda: estado(page) == 2, msg='Ajustes pausou')
+    chips = page.locator('#linha-velocidade .chip').all_text_contents()
+    assert all(not c.startswith(('0,25', '0,5×', '0,50', '0,55')) for c in chips), chips
+    # "Ver como passar as falas" nos Ajustes; marcar "não mostrar mais"
+    page.click('#btn-ver-gestos')
+    expect(page.locator('#tela-gestos')).to_be_visible()
+    page.check('#gestos-nao-mostrar')
+    page.click('#gestos-ok')
+    assert page.evaluate('window.__ld.S.ajustes.gestosExplicados') is True
+    assert estado(page) == 2  # fechar a explicação não faz tocar
+    ctx.close()
+
+    # App Android 10, vídeo novo: Começar → explicação → vídeo com entrada suave; histórico avisado ao app
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&gestos=1&app=android&apk=10&mockSoAsr=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HISTORICO00')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.click('#idioma-ok')
+    expect(page.locator('#tela-gestos')).to_be_visible(timeout=8000)
+    expect(page.locator('#tela-carregando')).to_be_hidden()
+    assert estado(page) != 1
+    assert not any(m.get('acao') == 'historico' for m in page.evaluate('window.__msgs'))
+    page.click('#gestos-ok')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    hist = lambda: [m for m in page.evaluate('window.__msgs') if m.get('acao') == 'historico']
+    esperar(lambda: any(m['evento'] == 'inicio' and m['video'] == 'HISTORICO00' for m in hist()), msg='histórico: início')
+    assert len([m for m in hist() if m['evento'] == 'inicio']) == 1, hist()
+    page.click('#btn-play')
+    esperar(lambda: any(m['evento'] == 'progresso' for m in hist()), msg='histórico: progresso ao pausar')
+    page.evaluate("window.ldHistorico('início registrado: HTTP 204')")
+    assert 'início registrado' in page.evaluate('window.__ld.textoDiagnostico()')
+    # voltar do celular na explicação (vídeo novo) sai do vídeo
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HISTORICO01')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.click('#idioma-ok')
+    expect(page.locator('#tela-gestos')).to_be_visible(timeout=8000)
+    assert page.evaluate('window.ldVoltar()') == 'ok'
+    expect(page.locator('#tela-gestos')).to_be_hidden()
+    expect(page.locator('#tela-assistir')).to_be_hidden()
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('18. Ajustes de 22/11 (1 e 2): permissão de notificações e erros explicados no download')
+def t_permissao_erros(browser, base):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    pasta_modelo = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'modelo')
+    falhar = {'n': 0}
+    locais = {}
+
+    def local(route):
+        n = route.request.url.split('__ld_modelo/')[1].split('?')[0]
+        if falhar['n'] > 0:  # a leitura do arquivo do app falha (como o "Cache.put ... network error")
+            falhar['n'] -= 1
+            route.abort('failed')
+            return
+        url = locais.get(n)
+        if url.endswith('.wasm'):
+            caminho = os.path.join(RAIZ, 'vendor', 'ort', 'ort-wasm-simd-threaded.wasm')
+        else:
+            caminho = os.path.join(pasta_modelo, 'falso.onnx' if url.endswith('.onnx') else 'falso.spmodel')
+        with open(caminho, 'rb') as f:
+            route.fulfill(status=200, body=f.read(), headers={'Content-Type': 'application/octet-stream'})
+    page.route('**/__ld_modelo/**', local)
+    page.goto(base + '?mock=1&app=android&apk=10&mockSoAsr=1&mockPalavras=1')
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ estado: 'nada' }))")
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=PERMISSAO00')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.evaluate(f"""(() => {{ const p = window.__ld.PACOTES.en;
+      p.bytesModelo = {os.path.getsize(os.path.join(pasta_modelo, 'falso.onnx'))};
+      p.bytesSp = {os.path.getsize(os.path.join(pasta_modelo, 'falso.spmodel'))}; }})()""")
+    cartao = page.locator('#cartao-pontuacao')
+    pedidos = lambda: [m for m in page.evaluate('window.__msgs') if m.get('acao') == 'baixarModelos']
+    cartao.locator('.pm-baixar').click()
+    esperar(lambda: len(pedidos()) == 1, msg='pediu o download')
+    # o app pergunta a permissão
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'en', estado: 'pedindoPermissao', bloqueado: false }))")
+    expect(cartao.locator('.pm-texto')).to_contain_text('Permitir')
+    expect(cartao.locator('.pm-baixar')).to_be_hidden()
+    # negou: explica e oferece tentar de novo (o app pergunta de novo)
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'en', estado: 'semPermissao', bloqueado: false }))")
+    expect(cartao).to_have_attribute('data-estado', 'erro')
+    expect(cartao.locator('.pm-estado')).to_have_text('Falta permissão')
+    expect(cartao.locator('.pm-texto')).to_contain_text('notificações')
+    expect(cartao.locator('.pm-baixar')).to_have_text('Tentar de novo')
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-permissao-negada.png'))
+    cartao.locator('.pm-baixar').click()
+    esperar(lambda: len(pedidos()) == 2, msg='pediu de novo')
+    # negou de vez: o Android não pergunta mais → abrir configurações
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'en', estado: 'semPermissao', bloqueado: true }))")
+    expect(cartao.locator('.pm-baixar')).to_have_text('Abrir configurações')
+    expect(cartao.locator('.pm-texto')).to_contain_text('configurações')
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-permissao-bloqueada.png'))
+    cartao.locator('.pm-baixar').click()
+    esperar(lambda: len(pedidos()) == 3, msg='pediu de novo (o app abre as configurações)')
+    # permitiu: baixando
+    pedido = pedidos()[-1]
+    total = sum(a['bytes'] for a in pedido['arquivos'])
+    page.evaluate(f"window.ldModelosEstado(JSON.stringify({{ id: 'en', estado: 'baixando', feitos: 0, total: {total} }}))")
+    expect(cartao).to_have_attribute('data-estado', 'baixando')
+    # erro técnico do app (em inglês, com detalhe): a tela mostra a explicação, o detalhe vai ao diagnóstico
+    page.evaluate("window.ldModelosEstado(JSON.stringify({ id: 'en', estado: 'erro', erro: 'unexpected end of stream on https://huggingface.co/...', detalhe: 'IOException: unexpected end of stream' }))")
+    expect(cartao.locator('.pm-texto')).not_to_contain_text('unexpected')
+    expect(cartao.locator('.pm-texto')).to_contain_text('Tentar de novo')
+    assert 'unexpected end of stream' in page.evaluate('window.__ld.textoDiagnostico()')
+    # o app terminou, mas guardar falha as 3 vezes: mensagem clara; "Tentar de novo" guarda sem baixar outra vez
+    arquivos = []
+    for i, a in enumerate(pedido['arquivos']):
+        locais[str(i)] = a['url']
+        arquivos.append({'url': a['url'], 'bytes': a['bytes'], 'local': f'{base}__ld_modelo/{i}'})
+    falhar['n'] = 3
+    page.evaluate("(e) => window.ldModelosEstado(JSON.stringify(e))",
+                  {'id': 'en', 'estado': 'pronto', 'feitos': total, 'total': total, 'arquivos': arquivos})
+    expect(cartao).to_have_attribute('data-estado', 'erro', timeout=20000)
+    texto = cartao.locator('.pm-texto').inner_text()
+    assert 'não precisa baixar outra vez' in texto and 'Cache' not in texto and 'Failed' not in texto, texto
+    expect(cartao.locator('.pm-baixar')).to_have_text('Tentar de novo')
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-guardar-falhou.png'))
+    assert not any(m.get('acao') == 'apagarModelos' for m in page.evaluate('window.__msgs'))  # guardou os arquivos
+    n = len(pedidos())
+    falhar['n'] = 1  # 1 falha: a nova tentativa interna (caminho direto) resolve
+    cartao.locator('.pm-baixar').click()
+    expect(cartao).to_have_attribute('data-estado', 'pronto', timeout=20000)
+    assert len(pedidos()) == n  # não pediu outro download
+    esperar(lambda: any(m.get('acao') == 'apagarModelos' for m in page.evaluate('window.__msgs')), msg='apagou a cópia do app')
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('10. Capturas de tela nos quatro tamanhos')
 def t_capturas(browser, url, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
@@ -1674,6 +1863,8 @@ def main():
         t_gancho(browser, base)
         t_youtube_sem_shorts(browser, base)
         t_busca(browser, base)
+        t_ajustes_22_11(browser, base, en, pt)
+        t_permissao_erros(browser, base)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)

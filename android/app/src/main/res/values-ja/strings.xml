@@ -14,4 +14,5 @@
     <string name="modelos_pronto">句読点強化パックのダウンロード完了</string>
     <string name="modelos_pronto_texto">タップしてアプリを開き、インストールを完了します。</string>
     <string name="modelos_falhou">ダウンロードに失敗しました</string>
+    <string name="modelos_falhou_texto">タップしてアプリを開き、もう一度お試しください。</string>
 </resources>

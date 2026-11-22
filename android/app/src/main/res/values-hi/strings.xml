@@ -14,4 +14,5 @@
     <string name="modelos_pronto">बेहतर विराम चिह्न डाउनलोड हो गए</string>
     <string name="modelos_pronto_texto">ऐप खोलकर इंस्टॉलेशन पूरा करने के लिए टैप करें।</string>
     <string name="modelos_falhou">डाउनलोड विफल रहा</string>
+    <string name="modelos_falhou_texto">ऐप खोलने और फिर से कोशिश करने के लिए टैप करें।</string>
 </resources>

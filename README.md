@@ -30,11 +30,15 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 | Repetir um trecho | Toque em **A–B**: o vídeo pausa e as falas aparecem numa lista na tela inteira, com a fala atual no meio (selo “agora”). Role e toque na fala onde o trecho começa (A) e depois na fala onde termina (B). O trecho tem no mínimo 2 falas: tocar no B a mesma fala do A, ou uma fala antes dele, mostra um aviso e deixa escolher de novo (as falas antes do A ficam apagadas). A tela volta para o vídeo, que repete o trecho; a legenda fica com borda âmbar cheia e o selo “Repetindo A–B”. **✕** ou o voltar do celular cancelam. Toque em **A–B** de novo para parar | B (abre a lista) |
 | Ver a fala anterior, a atual e a próxima | Botão **Lista** (três barras, ao lado do 文A). A atual fica no meio; a anterior e a próxima, mais apagadas. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez | V |
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
-| Velocidade | ⚙ Ajustes → Velocidade (no app Android, versão 8: abaixo de 1×, de 0,05 em 0,05: 0,95×, 0,90×… até 0,25×) | [ e ] |
+| Velocidade | ⚙ Ajustes → Velocidade (no app Android, versão 8: abaixo de 1×, de 0,05 em 0,05: 0,95×, 0,90×… até 0,60×; mais devagar que isso a fala fica distorcida) | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar). No app Android novo não há 👆: aparece o botão **Pular anúncio** | Igual |
 
 Padrão de quem acabou de instalar: falas em **Lista** e tradução **Mostrar sempre**.
+
+Com o vídeo **pausado**, passar as falas (arrastar, setas, segurar) não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Tocando, continua tocando. Abrir **⚙ Ajustes** pausa o vídeo na hora.
+
+Antes de o vídeo começar aparece uma explicação animada de como passar as falas (o dedo desliza para um lado e para o outro). Ela volta a cada vídeo até você marcar **Não mostrar mais esta explicação** e tocar em **Concluir**; dá para ver de novo em ⚙ Ajustes → **Ver como passar as falas**. Quando o vídeo começa, o vídeo e a legenda aparecem devagar (entrada suave).
 
 No app Android, vídeos **ao vivo** e **Shorts** não abrem: aparece um aviso com o botão **Voltar ao YouTube**. O botão Shorts da barra de baixo do YouTube do app fica escondido.
 
@@ -53,7 +57,7 @@ A pontuação pelas pausas é uma aproximação. Para algo bem mais certo, o app
 - O APK continua do mesmo tamanho: os modelos são baixados só por quem quiser, uma vez, e depois funcionam sem internet.
 - Dois pacotes: **Inglês** (cerca de 225 MB no primeiro pacote, porque inclui o motor de 15 MB) e **Línguas latinas** (francês, espanhol, português, italiano, catalão e romeno, cerca de 145 MB). Use Wi‑Fi.
 - Onde baixar: na janela de escolher o idioma do vídeo (antes de **Começar**), quando a legenda escolhida é automática; ou em ⚙ Ajustes → **Pontuação melhorada**, onde também dá para apagar.
-- No app Android (versão 9 em diante), quem baixa é o próprio Android: dá para sair do app ou desligar a tela que o download continua, com a barra de progresso na área de notificações (e o botão **Cancelar** ali mesmo), como na Play Store. Se a internet cair, ele tenta de novo e continua de onde parou. Quando termina, o app copia os arquivos para o lugar dos pacotes (aparece “Instalando…”). Na primeira vez, o Android pergunta se o app pode mostrar notificações: toque em **Permitir** para ver o andamento (sem permitir, o download funciona do mesmo jeito, só não aparece a barra).
+- No app Android (versão 9 em diante), quem baixa é o próprio Android: dá para sair do app ou desligar a tela que o download continua, com a barra de progresso na área de notificações (e o botão **Cancelar** ali mesmo), como na Play Store. Se a internet cair, ele tenta de novo e continua de onde parou. Quando termina, o app copia os arquivos para o lugar dos pacotes (aparece “Instalando…”). O download precisa da permissão de notificações (versão 10): na primeira vez, o Android pergunta; toque em **Permitir**. Se negar, o cartão explica e o botão **Tentar de novo** pergunta outra vez. Depois de duas negativas o Android não pergunta mais: o botão vira **Abrir configurações** (ligue as notificações do Legenda Dupla e volte ao app; o download começa sozinho). Se guardar o pacote no app falhar depois do download, **Tentar de novo** guarda outra vez sem baixar de novo. Os erros aparecem explicados (o que aconteceu e o que fazer); o detalhe técnico fica só em **Copiar diagnóstico**.
 - Com o pacote instalado, o vídeo novo mostra “Pontuando a legenda…” por alguns segundos antes de começar (há o botão **Usar a pontuação simples** para pular). Vídeos já salvos são pontuados ao abrir. Embaixo da legenda aparece “Pontuação melhorada (modelo no celular)”.
 - Modelos: “punctuation_fullstop_truecase” (english e romance), do autor 1-800-BAD-CODE no Hugging Face, licença Apache 2.0. Motor: onnxruntime-web (Microsoft, licença MIT), em `vendor/ort/`.
 - Também erra às vezes (principalmente vírgulas), mas entende o sentido da frase, o que as pausas não fazem.
@@ -100,7 +104,8 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Palavra:** tocar numa palavra mostra o significado dela no próprio app, com **Copiar**, **Copiar frase** e **Dicionário** (Cambridge para palavras em inglês; Wikcionário para os outros idiomas).
 - **Player limpo (versão 7):** o player não mostra mais o botão compartilhar, o título, o logotipo do YouTube nem o ícone de pausa no meio; ficam só o tempo e a barra do próprio app. O **Pular anúncio** continua.
 - **Versão 8:** nomes de todos os idiomas nas listas (antes alguns apareciam só como “Ps”, “Qu”, “Rw”), velocidade de 0,05 em 0,05 abaixo de 1× e legenda automática com tempo exato por palavra e pontuação aproximada.
-- Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
+- **Versão 10:** o vídeo assistido no app entra no **histórico do YouTube** da conta conectada (o player embutido não grava no histórico; o app avisa o YouTube como o app oficial faz, ao começar o vídeo, a cada 20 s, ao pausar e ao sair). Precisa estar conectado (**Entrar**) e com o histórico ligado na conta. Também: permissão de notificações obrigatória para o download dos pacotes, erros explicados, explicação animada dos gestos e entrada suave do vídeo.
+- Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
 ## Como atualizar o site

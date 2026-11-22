@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Gelişmiş noktalama indirildi</string>
     <string name="modelos_pronto_texto">Uygulamayı açıp kurulumu bitirmek için dokunun.</string>
     <string name="modelos_falhou">İndirme başarısız</string>
+    <string name="modelos_falhou_texto">Uygulamayı açıp tekrar denemek için dokunun.</string>
 </resources>

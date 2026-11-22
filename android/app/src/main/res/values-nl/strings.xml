@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Verbeterde interpunctie gedownload</string>
     <string name="modelos_pronto_texto">Tik om de app te openen en de installatie af te ronden.</string>
     <string name="modelos_falhou">Download mislukt</string>
+    <string name="modelos_falhou_texto">Tik om de app te openen en het opnieuw te proberen.</string>
 </resources>

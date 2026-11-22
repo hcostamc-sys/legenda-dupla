@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Pontuação melhorada baixada</string>
     <string name="modelos_pronto_texto">Toque para abrir o app e terminar a instalação.</string>
     <string name="modelos_falhou">O download falhou</string>
+    <string name="modelos_falhou_texto">Toque para abrir o app e tentar de novo.</string>
 </resources>

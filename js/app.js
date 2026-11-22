@@ -27,6 +27,8 @@ import {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const MOCK = new URLSearchParams(location.search).get('mock') === '1';
+// Testes (?mock=1): a explicação dos gestos só aparece com ?gestos=1 (os outros testes vão direto ao vídeo).
+const GESTOS_MOCK = new URLSearchParams(location.search).get('gestos') === '1';
 
 // Dentro do app Android (?app=android na primeira abertura): a legenda vem do próprio YouTube
 // (PLANO.md 15.10). Fica guardado na sessão, porque o endereço perde os parâmetros depois.
@@ -713,7 +715,9 @@ async function aoEscolherBackup(file) {
     toast(msg, 4000);
     renderBiblioteca();
   } catch (e) {
-    toast(e.message || 'Não consegui importar.', 4000);
+    const nossa = /^Esse arquivo não é um backup/.test(String(e?.message));
+    if (!nossa) diag(`importar falhou: ${detalheErro(e)}`);
+    toast(nossa ? `${e.message} Escolha o arquivo .json criado em Exportar biblioteca.` : 'Não consegui importar esse arquivo. Confira se é o .json criado em Exportar biblioteca e tente de novo.', 5000);
   }
 }
 
@@ -822,6 +826,8 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   S.tocandoLogico = false;
   S.ajustouVelInicio = false;
   S.tituloConferido = false;
+  S.gestosNestaAbertura = false;
+  S.histVideo = null;
   cancelarToqueLivre();
   zerarRepeticao();
   fecharMenuTraducao();
@@ -875,7 +881,8 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
     await p.carregar(reg.id, inicio);
   } catch (e) {
     if (S.player !== p) return;
-    mostrarErroPlayer(null, e?.message || MSG_API);
+    diag(`player não carregou: ${detalheErro(e)}`);
+    mostrarErroPlayer(null, MSG_API);
     return;
   }
   if (S.player !== p) return;
@@ -896,6 +903,7 @@ function mostrarPreparandoVideo(sim) {
 function encerrarPlayer() {
   mostrarPreparandoVideo(false);
   salvarPosicao();
+  if (S.player?.estado() === 1) avisarHistorico('progresso', true);
   cancelAnimationFrame(S.raf);
   S.raf = 0;
   try { S.player?.destruir(); } catch { /* nada */ }
@@ -904,6 +912,7 @@ function encerrarPlayer() {
 }
 
 function fecharVideo() {
+  S.fimExplicacao?.(false);
   zerarLegendaYoutube();
   zerarAnuncio();
   $('#tela-idioma').hidden = true;
@@ -1302,6 +1311,13 @@ function finalizarPreparo(tocar) {
   S.memoriaNav = null;
   S.alvoNav = null;
   if (tocar && p.estado() !== 1) p.tocar();
+  if (tocar) {
+    entradaSuave();
+    // O vídeo pode já estar tocando (sem som, por baixo): sem troca de estado, avisa o histórico aqui.
+    setTimeout(() => {
+      if (S.player === p && p.estado() === 1 && !S.anuncio.ativo && !S.yt.fase && !S.yt.preparando) avisarHistorico('inicio');
+    }, 1500);
+  }
   renderLegenda(true);
 }
 
@@ -1309,7 +1325,7 @@ function finalizarPreparo(tocar) {
 function mostrarCarregando() {
   const f = S.yt.fase;
   const tela = $('#tela-carregando');
-  if (!f || f === 'escolhendo') { tela.hidden = true; return; }
+  if (!f || f === 'escolhendo' || f === 'gestos') { tela.hidden = true; return; }
   const a = S.anuncio;
   let titulo = 'Carregando a legenda…';
   let texto = 'Aguarde: o vídeo começa quando a legenda estiver pronta.';
@@ -1712,7 +1728,16 @@ function aplicarLegendaYoutube(cap) {
   S.yt.faixa = null;
   S.tituloConferido = true; // a legenda veio do próprio vídeo: não há o que conferir
   p?.esconderLegendas?.();
-  const concluir = () => {
+  const concluir = async () => {
+    // Vídeo novo: antes de começar, a explicação de como passar as falas (até a pessoa marcar
+    // "não mostrar mais"). O vídeo espera parado, coberto; depois começa com entrada suave.
+    if (!S.yt.trocando && (S.yt.preparando || S.yt.fase) && precisaExplicarGestos()) {
+      S.yt.fase = 'gestos';
+      $('#tela-carregando').hidden = true;
+      p?.pausar();
+      const seguir = await mostrarExplicacaoGestos();
+      if (!seguir || S.registro !== reg || S.player !== p || S.yt.fase !== 'gestos') return;
+    }
     // Vídeo novo: começa do início, com som. Troca de idioma: volta como estava.
     if (S.yt.preparando || S.yt.fase) finalizarPreparo(S.yt.trocando ? !!S.yt.retorno?.tocava : true);
     salvarVideo(reg);
@@ -1771,8 +1796,8 @@ async function pontuarComModelo(reg, info) {
     return true;
   } catch (e) {
     if (e?.name !== 'AbortError') {
-      diag(`pontuação melhorada falhou: ${e?.message || e}`);
-      toast(`A pontuação melhorada falhou (${e?.message || 'erro'}). Usei a pontuação simples.`, 6000);
+      diag(`pontuação melhorada falhou: ${detalheErro(e)}`);
+      toast(explicarErro(e, 'pontuar'), 7000);
     }
     return false;
   } finally {
@@ -1796,6 +1821,65 @@ function pularPontuacao() {
   S.modelo?.ctrl.abort();
 }
 
+// ---- Mensagens de erro para pessoas (#2, 22/11/2026) ----
+// Nada de texto técnico (inglês, nomes de funções, códigos) na tela: cada erro vira o que aconteceu e o
+// que fazer, em português (a interface traduz para o idioma do celular). O detalhe técnico vai só para
+// o diagnóstico (Copiar diagnóstico).
+
+/** Texto técnico do erro (para o diagnóstico). */
+function detalheErro(e) {
+  if (!e) return '';
+  if (typeof e === 'string') return e;
+  return `${e.name || 'Erro'}: ${e.message || e}`;
+}
+
+/** Mensagens que nós mesmos escrevemos (já são para pessoas). */
+const MSGS_NOSSAS = [
+  /^Falta espaço/, /^Sem internet/, /^O download foi interrompido/, /^O Android pausou/,
+  /^A internet caiu/, /^Não consegui (terminar|baixar|instalar|criar|gravar)/, /^O site dos pacotes/,
+  /^Este aparelho não consegue/, /^O app (não respondeu|não conseguiu)/,
+];
+
+/**
+ * Erro → frase objetiva e didática. etapa: 'baixar' (download do pacote), 'instalar' (copiar o pacote
+ * baixado pelo app para dentro da página) ou 'pontuar' (rodar o modelo).
+ */
+function explicarErro(e, etapa) {
+  const msg = typeof e === 'string' ? e : String(e?.message || '');
+  const nome = typeof e === 'string' ? '' : String(e?.name || '');
+  if (nome === 'QuotaExceededError' || /quota|Falta espaço|No space|ENOSPC/i.test(msg)) {
+    return 'Falta espaço no celular. Apague fotos, vídeos ou apps que não usa e toque em Tentar de novo.';
+  }
+  if (etapa === 'pontuar') {
+    if (/memory|memória|Out of memory|RangeError|allocation/i.test(msg + nome)) {
+      return 'O celular ficou sem memória para a pontuação melhorada. Feche outros apps e abra o vídeo de novo. Por enquanto, usei a pontuação simples.';
+    }
+    if (/não está no aparelho|not found|404/i.test(msg)) {
+      return 'O pacote da pontuação melhorada está incompleto. Abra ⚙ Ajustes, apague o pacote e baixe de novo. Por enquanto, usei a pontuação simples.';
+    }
+    return 'A pontuação melhorada não funcionou neste vídeo. Usei a pontuação simples (pelas pausas da fala).';
+  }
+  if (/incompleto|recomeçou|maior que o esperado/.test(msg)) {
+    return etapa === 'instalar'
+      ? 'O download terminou, mas um arquivo chegou com defeito. Toque em Tentar de novo para baixar outra vez.'
+      : 'Um arquivo chegou incompleto. Toque em Tentar de novo: o download continua de onde parou.';
+  }
+  if (MSGS_NOSSAS.some((re) => re.test(msg))) return msg;
+  const servidor = msg.match(/respondeu (\d{3})/);
+  if (servidor) {
+    return Number(servidor[1]) >= 500 || Number(servidor[1]) === 429
+      ? 'O site dos pacotes está fora do ar ou ocupado agora. Espere alguns minutos e toque em Tentar de novo.'
+      : 'O site dos pacotes não entregou o arquivo. Toque em Tentar de novo; se continuar, avise o Claude (Copiar diagnóstico).';
+  }
+  if (etapa === 'instalar') {
+    return 'O download terminou, mas não consegui guardar o pacote no app. Toque em Tentar de novo: não precisa baixar outra vez.';
+  }
+  if (nome === 'TypeError' || /network|fetch|Failed|conex|connection|timeout|reset|Load failed/i.test(msg)) {
+    return 'A internet caiu ou ficou lenta demais durante o download. Confira o Wi‑Fi e toque em Tentar de novo: ele continua de onde parou.';
+  }
+  return 'Não consegui terminar o download. Toque em Tentar de novo.';
+}
+
 async function atualizarEstadoPacotes() {
   for (const id of Object.keys(PACOTES)) S.pacotes[id] = await estadoPacote(id);
   renderPacotes();
@@ -1805,6 +1889,8 @@ const MB = (bytes) => formatarNumero(bytes / 1e6, 0); // MB como o Hugging Face 
 
 async function baixarPacoteUI(id) {
   if (S.download?.ctrl) return;
+  // O app já baixou e só faltou guardar: guarda de novo, sem baixar outra vez.
+  if (S.download?.id === id && S.download.reinstalar) { instalarPacoteNativo(id, S.download.reinstalar); return; }
   if (downloadNativo()) { baixarPacoteNativo(id); return; }
   const ctrl = new AbortController();
   S.download = { id, feitos: 0, total: await tamanhoDownload(id), ctrl };
@@ -1825,7 +1911,8 @@ async function baixarPacoteUI(id) {
     renderPacotes();
     pontuarAoFundo(); // o vídeo aberto já ganha a pontuação nova
   } catch (e) {
-    S.download = e?.name === 'AbortError' ? null : { id, erro: e?.message || 'Não consegui baixar.' };
+    if (e?.name !== 'AbortError') diag(`download do pacote ${id} falhou: ${detalheErro(e)}`);
+    S.download = e?.name === 'AbortError' ? null : { id, erro: explicarErro(e, 'baixar') };
     renderPacotes();
   }
 }
@@ -1856,7 +1943,8 @@ async function baixarPacoteNativo(id) {
   try {
     arquivos = await arquivosDoPacote(id);
   } catch (e) {
-    S.download = { id, erro: e?.message || 'Não consegui baixar.' };
+    diag(`lista do pacote ${id} falhou: ${detalheErro(e)}`);
+    S.download = { id, erro: explicarErro(e, 'baixar') };
     renderPacotes();
     return;
   }
@@ -1876,6 +1964,15 @@ window.ldModelosEstado = (texto) => {
   const d = S.download;
   if (e.estado === 'nada') return;
   if (!PACOTES[id]) return;
+  if (e.detalhe) diag(`app, pacote ${id}: ${e.estado} (${e.detalhe})`);
+  if (e.estado === 'pedindoPermissao' || e.estado === 'semPermissao') {
+    // O download só começa com a permissão de notificações (#1): o Android pergunta; se a pessoa negar,
+    // o cartão explica e o botão pede de novo (ou abre as configurações, quando o Android não pergunta mais).
+    if (d?.instalando) return;
+    S.download = { id, permissao: e.estado === 'pedindoPermissao' ? 'pedindo' : e.bloqueado ? 'bloqueada' : 'negada' };
+    renderPacotes();
+    return;
+  }
   if (e.estado === 'baixando') {
     if (d?.instalando) return;
     // Página aberta (ou recarregada) com o download já em andamento: mostra a barra.
@@ -1887,7 +1984,7 @@ window.ldModelosEstado = (texto) => {
     instalarPacoteNativo(id, e.arquivos);
   } else if (e.estado === 'erro') {
     if (d?.instalando) return;
-    S.download = { id, erro: String(e.erro || 'Não consegui baixar.') };
+    S.download = { id, erro: explicarErro(String(e.erro || ''), 'baixar') };
     renderPacotes();
   } else if (e.estado === 'cancelado') {
     if (d?.nativo && d.id === id && !d.instalando) { S.download = null; renderPacotes(); }
@@ -1918,8 +2015,16 @@ async function instalarPacoteNativo(id, arquivos) {
     renderPacotes();
     pontuarAoFundo();
   } catch (e) {
-    mandarAoApp({ acao: 'apagarModelos' }); // não fica tentando instalar de novo a cada abertura
-    if (S.download === d) S.download = e?.name === 'AbortError' ? null : { id, erro: e?.message || 'Não consegui instalar.' };
+    if (e?.name === 'AbortError') {
+      mandarAoApp({ acao: 'apagarModelos' }); // a pessoa cancelou: libera o espaço
+      if (S.download === d) S.download = null;
+    } else {
+      // Os arquivos baixados pelo app ficam: "Tentar de novo" só guarda outra vez, sem baixar de novo.
+      diag(`guardar o pacote ${id} falhou: ${detalheErro(e)}`);
+      const defeito = /incompleto/.test(String(e?.message)); // arquivo do app com defeito: baixa de novo
+      if (defeito) mandarAoApp({ acao: 'apagarModelos' });
+      if (S.download === d) S.download = { id, erro: explicarErro(e, 'instalar'), reinstalar: defeito ? null : arquivos };
+    }
     renderPacotes();
   }
 }
@@ -1946,10 +2051,10 @@ function desenharPacote(bloco, id) {
   const baixar = bloco.querySelector('.pm-baixar');
   const cancelar = bloco.querySelector('.pm-cancelar');
   const apagar = bloco.querySelector('.pm-apagar');
-  bloco.dataset.estado = d?.ctrl ? 'baixando' : pronto ? 'pronto' : d?.erro ? 'erro' : 'ausente';
+  bloco.dataset.estado = d?.ctrl ? 'baixando' : pronto ? 'pronto' : d?.erro || d?.permissao ? 'erro' : 'ausente';
   barra.hidden = !d?.ctrl;
   cancelar.hidden = !d?.ctrl;
-  baixar.hidden = pronto || !!d?.ctrl || (!!S.download?.ctrl && !d);
+  baixar.hidden = pronto || !!d?.ctrl || d?.permissao === 'pedindo' || (!!S.download?.ctrl && !d);
   if (apagar) apagar.hidden = !pronto;
   if (d?.ctrl) {
     const pct = d.total ? Math.floor((100 * d.feitos) / d.total) : 0;
@@ -1963,10 +2068,22 @@ function desenharPacote(bloco, id) {
   } else if (pronto) {
     est.textContent = 'Instalada';
     txt.textContent = 'O modelo roda no celular, sem internet.';
+  } else if (d?.permissao === 'pedindo') {
+    est.textContent = '';
+    txt.textContent = 'Responda ao aviso do Android: toque em Permitir. É pelas notificações que o app mostra o andamento do download.';
+  } else if (d?.permissao) {
+    est.textContent = 'Falta permissão';
+    if (d.permissao === 'bloqueada') {
+      txt.textContent = 'O download precisa da permissão de notificações, e o Android não vai perguntar de novo. Toque em Abrir configurações, ligue as notificações do Legenda Dupla e volte ao app: o download começa sozinho.';
+      baixar.textContent = 'Abrir configurações';
+    } else {
+      txt.textContent = 'O download precisa da permissão de notificações: é por ela que o Android mostra o andamento e deixa o download continuar com o app fechado. Toque em Tentar de novo e escolha Permitir.';
+      baixar.textContent = 'Tentar de novo';
+    }
   } else if (d?.erro) {
     est.textContent = 'Falhou';
-    txt.textContent = `${d.erro} Confira a internet e o espaço livre e toque em Baixar de novo.`;
-    baixar.textContent = 'Baixar de novo';
+    txt.textContent = d.erro;
+    baixar.textContent = 'Tentar de novo';
   } else {
     est.textContent = '';
     const total = p.bytesModelo + p.bytesSp + (Object.values(S.pacotes).includes('pronto') ? 0 : 14848852);
@@ -1996,9 +2113,15 @@ function atualizarCartaoPontuacao() {
 
 // ============================================================ primeiro play (7.2)
 
-function tocarPrimeiraVez() {
+async function tocarPrimeiraVez() {
   const p = S.player;
   if (!p) return;
+  if (precisaExplicarGestos() && !S.gestosNestaAbertura) {
+    S.gestosNestaAbertura = true;
+    const seguir = await mostrarExplicacaoGestos();
+    if (!seguir || S.player !== p) return;
+  }
+  entradaSuave();
   p.tocar();
   setTimeout(() => {
     if (S.player === p && !S.primeiroPlay && [-1, 5].includes(p.estado())) mostrarAvisoToque();
@@ -2025,6 +2148,8 @@ function aoMudarEstado(st) {
   }
   // Pedido de legenda feito antes de um anúncio pode se perder: pede de novo quando o vídeo toca.
   if (st === 1 && S.yt.estado === 'pegando' && S.yt.faixa) S.player?.pedirLegenda?.(S.yt.faixa);
+  if (st === 1 && !S.yt.preparando && !S.yt.fase && !S.anuncio.ativo) avisarHistorico('inicio');
+  if (st === 2 || st === 0) avisarHistorico('progresso', true);
   if (st === 1 && !S.ajustouVelInicio && S.pronto) {
     S.ajustouVelInicio = true;
     aplicarVelocidadeSalva(); // o player pode ter ignorado o pedido feito antes de tocar
@@ -2081,6 +2206,83 @@ function alternarPlay() {
   if (p.estado() === 1) p.pausar(); else p.tocar();
 }
 
+// ============================================================ como passar as falas (explicação) e entrada suave
+
+function precisaExplicarGestos() {
+  return !S.ajustes.gestosExplicados && (!MOCK || GESTOS_MOCK);
+}
+
+/**
+ * Janela com a animação dos gestos (deslizar para um lado e para o outro). Respeita "Inverter direção
+ * do arraste". Devolve true no Concluir e false se a pessoa saiu pelo voltar do celular.
+ */
+function mostrarExplicacaoGestos() {
+  if (S.fimExplicacao) S.fimExplicacao(false);
+  return new Promise((resolve) => {
+    const inv = !!S.ajustes.inverterArraste;
+    const anterior = 'volta para a fala anterior';
+    const proxima = 'avança para a próxima fala';
+    $('#gestos-acao-direita').textContent = inv ? proxima : anterior;
+    $('#gestos-acao-esquerda').textContent = inv ? anterior : proxima;
+    $('#demo-selo-1').textContent = inv ? 'Próxima fala ▶' : '◀ Fala anterior';
+    $('#demo-selo-2').textContent = inv ? '◀ Fala anterior' : 'Próxima fala ▶';
+    $('#demo-fala-b').textContent = inv ? 'Fala 3' : 'Fala 1';
+    const caixa = $('#gestos-nao-mostrar');
+    caixa.checked = !!S.ajustes.gestosExplicados;
+    const tela = $('#tela-gestos');
+    tela.hidden = false;
+    $('#gestos-ok').focus();
+    const fim = (concluiu) => {
+      S.fimExplicacao = null;
+      $('#gestos-ok').onclick = null;
+      tela.hidden = true;
+      if (concluiu && S.ajustes.gestosExplicados !== caixa.checked) {
+        S.ajustes.gestosExplicados = caixa.checked;
+        salvar();
+      }
+      resolve(concluiu);
+    };
+    S.fimExplicacao = fim;
+    $('#gestos-ok').onclick = () => fim(true);
+  });
+}
+
+/** Vídeo e legenda aparecem devagar (fade in) quando o vídeo começa. */
+function entradaSuave() {
+  for (const el of [$('#area-video'), $('#caixa-legenda')]) {
+    el.classList.remove('entrada-suave');
+    void el.offsetWidth; // reinicia a animação
+    el.classList.add('entrada-suave');
+    el.addEventListener('animationend', () => el.classList.remove('entrada-suave'), { once: true });
+  }
+}
+
+// ============================================================ histórico do YouTube (app Android 10+)
+// O player embutido não põe o vídeo no histórico da conta. O app avisa o YouTube (com a conta conectada):
+// "inicio" quando o vídeo começa de verdade (com som, sem anúncio) e "progresso" a cada 20 s, ao pausar e
+// ao sair (para o histórico guardar até onde a pessoa assistiu).
+
+function avisarHistorico(evento, forcar = false) {
+  const reg = S.registro;
+  const p = S.player;
+  if (!ANDROID || APK < 10 || !reg || !p) return;
+  const agora = performance.now();
+  if (evento === 'inicio') {
+    if (S.histVideo === reg.id) return;
+    S.histVideo = reg.id;
+    S.histUltimo = agora;
+  } else {
+    if (S.histVideo !== reg.id) return;
+    if (!forcar && agora - S.histUltimo < 20000) return;
+    S.histUltimo = agora;
+  }
+  const t = p.tempo();
+  if (!Number.isFinite(t)) return;
+  mandarAoApp({ acao: 'historico', evento, video: reg.id, tempo: Math.round(t * 1000) / 1000 });
+}
+
+window.ldHistorico = (texto) => diag(`histórico do YouTube: ${texto}`);
+
 // ============================================================ tela ligada (7.8)
 
 async function pedirTelaLigada() {
@@ -2133,6 +2335,7 @@ function tique() {
   if (st === 1 && agora - S.ultimoSalvamento >= 5000) {
     S.ultimoSalvamento = agora;
     salvarPosicao();
+    if (!S.anuncio.ativo) avisarHistorico('progresso');
   }
 }
 
@@ -2319,8 +2522,9 @@ function irParaVizinha(el) {
   if (!p || !Number.isInteger(i) || !S.unidades[i] || el.dataset.indice === '') return;
   S.memoriaNav = { indice: i, quando: performance.now() };
   if (S.loop.ligado) S.loop.alvo = i;
+  const pausado = S.primeiroPlay && p.estado() === 2; // pausado continua pausado (como nos gestos)
   irParaIndice(i);
-  if (p.estado() !== 1) {
+  if (!pausado && p.estado() !== 1 && p.estado() !== 3) {
     if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
   }
   mostrarRetorno(i < S.exibida ? TEXTO_RETORNO.voltar : TEXTO_RETORNO.avancar);
@@ -2697,9 +2901,10 @@ function navegarAcao(acao) {
   }
   S.memoriaNav = { indice: r.indice, quando: agora };
   if (S.loop.ligado) S.loop.alvo = r.indice; // o loop acompanha a fala escolhida
+  // Pausado pelo usuário: continua pausado (só o play volta a tocar). Tocando: continua tocando.
+  const pausado = S.primeiroPlay && p.estado() === 2;
   irParaIndice(r.indice);
-  // Navegar sempre deixa o vídeo tocando.
-  if (p.estado() !== 1) {
+  if (!pausado && p.estado() !== 1 && p.estado() !== 3) {
     if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
   }
   mostrarRetorno(TEXTO_RETORNO[acao]);
@@ -2708,9 +2913,11 @@ function navegarAcao(acao) {
 
 // ============================================================ velocidade (no painel de ajustes)
 
-// Para mais devagar, de 0,05 em 0,05 (0,95× … 0,25×). Para mais rápido, as do YouTube (1,25× … 2×).
-// Só no app Android com o gancho v5: a API do iframe arredonda para a lista do YouTube.
-const VELS_LENTAS = Array.from({ length: 15 }, (_, i) => Math.round((0.25 + i * 0.05) * 100) / 100);
+// Para mais devagar, de 0,05 em 0,05 (0,95× … 0,60×; abaixo disso a fala fica distorcida e não ajuda).
+// Para mais rápido, as do YouTube (1,25× … 2×). Só no app Android com o gancho v5: a API do iframe
+// arredonda para a lista do YouTube.
+const VEL_MINIMA = 0.6;
+const VELS_LENTAS = Array.from({ length: 8 }, (_, i) => Math.round((VEL_MINIMA + i * 0.05) * 100) / 100);
 const VEL_FINA_MOCK = MOCK && new URLSearchParams(location.search).get('mockVelFina') === '1';
 
 /** "0,95" e "0,90" (sempre duas casas abaixo de 1×); "1", "1,25" acima. */
@@ -2725,8 +2932,8 @@ function velocidadeFina() {
 function listaVelocidades() {
   const p = S.player;
   if (!p) return [1];
-  const vels = p.velocidades();
-  if (!velocidadeFina()) return vels;
+  const vels = p.velocidades().filter((v) => v >= VEL_MINIMA - 1e-6);
+  if (!velocidadeFina()) return vels.length ? vels : [1];
   const rapidas = vels.filter((v) => v > 1 + 1e-6);
   return [...VELS_LENTAS, 1, ...(rapidas.length ? rapidas : [1.25, 1.5, 1.75, 2])];
 }
@@ -3273,6 +3480,13 @@ window.ldMostrarBiblioteca = () => {
  */
 window.ldVoltar = () => {
   if (!$('#tela-bloqueio').hidden) { sairDoBloqueio(); return 'ok'; }
+  if (!$('#tela-gestos').hidden) {
+    // Na explicação antes do vídeo, voltar sai do vídeo (aberta pelos Ajustes, só fecha a janela).
+    const antesDoVideo = S.yt.fase === 'gestos' || !S.primeiroPlay;
+    S.fimExplicacao?.(false);
+    if (antesDoVideo && !$('#tela-assistir').hidden) voltarParaBiblioteca();
+    return 'ok';
+  }
   if (!$('#dialogo').hidden) { $('#dialogo-cancelar').click(); return 'ok'; }
   if (!$('#tela-carregando').hidden) { cancelarCarregando(); return 'ok'; }
   if (!$('#tela-idioma').hidden) { $('#idioma-cancelar').click(); return 'ok'; }
@@ -3359,8 +3573,14 @@ function ligarEventos() {
   }
   $('#btn-tela-cheia').addEventListener('click', alternarTelaCheia);
   $('#btn-liberar').addEventListener('click', liberarToque);
-  $('#btn-ajustes').addEventListener('click', () => abrirPainel('#painel-ajustes'));
+  $('#btn-ajustes').addEventListener('click', () => {
+    // Abrir os Ajustes pausa o vídeo na hora (volta a tocar só pelo play).
+    // (Não enquanto a legenda carrega: aí o vídeo toca sem som, coberto, para o YouTube entregar a legenda.)
+    if (S.player && S.primeiroPlay && !S.yt.preparando && !S.yt.fase && [1, 3].includes(S.player.estado())) S.player.pausar();
+    abrirPainel('#painel-ajustes');
+  });
   $('#btn-fechar-ajustes').addEventListener('click', fecharPaineis);
+  $('#btn-ver-gestos').addEventListener('click', () => { fecharPaineis(); mostrarExplicacaoGestos(); });
   $('#fundo-painel').addEventListener('click', fecharPaineis);
   $('#btn-tentar-traducao').addEventListener('click', () => {
     if (S.yt.estado === 'erro') { escolherLegendaYoutube(); return; }

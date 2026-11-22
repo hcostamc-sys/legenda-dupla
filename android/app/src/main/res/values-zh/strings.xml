@@ -14,4 +14,5 @@
     <string name="modelos_pronto">增强标点已下载</string>
     <string name="modelos_pronto_texto">点按打开应用并完成安装。</string>
     <string name="modelos_falhou">下载失败</string>
+    <string name="modelos_falhou_texto">点按以打开应用并重试。</string>
 </resources>

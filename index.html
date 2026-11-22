@@ -332,6 +332,7 @@
         <input type="range" min="14" max="32" step="1" data-ajuste="fonteL1">
       </label>
       <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterArraste"> Inverter direção do arraste</label>
+      <button id="btn-ver-gestos" type="button" class="btn">Ver como passar as falas</button>
     </div>
 
     <div class="grupo">
@@ -339,6 +340,7 @@
       <ul class="lista-gestos">
         <li>Arrastar para a <b>esquerda</b> no vídeo ou na legenda: próxima fala (como virar página). Para a <b>direita</b>: fala anterior.</li>
         <li><b>Segurar</b> o dedo no vídeo: repete a fala. <b>Tocar</b> no vídeo: toca ou pausa.</li>
+        <li>Com o vídeo <b>pausado</b>, passar as falas não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Abrir os Ajustes também pausa o vídeo.</li>
         <li>Tocar numa <b>palavra</b> da legenda: mostra o significado dela, com os botões <b>Copiar</b>, <b>Copiar frase</b> e <b>Dicionário</b> (abre o dicionário para ver mais detalhes).</li>
         <li>Para ir a qualquer ponto: arraste a barra do tempo.</li>
         <li><b>Loop</b> (setas com 1): repete a fala atual até você desligar.</li>
@@ -402,6 +404,37 @@
     <div class="dialogo-botoes">
       <button id="idioma-cancelar" type="button" class="btn">Agora não</button>
       <button id="idioma-ok" type="button" class="btn btn-principal">Começar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== COMO PASSAR AS FALAS (antes do vídeo, até marcar "não mostrar") ============================== -->
+<div id="tela-gestos" class="dialogo dialogo-gestos" hidden role="dialog" aria-modal="true" aria-labelledby="gestos-titulo">
+  <div class="dialogo-caixa caixa-gestos">
+    <h2 id="gestos-titulo">Como passar as falas</h2>
+    <!-- Demonstração animada: o dedo desliza para um lado e para o outro, e a fala muda -->
+    <div class="demo-gestos" aria-hidden="true">
+      <div class="demo-video">
+        <svg class="demo-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <span id="demo-selo-1" class="demo-selo demo-selo-1">◀ Fala anterior</span>
+        <span id="demo-selo-2" class="demo-selo demo-selo-2">Próxima fala ▶</span>
+      </div>
+      <div class="demo-legenda">
+        <span class="demo-fala demo-fala-a">Fala 2</span>
+        <span id="demo-fala-b" class="demo-fala demo-fala-b">Fala 1</span>
+      </div>
+      <div class="demo-rastro"></div>
+      <div class="demo-dedo"></div>
+    </div>
+    <p class="dica">Deslize o dedo sobre o vídeo ou sobre a legenda:</p>
+    <ul class="lista-gestos lista-gestos-demo">
+      <li><b>Da esquerda para a direita</b>: <span id="gestos-acao-direita">volta para a fala anterior</span>.</li>
+      <li><b>Da direita para a esquerda</b>: <span id="gestos-acao-esquerda">avança para a próxima fala</span>.</li>
+    </ul>
+    <p class="dica">Com o vídeo pausado, ele continua pausado: só o botão de tocar faz o vídeo andar de novo.</p>
+    <label class="ajuste ajuste-check"><input id="gestos-nao-mostrar" type="checkbox"> Não mostrar mais esta explicação</label>
+    <div class="dialogo-botoes">
+      <button id="gestos-ok" type="button" class="btn btn-principal">Concluir</button>
     </div>
   </div>
 </div>

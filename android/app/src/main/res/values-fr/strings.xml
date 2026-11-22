@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Ponctuation améliorée téléchargée</string>
     <string name="modelos_pronto_texto">Touchez pour ouvrir l\'app et terminer l\'installation.</string>
     <string name="modelos_falhou">Échec du téléchargement</string>
+    <string name="modelos_falhou_texto">Touchez pour ouvrir l\'app et réessayer.</string>
 </resources>

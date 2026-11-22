@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Улучшенная пунктуация загружена</string>
     <string name="modelos_pronto_texto">Нажмите, чтобы открыть приложение и завершить установку.</string>
     <string name="modelos_falhou">Ошибка загрузки</string>
+    <string name="modelos_falhou_texto">Нажмите, чтобы открыть приложение и повторить попытку.</string>
 </resources>

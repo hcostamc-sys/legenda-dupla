@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Lepsza interpunkcja pobrana</string>
     <string name="modelos_pronto_texto">Dotknij, aby otworzyć aplikację i dokończyć instalację.</string>
     <string name="modelos_falhou">Pobieranie nie powiodło się</string>
+    <string name="modelos_falhou_texto">Dotknij, aby otworzyć aplikację i spróbować ponownie.</string>
 </resources>

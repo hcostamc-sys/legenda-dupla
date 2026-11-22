@@ -14,4 +14,5 @@
     <string name="modelos_pronto">تم تنزيل علامات الترقيم المحسّنة</string>
     <string name="modelos_pronto_texto">انقر لفتح التطبيق وإكمال التثبيت.</string>
     <string name="modelos_falhou">فشل التنزيل</string>
+    <string name="modelos_falhou_texto">انقر لفتح التطبيق والمحاولة مرة أخرى.</string>
 </resources>

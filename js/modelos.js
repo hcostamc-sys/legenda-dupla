@@ -47,9 +47,18 @@ export async function estadoPacote(id) {
  * Baixa um arquivo e grava direto no cache, sem juntar tudo na memória (o modelo tem até 210 MB):
  * os pedaços passam por um contador (progresso) a caminho do disco.
  */
-async function baixarArquivo(cache, url, tamanho, aoBytes, sinal, chave = url) {
+async function baixarArquivo(cache, url, tamanho, aoBytes, sinal, chave = url, direto = false) {
   const r = await fetch(url, { signal: sinal, credentials: 'omit', cache: 'no-store' });
   if (!r.ok) throw new Error(`O servidor respondeu ${r.status}.`);
+  if (direto) {
+    // Sem passar os pedaços pelo JavaScript: o navegador grava a resposta direto no cache (caminho mais
+    // simples, usado na nova tentativa quando o modo com contador falha). O progresso salta no fim.
+    const declarado = r.headers.get('content-encoding') ? 0 : Number(r.headers.get('content-length')) || 0;
+    if (tamanho && declarado && declarado !== tamanho) throw new Error(`O download veio incompleto (${declarado} de ${tamanho} bytes).`);
+    await cache.put(chave, r);
+    aoBytes(tamanho || declarado);
+    return;
+  }
   // Confere pelo tamanho conhecido do arquivo. O Content-Length não serve: quando o servidor manda
   // comprimido (o GitHub Pages faz isso com o motor .wasm), ele é o tamanho comprimido, menor que o
   // arquivo que chega aqui já descomprimido. Foi isso que dava "download incompleto" aos 12 MB.
@@ -154,13 +163,30 @@ export async function instalarArquivosBaixados(id, arquivos, { aoProgresso = () 
   aoProgresso(0, total);
   try {
     for (const a of lista) {
-      await baixarArquivo(cache, a.local, Number(a.bytes) || 0, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); }, sinal, a.url);
+      // O arquivo já está no celular: se a cópia falhar, tenta de novo (até 3 vezes); da segunda em
+      // diante, pelo caminho direto (sem o contador), que não depende da leitura em pedaços.
+      for (let tentativa = 1; ; tentativa++) {
+        const antes = feitos;
+        try {
+          await baixarArquivo(cache, a.local, Number(a.bytes) || 0, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); },
+            sinal, a.url, tentativa > 1);
+          break;
+        } catch (e) {
+          feitos = antes;
+          aoProgresso(feitos, total);
+          const semEspaco = e?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message));
+          if (e?.name === 'AbortError' || semEspaco || tentativa >= 3) throw e;
+          await new Promise((ok) => setTimeout(ok, 1500 * tentativa));
+          if (sinal?.aborted) throw new DOMException('cancelado', 'AbortError');
+        }
+      }
     }
   } catch (e) {
     await Promise.all([cache.delete(p.modelo), cache.delete(p.sp)]).catch(() => {});
     if (e?.name === 'AbortError') throw e;
     const semEspaco = e?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message));
-    throw new Error(semEspaco ? 'Falta espaço no celular para o pacote.' : e?.message || 'Não consegui instalar o pacote.');
+    if (semEspaco) throw new Error('Falta espaço no celular para o pacote.');
+    throw e; // a página explica o erro para a pessoa (e guarda o detalhe técnico no diagnóstico)
   }
   aoProgresso(total, total);
 }

@@ -14,4 +14,5 @@
     <string name="modelos_pronto">Verbesserte Zeichensetzung geladen</string>
     <string name="modelos_pronto_texto">Tippe, um die App zu öffnen und die Installation abzuschließen.</string>
     <string name="modelos_falhou">Download fehlgeschlagen</string>
+    <string name="modelos_falhou_texto">Tippen, um die App zu öffnen und es erneut zu versuchen.</string>
 </resources>

@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
@@ -14,6 +15,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.InputDevice;
@@ -54,6 +56,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * App Android do Legenda Dupla: abre o site numa WebView e
@@ -68,12 +72,16 @@ import java.util.concurrent.Executors;
  * 8) textos no idioma do celular (res/values-xx/strings.xml); a página traduz os dela.
  * 9) download dos pacotes de pontuação melhorada pelo Android (ServicoModelos): continua com o app em
  *    segundo plano, com o andamento nas notificações; a página recebe o estado e copia os arquivos.
+ *    O download só começa com a permissão de notificações (versão 10): sem ela, a página explica e pede de novo.
+ * 10) histórico do YouTube (versão 10): o player embutido não grava no histórico da conta; o app avisa o
+ *    YouTube, com a conta conectada, que o vídeo foi assistido (como o app oficial faz).
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 9; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 10; // a página usa para saber o que o app sabe fazer
+    private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
     private WebView web;
@@ -89,6 +97,10 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback fimTelaCheia;
     private String agenteUsuario = "";
     private final ExecutorService rede = Executors.newSingleThreadExecutor();
+    /** Pedido de download esperando a permissão de notificações (null: nenhum). */
+    private String pedidoPendente;
+    /** A página já mostrou "o Android não pergunta mais": o próximo toque abre as configurações. */
+    private boolean avisouBloqueio;
 
     @Override
     protected void onCreate(Bundle salvo) {
@@ -524,6 +536,12 @@ public class MainActivity extends Activity {
         // De volta ao app: o aviso de "download concluído" já não precisa ficar nas notificações.
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(ServicoModelos.NOTIF_FIM);
+        // Voltou das configurações com as notificações ligadas: o download começa sozinho.
+        if (pedidoPendente != null && notificacoesLiberadas()) {
+            String pedido = pedidoPendente;
+            pedidoPendente = null;
+            comecarDownloadModelos(pedido);
+        }
     }
 
     @Override
@@ -594,6 +612,10 @@ public class MainActivity extends Activity {
                 rede.execute(() -> ServicoModelos.apagarTudo(this));
                 return;
             }
+            if ("historico".equals(acao)) {
+                runOnUiThread(() -> registrarHistorico(o));
+                return;
+            }
             if ("telaLigada".equals(o.optString("acao"))) {
                 if (o.optBoolean("ligada")) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -618,28 +640,244 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Começa o download dos pacotes (serviço em primeiro plano, com a notificação de andamento). */
-    private void iniciarDownloadModelos(String pedido) {
-        // Android 13+: pede a permissão de notificação (sem ela, o download funciona, mas sem a barra).
+    // ------------------------------------------------------------------ download dos pacotes e permissão
+
+    /** O app pode mostrar notificações? (Android 13+: permissão; todos: notificações ligadas nas configurações) */
+    private boolean notificacoesLiberadas() {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
+            return false;
         }
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        return nm == null || nm.areNotificationsEnabled();
+    }
+
+    private static String idDoPedido(String pedido) {
+        try {
+            return new JSONObject(pedido).optString("id", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void avisarPermissao(String id, String estado, boolean bloqueado) {
+        String json = "{\"estado\":\"" + estado + "\",\"id\":" + JSONObject.quote(id) + ",\"bloqueado\":" + bloqueado + "}";
+        chamarPagina("ldModelosEstado", json);
+    }
+
+    /**
+     * Pedido de download da página. O download precisa da permissão de notificações (é por ela que o Android
+     * mostra o andamento e deixa o download seguir com o app fechado): sem ela, pergunta; se a pessoa negar,
+     * a página explica e o botão "Tentar de novo" pergunta outra vez. Quando o Android não pergunta mais
+     * (negado duas vezes) ou as notificações estão desligadas, o botão abre as configurações do app.
+     */
+    private void iniciarDownloadModelos(String pedido) {
+        if (notificacoesLiberadas()) {
+            pedidoPendente = null;
+            avisouBloqueio = false;
+            comecarDownloadModelos(pedido);
+            return;
+        }
+        pedidoPendente = pedido;
+        String id = idDoPedido(pedido);
+        SharedPreferences pref = getSharedPreferences("ld", MODE_PRIVATE);
+        boolean semPermissao = Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED;
+        boolean jaPerguntou = pref.getBoolean("notificacaoPedida", false);
+        if (semPermissao && (!jaPerguntou || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS))) {
+            pref.edit().putBoolean("notificacaoPedida", true).apply();
+            avisarPermissao(id, "pedindoPermissao", false);
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PEDIDO_NOTIFICACAO);
+            return;
+        }
+        // O Android não mostra mais a pergunta: primeiro a página explica; no toque seguinte, abre as configurações.
+        if (avisouBloqueio) abrirConfiguracoesNotificacao();
+        avisouBloqueio = true;
+        avisarPermissao(id, "semPermissao", true);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int codigo, String[] permissoes, int[] resultados) {
+        super.onRequestPermissionsResult(codigo, permissoes, resultados);
+        if (codigo != PEDIDO_NOTIFICACAO || pedidoPendente == null) return;
+        String pedido = pedidoPendente;
+        if (notificacoesLiberadas()) {
+            pedidoPendente = null;
+            avisouBloqueio = false;
+            comecarDownloadModelos(pedido);
+            return;
+        }
+        // Negou. Se o Android não vai perguntar de novo, o próximo toque já abre as configurações.
+        boolean bloqueado = Build.VERSION.SDK_INT >= 33
+                && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS);
+        avisouBloqueio = bloqueado;
+        avisarPermissao(idDoPedido(pedido), "semPermissao", bloqueado);
+    }
+
+    private void abrirConfiguracoesNotificacao() {
+        try {
+            startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignorar) {
+                // nada
+            }
+        }
+    }
+
+    /** Começa o download dos pacotes (serviço em primeiro plano, com a notificação de andamento). */
+    private void comecarDownloadModelos(String pedido) {
         try {
             Intent i = new Intent(this, ServicoModelos.class)
                     .setAction(ServicoModelos.ACAO_BAIXAR)
                     .putExtra(ServicoModelos.EXTRA_PEDIDO, pedido);
             startForegroundService(i);
         } catch (Exception e) {
-            String id = "";
+            String json = "{\"estado\":\"erro\",\"id\":" + JSONObject.quote(idDoPedido(pedido))
+                    + ",\"erro\":" + JSONObject.quote("O Android não deixou começar o download. Feche o app, abra de novo e toque em Tentar de novo.")
+                    + ",\"detalhe\":" + JSONObject.quote(e.getClass().getSimpleName() + ": " + e.getMessage()) + "}";
+            chamarPagina("ldModelosEstado", json);
+        }
+    }
+
+    // ------------------------------------------------------------------ histórico do YouTube
+
+    // O vídeo toca no player embutido (dentro da página), e o YouTube não põe vídeo de player embutido no
+    // histórico da conta. Por isso o app faz o que o app do YouTube faz ao tocar um vídeo: lê, na página do
+    // vídeo (com a conta conectada), os endereços de registro de reprodução e os chama com a sessão da conta.
+    // Tudo nesta thread "rede": as variáveis abaixo só são usadas nela.
+    private static final String UA_COMPUTADOR =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    private String histVideo = "";
+    private String histPlayback = "";
+    private String histWatchtime = "";
+    private String histCpn = "";
+    private double histUltimo = 0;
+    private boolean histInicioEnviado;
+
+    /** {"acao":"historico","evento":"inicio"|"progresso","video":"...","tempo":12.3} */
+    private void registrarHistorico(JSONObject o) {
+        final String video = o.optString("video", "");
+        final String evento = o.optString("evento", "");
+        final double tempo = Math.max(0, o.optDouble("tempo", 0));
+        if (!video.matches("[A-Za-z0-9_-]{11}") || !conectadoAoYoutube()) return;
+        final String cookie = CookieManager.getInstance().getCookie("https://www.youtube.com");
+        if (cookie == null || cookie.isEmpty()) return;
+        rede.execute(() -> {
             try {
-                id = new JSONObject(pedido).optString("id", "");
+                if ("inicio".equals(evento)) {
+                    if (!video.equals(histVideo) || histPlayback.isEmpty()) {
+                        histVideo = video;
+                        histPlayback = "";
+                        histWatchtime = "";
+                        String html = baixarTexto("https://www.youtube.com/watch?v=" + video + "&bpctr=9999999999&has_verified=1", cookie);
+                        histPlayback = extrairUrl(html, "videostatsPlaybackUrl");
+                        histWatchtime = extrairUrl(html, "videostatsWatchtimeUrl");
+                        if (histPlayback.isEmpty()) {
+                            avisarHistorico("a página do vídeo não trouxe o endereço de registro (" + html.length() + " letras)");
+                            return;
+                        }
+                    }
+                    histCpn = novoCpn(); // cada abertura do vídeo é uma reprodução nova (como no YouTube)
+                    histUltimo = tempo;
+                    int st = chamar(montarRegistro(histPlayback, tempo, -1, -1), cookie, video);
+                    histInicioEnviado = st >= 200 && st < 300;
+                    avisarHistorico("início registrado: HTTP " + st);
+                } else if ("progresso".equals(evento) && histInicioEnviado && video.equals(histVideo) && !histWatchtime.isEmpty()) {
+                    if (tempo < histUltimo) { histUltimo = tempo; return; } // voltou no vídeo
+                    if (tempo - histUltimo < 0.5) return;
+                    int st = chamar(montarRegistro(histWatchtime, tempo, histUltimo, tempo), cookie, video);
+                    histUltimo = tempo;
+                    if (st < 200 || st >= 300) avisarHistorico("tempo assistido: HTTP " + st);
+                }
+            } catch (Exception e) {
+                avisarHistorico("falhou: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
+        });
+    }
+
+    private void avisarHistorico(String texto) {
+        runOnUiThread(() -> chamarPagina("ldHistorico", texto));
+    }
+
+    private static String novoCpn() {
+        final String alfabeto = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
+        java.security.SecureRandom r = new java.security.SecureRandom();
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < 16; i++) b.append(alfabeto.charAt(r.nextInt(64)));
+        return b.toString();
+    }
+
+    /** Endereço "baseUrl" de playbackTracking na página do vídeo (vazio se não achar). */
+    private static String extrairUrl(String html, String chave) {
+        // A página pode trazer o JSON escapado dentro de texto JavaScript (\x22 no lugar de aspas).
+        String t = html.replace("\\x22", "\"").replace("\\x7b", "{").replace("\\x7d", "}");
+        Matcher m = Pattern.compile("\"" + chave + "\":\\{\"baseUrl\":\"([^\"]+)\"").matcher(t);
+        if (!m.find()) return "";
+        String u = m.group(1).replace("\\u0026", "&").replace("\\/", "/").replace("\\x26", "&").replace("\\x3d", "=");
+        return u.startsWith("https://") && Uri.parse(u).getHost() != null && Uri.parse(u).getHost().endsWith("youtube.com") ? u : "";
+    }
+
+    /** Monta o endereço de registro: cmt = ponto do vídeo; st/et = trecho assistido (só no tempo assistido). */
+    private String montarRegistro(String base, double cmt, double st, double et) {
+        Uri u = Uri.parse(base);
+        Uri.Builder b = u.buildUpon().clearQuery();
+        Set<String> trocar = new HashSet<>(Arrays.asList("ver", "cpn", "cmt", "st", "et", "el"));
+        for (String nome : u.getQueryParameterNames()) {
+            if (trocar.contains(nome)) continue;
+            for (String v : u.getQueryParameters(nome)) b.appendQueryParameter(nome, v);
+        }
+        b.appendQueryParameter("ver", "2");
+        b.appendQueryParameter("cpn", histCpn);
+        b.appendQueryParameter("el", "detailpage");
+        b.appendQueryParameter("cmt", String.format(Locale.US, "%.3f", cmt));
+        if (st >= 0) {
+            b.appendQueryParameter("st", String.format(Locale.US, "%.3f", st));
+            b.appendQueryParameter("et", String.format(Locale.US, "%.3f", et));
+        }
+        return b.build().toString();
+    }
+
+    private String baixarTexto(String endereco, String cookie) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(endereco).openConnection();
+        try {
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(20000);
+            c.setRequestProperty("Cookie", cookie);
+            c.setRequestProperty("User-Agent", UA_COMPUTADOR);
+            c.setRequestProperty("Accept-Language", Locale.getDefault().toLanguageTag());
+            try (InputStream in = c.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0 && out.size() < 8_000_000) out.write(buf, 0, n);
+                return new String(out.toByteArray(), StandardCharsets.UTF_8);
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private int chamar(String endereco, String cookie, String video) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(endereco).openConnection();
+        try {
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(15000);
+            c.setRequestProperty("Cookie", cookie);
+            c.setRequestProperty("User-Agent", UA_COMPUTADOR);
+            c.setRequestProperty("Referer", "https://www.youtube.com/watch?v=" + video);
+            int st = c.getResponseCode();
+            try (InputStream in = st < 400 ? c.getInputStream() : c.getErrorStream()) {
+                if (in != null) while (in.read() >= 0) { /* esvazia */ }
             } catch (Exception ignorar) {
                 // nada
             }
-            String json = "{\"estado\":\"erro\",\"id\":" + JSONObject.quote(id)
-                    + ",\"erro\":" + JSONObject.quote("O Android não deixou começar o download: " + e.getMessage()) + "}";
-            chamarPagina("ldModelosEstado", json);
+            return st;
+        } finally {
+            c.disconnect();
         }
     }
 

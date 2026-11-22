@@ -91,7 +91,7 @@ public class ServicoModelos extends Service {
             if ("baixando".equals(estado.optString("estado")) && !rodando) {
                 try {
                     estado.put("estado", "erro");
-                    estado.put("erro", "O download foi interrompido. Toque em Baixar de novo: ele continua de onde parou.");
+                    estado.put("erro", "O download foi interrompido. Toque em Tentar de novo: ele continua de onde parou.");
                 } catch (Exception e) {
                     // nada
                 }
@@ -304,6 +304,31 @@ public class ServicoModelos extends Service {
     private static class Cancelado extends Exception {
     }
 
+    /** Erro com mensagem já escrita para pessoas (vai direto para a tela). */
+    private static class Aviso extends IOException {
+        Aviso(String mensagem) {
+            super(mensagem);
+        }
+    }
+
+    static final String MSG_INTERNET = "A internet caiu ou ficou lenta demais durante o download. Confira o Wi‑Fi e toque em Tentar de novo: ele continua de onde parou.";
+    static final String MSG_GERAL = "Não consegui terminar o download. Toque em Tentar de novo: ele continua de onde parou.";
+
+    /** Erro técnico → frase para pessoas (o detalhe técnico vai à parte, para o diagnóstico). */
+    private static String mensagemAmigavel(Exception e) {
+        if (e instanceof Aviso) return e.getMessage();
+        if (e instanceof java.net.UnknownHostException || e instanceof java.net.SocketException
+                || e instanceof java.io.InterruptedIOException || e instanceof javax.net.ssl.SSLException
+                || e instanceof java.io.EOFException || e instanceof java.net.ProtocolException) {
+            return MSG_INTERNET;
+        }
+        String m = e.getMessage();
+        if (m != null && (m.contains("ENOSPC") || m.contains("No space"))) return MSG_ESPACO;
+        return MSG_GERAL;
+    }
+
+    static final String MSG_ESPACO = "Falta espaço no celular. Apague fotos, vídeos ou apps que não usa e toque em Tentar de novo.";
+
     private final long[] feitosPorArquivo = new long[10];
 
     private long somaFeitos(int n) {
@@ -315,9 +340,10 @@ public class ServicoModelos extends Service {
     private void baixarTudo(JSONArray arquivos, long total) {
         File p = pasta(this);
         String erro = null;
+        String detalhe = null;
         boolean cancelado = false;
         try {
-            if (!p.exists() && !p.mkdirs()) throw new IOException("Não consegui criar a pasta do pacote.");
+            if (!p.exists() && !p.mkdirs()) throw new Aviso("Não consegui criar a pasta do pacote no celular. Reinicie o celular e toque em Tentar de novo.");
             int n = arquivos.length();
             long restante = 0;
             for (int i = 0; i < n; i++) {
@@ -330,7 +356,7 @@ public class ServicoModelos extends Service {
             }
             // Espaço: o que falta baixar, mais a cópia que a página guarda depois, mais uma folga.
             if (p.getUsableSpace() < restante + total + 50_000_000L) {
-                throw new IOException("Falta espaço no celular para o pacote.");
+                throw new Aviso(MSG_ESPACO);
             }
             progresso(somaFeitos(n), total, true);
             for (int i = 0; i < n; i++) {
@@ -342,7 +368,7 @@ public class ServicoModelos extends Service {
                 for (int tentativa = 1; ; tentativa++) {
                     try {
                         baixarArquivo(a.getString("url"), parte, bytes, i, n, total);
-                        if (!parte.renameTo(fim)) throw new IOException("Não consegui gravar o arquivo.");
+                        if (!parte.renameTo(fim)) throw new Aviso("Não consegui gravar o pacote no celular. Confira o espaço livre e toque em Tentar de novo.");
                         break;
                     } catch (Cancelado c) {
                         throw c;
@@ -355,16 +381,12 @@ public class ServicoModelos extends Service {
             }
         } catch (Cancelado c) {
             if (cancelar) cancelado = true;
-            else erro = "O Android pausou o download. Toque em Baixar de novo: ele continua de onde parou.";
+            else erro = "O Android pausou o download. Toque em Tentar de novo: ele continua de onde parou.";
         } catch (Exception e) {
-            String m = e.getMessage();
-            erro = (m == null || m.isEmpty()) ? "Não consegui baixar." : m;
-            if (e instanceof java.net.UnknownHostException || e instanceof java.net.SocketTimeoutException
-                    || e instanceof java.net.ConnectException) {
-                erro = "Sem internet ou conexão muito lenta.";
-            }
+            erro = mensagemAmigavel(e);
+            detalhe = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
-        terminar(cancelado, erro);
+        terminar(cancelado, erro, detalhe);
     }
 
     private void dormir(long ms) throws Cancelado {
@@ -408,7 +430,7 @@ public class ServicoModelos extends Service {
                 feitosPorArquivo[indice] = 0;
                 throw new IOException("O download recomeçou do início.");
             } else {
-                throw new IOException("O servidor respondeu " + status + ".");
+                throw new Aviso("O servidor respondeu " + status + ".");
             }
             feitosPorArquivo[indice] = ja;
             try (InputStream in = c.getInputStream(); OutputStream out = new FileOutputStream(parte, anexar)) {
@@ -457,7 +479,7 @@ public class ServicoModelos extends Service {
         avisar(json);
     }
 
-    private void terminar(boolean cancelado, String erro) {
+    private void terminar(boolean cancelado, String erro, String detalhe) {
         String json;
         String nome;
         synchronized (TRAVA) {
@@ -477,6 +499,7 @@ public class ServicoModelos extends Service {
                     } else {
                         estado.put("estado", "erro");
                         estado.put("erro", erro);
+                        if (detalhe != null) estado.put("detalhe", detalhe);
                     }
                 } catch (Exception e) {
                     // nada
@@ -583,7 +606,7 @@ public class ServicoModelos extends Service {
         return new Notification.Builder(this, CANAL)
                 .setSmallIcon(ok ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
                 .setContentTitle(titulo(this, ok ? R.string.modelos_pronto : R.string.modelos_falhou, nome))
-                .setContentText(ok ? getString(R.string.modelos_pronto_texto) : erro)
+                .setContentText(getString(ok ? R.string.modelos_pronto_texto : R.string.modelos_falhou_texto))
                 .setAutoCancel(true)
                 .setContentIntent(abrirApp())
                 .build();
