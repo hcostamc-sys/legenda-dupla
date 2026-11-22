@@ -125,3 +125,10 @@ test('ajustes antigos (v1): letra grande volta ao padrão, idioma é mantido', (
   assert.equal('pausaAuto' in a, false);
   assert.equal(misturarAjustes({ versao: 2, fonteL1: 24 }).fonteL1, 24);
 });
+
+test('ajustes v2: "inverter arraste" volta ao padrão, porque o sentido padrão mudou na v3', () => {
+  assert.equal(misturarAjustes({ versao: 2, inverterArraste: true, fonteL1: 24 }).inverterArraste, false);
+  assert.equal(misturarAjustes({ versao: 2, inverterArraste: true, fonteL1: 24 }).fonteL1, 24);
+  assert.equal(misturarAjustes({ versao: 3, inverterArraste: true }).inverterArraste, true);
+  assert.equal(AJUSTES_PADRAO.versao, 3);
+});

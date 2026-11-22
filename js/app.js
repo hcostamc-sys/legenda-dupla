@@ -43,7 +43,9 @@ const S = {
   saltoEm: 0,
   loop: { ligado: false, alvo: null }, // loop da fala atual
   ab: { a: null, b: null }, // trecho A–B (índices das falas)
-  marcandoAB: null, // null | 'a' | 'b': o próximo toque na legenda marca esse ponto
+  marcandoAB: null, // null | 'a' | 'b': na tela de escolha do A–B, o próximo toque marca esse ponto
+  abTocava: false, // o vídeo tocava quando a tela do A–B abriu
+  abHistorico: false, // a tela do A–B pôs uma entrada no histórico (para o voltar do celular)
   velConfirmada: 1,
   velPedida: null,
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
@@ -1245,23 +1247,16 @@ function atualizarBotoesRepeticao() {
   const { a, b } = S.ab;
   const ab = $('#btn-ab');
   const completo = a !== null && b !== null;
-  const marcando = S.marcandoAB !== null;
   ab.setAttribute('aria-pressed', String(completo));
-  ab.classList.toggle('meio', marcando);
-  ab.textContent = marcando ? (S.marcandoAB === 'a' ? 'A?' : 'B?') : 'A–B';
-  ab.setAttribute('aria-label', completo ? 'Parar o trecho A–B' : marcando ? 'Cancelar a marcação do trecho' : 'Repetir um trecho de A até B');
-  // Enquanto marca, a caixa da legenda fica destacada (borda tracejada) e mostra o que fazer.
+  ab.setAttribute('aria-label', completo ? 'Parar o trecho A–B' : 'Repetir um trecho de A até B');
   // Com o trecho repetindo, a legenda muda de estilo (borda cheia, fundo âmbar e selo com o trecho).
   const caixa = $('#caixa-legenda');
-  caixa.classList.toggle('marcando-ab', marcando);
   caixa.classList.toggle('loop-ab', completo);
   $('#legenda-sobre').classList.toggle('loop-ab', completo);
   const dica = $('#dica-ab');
-  dica.hidden = !marcando && !completo;
+  dica.hidden = !completo;
   dica.classList.toggle('ativo', completo);
-  if (S.marcandoAB === 'a') dica.textContent = 'Toque aqui na fala onde o trecho começa (A)';
-  else if (S.marcandoAB === 'b') dica.textContent = `A em ${formatarTempo(S.unidades[a]?.s)} · vá até a fala final e toque aqui (B)`;
-  else if (completo) {
+  if (completo) {
     const n = b - a + 1;
     dica.textContent = `⟲ Repetindo A–B · ${formatarTempo(S.unidades[a]?.s)} → ${formatarTempo(S.unidades[b]?.e)} · ${n} ${n === 1 ? 'fala' : 'falas'}`;
   }
@@ -1272,12 +1267,12 @@ function alternarLoop() {
   if (!S.unidades.length) return;
   S.loop.ligado = !S.loop.ligado;
   S.loop.alvo = S.loop.ligado ? (falaAtual() >= 0 ? falaAtual() : null) : null;
-  if (S.loop.ligado) { S.ab = { a: null, b: null }; S.marcandoAB = null; } // um modo de repetição por vez
+  if (S.loop.ligado) S.ab = { a: null, b: null }; // um modo de repetição por vez
   atualizarBotoesRepeticao();
   toast(S.loop.ligado ? 'Loop da fala ligado' : 'Loop da fala desligado', 1200);
 }
 
-/** Botão A–B: começa a marcação (os pontos são marcados tocando na legenda), cancela ou desliga. */
+/** Botão A–B: abre a tela de escolha do trecho; com o trecho repetindo, desliga. */
 function tocarAB() {
   if (!S.unidades.length) return;
   const { a, b } = S.ab;
@@ -1287,34 +1282,106 @@ function tocarAB() {
     toast('Trecho A–B desligado', 1200);
     return;
   }
-  if (S.marcandoAB) {
-    S.marcandoAB = null;
-    S.ab = { a: null, b: null };
-    atualizarBotoesRepeticao();
-    toast('Marcação cancelada', 1200);
-    return;
-  }
-  S.loop = { ligado: false, alvo: null };
+  abrirTelaAB();
+}
+
+// ------------------------------------------------ tela de escolha do A–B (lista de falas na tela inteira)
+
+function telaABAberta() {
+  return !$('#tela-ab').hidden;
+}
+
+/** Fala de referência para centralizar a lista: a da tela, ou a mais próxima do tempo atual. */
+function indiceDeReferencia() {
+  if (S.exibida >= 0) return S.exibida;
+  const U = S.unidades;
+  const t = S.player ? S.player.tempo() : 0;
+  let i = U.findIndex((u) => u.s >= t);
+  if (i < 0) i = U.length - 1;
+  return Math.max(0, i);
+}
+
+function abrirTelaAB() {
+  const p = S.player;
+  S.loop = { ligado: false, alvo: null }; // um modo de repetição por vez
   S.ab = { a: null, b: null };
   S.marcandoAB = 'a';
   fecharCartao();
+  fecharMenuTraducao();
+  fecharPaineis();
+  // Pausa enquanto escolhe; ao cancelar, volta a tocar se estava tocando.
+  S.abTocava = !!p && p.estado() === 1;
+  if (S.abTocava) p.pausar();
+  const agora = indiceDeReferencia();
+  const lista = $('#ab-lista');
+  lista.textContent = '';
+  const frag = document.createDocumentFragment();
+  S.unidades.forEach((u, i) => {
+    const li = document.createElement('li');
+    const bt = document.createElement('button');
+    bt.type = 'button';
+    bt.className = 'ab-fala';
+    bt.dataset.i = String(i);
+    const tempo = document.createElement('span');
+    tempo.className = 'ab-tempo';
+    tempo.textContent = formatarTempo(u.s);
+    const selo = document.createElement('span');
+    selo.className = 'ab-selo';
+    tempo.appendChild(selo);
+    const l1 = document.createElement('span');
+    l1.className = 'ab-l1';
+    l1.textContent = u.texto;
+    bt.append(tempo, l1);
+    if (u.trad) {
+      const l2 = document.createElement('span');
+      l2.className = 'ab-l2';
+      l2.textContent = u.trad;
+      bt.appendChild(l2);
+    }
+    if (i === agora) bt.classList.add('agora');
+    li.appendChild(bt);
+    frag.appendChild(li);
+  });
+  lista.appendChild(frag);
+  $('#tela-ab').hidden = false;
+  atualizarTelaAB();
   atualizarBotoesRepeticao();
+  // O botão "voltar" do celular fecha esta tela em vez de sair do vídeo.
+  try { history.pushState({ telaAB: true }, '', location.href); S.abHistorico = true; } catch { S.abHistorico = false; }
+  const alvo = lista.querySelector(`.ab-fala[data-i="${agora}"]`);
+  alvo?.scrollIntoView({ block: 'center' });
 }
 
-/** Toque na legenda durante a marcação: marca A ou B na fala que está na tela. */
-function marcarPontoAB() {
-  const i = falaAtual();
-  if (i < 0) { toast('Ainda não há fala na tela. Toque no play ou arraste até uma fala.'); return; }
+function atualizarTelaAB() {
+  const escolhendoB = S.marcandoAB === 'b';
+  const a = S.ab.a;
+  $('#ab-titulo').textContent = escolhendoB ? 'Agora o fim (B)' : 'Escolha o início (A)';
+  $('#ab-sub').textContent = escolhendoB
+    ? `A em ${formatarTempo(S.unidades[a]?.s)}. Toque na fala onde o trecho termina (pode ser a mesma).`
+    : 'Role a lista e toque na fala onde o trecho começa.';
+  $('#ab-refazer').hidden = !escolhendoB;
+  for (const bt of $$('#ab-lista .ab-fala')) {
+    const i = Number(bt.dataset.i);
+    const ehA = escolhendoB && i === a;
+    bt.classList.toggle('marca-a', ehA);
+    bt.querySelector('.ab-selo').textContent = ehA ? 'A' : bt.classList.contains('agora') ? 'agora' : '';
+  }
+}
+
+/** Toque numa fala da lista: marca A; no segundo toque marca B, volta ao vídeo e repete. */
+function escolherPontoAB(i) {
+  if (!S.unidades[i] || !S.marcandoAB) return;
   vibrar();
   if (S.marcandoAB === 'a') {
     S.ab = { a: i, b: null };
     S.marcandoAB = 'b';
-    atualizarBotoesRepeticao();
+    atualizarTelaAB();
     return;
   }
   const a = S.ab.a;
   S.ab = { a: Math.min(a, i), b: Math.max(a, i) };
   S.marcandoAB = null;
+  fecharTelaAB(false);
   atualizarBotoesRepeticao();
   toast(`Repetindo de ${formatarTempo(S.unidades[S.ab.a].s)} até ${formatarTempo(S.unidades[S.ab.b].e)}. Toque em A–B para parar.`, 3500);
   // Começa já pelo ponto A, tocando.
@@ -1324,7 +1391,40 @@ function marcarPontoAB() {
   }
 }
 
+function refazerA() {
+  S.ab = { a: null, b: null };
+  S.marcandoAB = 'a';
+  atualizarTelaAB();
+}
+
+/** Fecha a tela sem trecho (✕, Esc ou o voltar do celular). */
+function cancelarTelaAB(peloVoltar = false) {
+  if (!telaABAberta()) return;
+  S.marcandoAB = null;
+  S.ab = { a: null, b: null };
+  fecharTelaAB(peloVoltar);
+  atualizarBotoesRepeticao();
+  if (S.abTocava && S.player) S.player.tocar();
+  S.abTocava = false;
+}
+
+function fecharTelaAB(peloVoltar) {
+  $('#tela-ab').hidden = true;
+  $('#ab-lista').textContent = '';
+  if (S.abHistorico) {
+    S.abHistorico = false;
+    if (!peloVoltar) history.back(); // tira a entrada que a tela pôs no histórico
+  }
+}
+
 function zerarRepeticao() {
+  if (telaABAberta()) {
+    // Fechando o vídeo ou trocando as falas: some sem mexer no histórico nem voltar a tocar.
+    $('#tela-ab').hidden = true;
+    $('#ab-lista').textContent = '';
+    S.abHistorico = false;
+    S.abTocava = false;
+  }
   S.loop = { ligado: false, alvo: null };
   S.ab = { a: null, b: null };
   S.marcandoAB = null;
@@ -1381,9 +1481,10 @@ function ciclarModoTraducao() {
 
 // ============================================================ navegação por gesto (7.4)
 
+// Padrão (desde 22/11/2026): como virar página — arrastar para a esquerda avança, para a direita volta.
 function direcaoDoArraste(dir) {
-  const esquerda = S.ajustes.inverterArraste ? 'avancar' : 'voltar';
-  const direita = S.ajustes.inverterArraste ? 'voltar' : 'avancar';
+  const esquerda = S.ajustes.inverterArraste ? 'voltar' : 'avancar';
+  const direita = S.ajustes.inverterArraste ? 'avancar' : 'voltar';
   return dir === 'esquerda' ? esquerda : direita;
 }
 
@@ -1508,7 +1609,6 @@ function toqueNoVideo() {
 }
 
 function toqueNaCaixa(alvo) {
-  if (S.marcandoAB) { marcarPontoAB(); return; } // marcando o trecho: o toque marca A ou B
   if (!(alvo instanceof Element)) return;
   if (alvo.classList.contains('palavra') && alvo.closest('#caixa-l1')) { abrirCartao(alvo); return; }
   const vizinha = alvo.closest('.fala.vizinha');
@@ -1666,9 +1766,10 @@ function aoTeclar(ev) {
     fecharCartao();
     fecharMenuTraducao();
     fecharPaineis();
-    if (S.marcandoAB) { S.marcandoAB = null; S.ab = { a: null, b: null }; atualizarBotoesRepeticao(); }
+    cancelarTelaAB();
     return;
   }
+  if (telaABAberta()) return; // escolhendo o trecho: só a lista e o Esc valem
   const alvo = ev.target;
   if (alvo instanceof HTMLElement) {
     const campoTexto = alvo.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(alvo.type);
@@ -1688,7 +1789,7 @@ function aoTeclar(ev) {
   else if (k === ']') mudarVelocidadePasso(1);
   else if (k === 'f' || k === 'F') alternarTelaCheia();
   else if (k === 'l' || k === 'L') alternarLoop();
-  else if (k === 'b' || k === 'B') (S.marcandoAB ? marcarPontoAB() : tocarAB());
+  else if (k === 'b' || k === 'B') tocarAB();
   else if (k === 't' || k === 'T') ciclarModoTraducao();
   else if (k === 'v' || k === 'V') alternarModoLegenda();
   else feito = false;
@@ -1759,6 +1860,13 @@ function ligarEventos() {
   });
   $('#btn-loop').addEventListener('click', alternarLoop);
   $('#btn-ab').addEventListener('click', tocarAB);
+  $('#ab-cancelar').addEventListener('click', () => cancelarTelaAB());
+  $('#ab-refazer').addEventListener('click', refazerA);
+  $('#ab-lista').addEventListener('click', (ev) => {
+    const bt = ev.target.closest?.('.ab-fala');
+    if (bt) escolherPontoAB(Number(bt.dataset.i));
+  });
+  window.addEventListener('popstate', () => { if (telaABAberta()) cancelarTelaAB(true); });
   $('#btn-traducao').addEventListener('click', (ev) => { ev.stopPropagation(); abrirMenuTraducao(); });
   $('#btn-modo-legenda').addEventListener('click', alternarModoLegenda);
   window.addEventListener('resize', () => ajustarEscala());

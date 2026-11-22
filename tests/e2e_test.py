@@ -188,33 +188,33 @@ def t_tocar(page):
     expect(page.locator('#btn-play')).to_have_attribute('aria-label', 'Pausar')
 
 
-@caso('3. Arrastar sobre o vídeo e sobre a caixa de legenda')
+@caso('3. Arrastar sobre o vídeo e sobre a caixa de legenda (esquerda avança, direita volta)')
 def t_arrastar(page):
     i0 = exibida(page)
-    arrastar(page, '#camada-gestos', 150)  # direita = avançar
+    arrastar(page, '#camada-gestos', -150)  # esquerda = avançar (como virar página)
     esperar(lambda: exibida(page) == i0 + 1, msg='avançou pelo vídeo')
-    arrastar(page, '#camada-gestos', 150)
+    arrastar(page, '#camada-gestos', -150)
     esperar(lambda: exibida(page) == i0 + 2, msg='avançou de novo')
-    arrastar(page, '#camada-gestos', -150)  # esquerda = voltar
+    arrastar(page, '#camada-gestos', 150)  # direita = voltar
     esperar(lambda: exibida(page) == i0 + 1, msg='voltou pelo vídeo')
-    arrastar(page, '#caixa-legenda', 150)
-    esperar(lambda: exibida(page) == i0 + 2, msg='avançou pela caixa')
     arrastar(page, '#caixa-legenda', -150)
+    esperar(lambda: exibida(page) == i0 + 2, msg='avançou pela caixa')
+    arrastar(page, '#caixa-legenda', 150)
     esperar(lambda: exibida(page) == i0 + 1, msg='voltou pela caixa')
-    # três arrastos rápidos para a esquerda voltam exatamente três falas
+    # três arrastos rápidos para a direita voltam exatamente três falas
     page.keyboard.press('ArrowRight')
     page.keyboard.press('ArrowRight')
     page.keyboard.press('ArrowRight')
     esperar(lambda: exibida(page) == i0 + 4, msg='três à frente')
     time.sleep(0.9)
     for _ in range(3):
-        arrastar(page, '#camada-gestos', -150)
+        arrastar(page, '#camada-gestos', 150)
     esperar(lambda: exibida(page) == i0 + 1, msg='três para trás')
-    # inverter direção do arraste
+    # inverter direção do arraste: volta ao sentido antigo (esquerda volta)
     page.evaluate("window.__ld.S.ajustes.inverterArraste = true")
     time.sleep(0.9)
-    arrastar(page, '#camada-gestos', 150)
-    esperar(lambda: exibida(page) == i0, msg='invertido: direita volta')
+    arrastar(page, '#camada-gestos', -150)
+    esperar(lambda: exibida(page) == i0, msg='invertido: esquerda volta')
     page.evaluate("window.__ld.S.ajustes.inverterArraste = false")
 
 
@@ -308,8 +308,13 @@ def t_repeticao(page):
     if estado(page) != 1:
         page.click('#btn-play')
     esperar(lambda: estado(page) == 1, msg='tocando')
-    # botões ao lado do play: loop, A–B, tradução e modo lista; nada além disso
+    # botões: loop, A–B, tradução e modo lista à esquerda; play na ponta direita; nada além disso
     assert page.locator('.controles button').count() == 5
+    xs = page.evaluate("""() => [...document.querySelectorAll('.controles button')].map(b => b.getBoundingClientRect().right)""")
+    play_dir = page.evaluate("document.querySelector('#btn-play').getBoundingClientRect().right")
+    assert play_dir == max(xs), (play_dir, xs)
+    larg = page.evaluate('window.innerWidth')
+    assert play_dir > larg - 40, (play_dir, larg)  # encostado na direita (polegar direito)
     page.evaluate('window.__ld.S.player.irPara(9.3)')  # fala 5 (8,9 a 10,9)
     esperar(lambda: exibida(page) == 4, msg='fala 5')
     page.click('#btn-loop')
@@ -326,20 +331,45 @@ def t_repeticao(page):
     page.click('#btn-loop')
     expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'false')
     esperar(lambda: exibida(page) == 5, limite=4, msg='seguiu sem loop')
-    # A–B: botão inicia; toque na legenda marca A (fala 6) e depois B (fala 7)
-    page.click('#btn-ab')
-    expect(page.locator('#btn-ab')).to_have_text('A?')
-    expect(page.locator('#dica-ab')).to_be_visible()
+    # A–B: o botão abre a lista das falas na tela inteira, centrada na fala atual, e pausa
     esperar(lambda: exibida(page) == 5, limite=4, msg='chegou na fala 6')
-    tocar_rapido(page, '#caixa-legenda')
-    expect(page.locator('#btn-ab')).to_have_text('B?')
-    expect(page.locator('#cartao-palavra')).to_be_hidden()  # marcar não abre o cartão da palavra
-    esperar(lambda: exibida(page) == 6, limite=4, msg='chegou na fala 7')
-    tocar_rapido(page, '#caixa-legenda')
+    page.click('#btn-ab')
+    expect(page.locator('#tela-ab')).to_be_visible()
+    esperar(lambda: estado(page) == 2, msg='pausou para escolher')
+    expect(page.locator('#ab-titulo')).to_have_text('Escolha o início (A)')
+    assert page.locator('#ab-lista .ab-fala').count() == 40
+    expect(page.locator('#ab-lista .ab-fala.agora')).to_have_attribute('data-i', '5')
+    expect(page.locator('#ab-lista .ab-fala.agora .ab-l2')).to_have_text('Linha 6 do teste, com ação.')
+    # a lista ocupa a tela inteira e rola
+    alt = page.evaluate("document.querySelector('#tela-ab').getBoundingClientRect().height")
+    assert alt >= page.evaluate('window.innerHeight') - 1, alt
+    assert page.evaluate("document.querySelector('#ab-lista').scrollHeight > document.querySelector('#ab-lista').clientHeight")
+    # ✕ cancela e volta a tocar
+    page.click('#ab-cancelar')
+    expect(page.locator('#tela-ab')).to_be_hidden()
+    esperar(lambda: estado(page) == 1, msg='voltou a tocar ao cancelar')
+    assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b]') == [None, None]
+    # o voltar do celular também fecha a tela, sem sair do vídeo
+    page.click('#btn-ab')
+    expect(page.locator('#tela-ab')).to_be_visible()
+    page.go_back()
+    expect(page.locator('#tela-ab')).to_be_hidden()
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    # escolhe A (fala 6), refaz, escolhe A de novo e B (fala 7): volta ao vídeo e repete
+    page.click('#btn-ab')
+    page.locator('#ab-lista .ab-fala[data-i="5"]').click()
+    expect(page.locator('#ab-titulo')).to_have_text('Agora o fim (B)')
+    expect(page.locator('#ab-lista .ab-fala[data-i="5"]')).to_have_class(re.compile(r'marca-a'))
+    page.click('#ab-refazer')
+    expect(page.locator('#ab-titulo')).to_have_text('Escolha o início (A)')
+    page.locator('#ab-lista .ab-fala[data-i="5"]').click()
+    page.locator('#ab-lista .ab-fala[data-i="6"]').click()
+    expect(page.locator('#tela-ab')).to_be_hidden()
+    expect(page.locator('#tela-assistir')).to_be_visible()
     expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'true')
+    esperar(lambda: estado(page) == 1, msg='tocando o trecho')
     # trecho repetindo: estilo próprio (borda cheia âmbar) e selo com o trecho
     expect(page.locator('#caixa-legenda')).to_have_class(re.compile(r'\bloop-ab\b'))
-    expect(page.locator('#caixa-legenda')).not_to_have_class(re.compile(r'marcando-ab'))
     expect(page.locator('#dica-ab')).to_be_visible()
     expect(page.locator('#dica-ab')).to_contain_text('Repetindo A–B')
     assert page.evaluate("getComputedStyle(document.querySelector('#caixa-legenda')).borderTopStyle") == 'solid'
@@ -693,12 +723,14 @@ def t_capturas(browser, url, en, pt):
             page.click('#btn-modo-legenda')
             time.sleep(0.3)
             page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista.png'))
-            page.click('#btn-ab')  # marca A e B na mesma fala, pelo fluxo real
-            tocar_rapido(page, '#caixa-legenda')
-            page.evaluate('window.__ld.S.player.pausar()')
+            page.click('#btn-ab')  # tela de escolha do trecho, pelo fluxo real
+            time.sleep(0.3)
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-ab-escolher-a.png'))
+            i = page.evaluate('window.__ld.S.exibida')
+            page.locator(f'#ab-lista .ab-fala[data-i="{i}"]').click()
             time.sleep(0.2)
-            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista-ab-marcando.png'))
-            tocar_rapido(page, '#caixa-legenda')
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-ab-escolher-b.png'))
+            page.locator(f'#ab-lista .ab-fala[data-i="{i + 1}"]').click()
             time.sleep(0.3)
             page.evaluate('window.__ld.S.player.pausar()')
             time.sleep(0.3)

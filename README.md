@@ -16,18 +16,18 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 
 ### Tela do vídeo
 
-De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**, **tocar/pausar** no centro, **文A** da tradução e **Lista**) e a caixa da legenda. A navegação entre falas é por gestos:
+De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**, **文A** da tradução e **Lista** à esquerda; **tocar/pausar** na ponta direita, perto do polegar) e a caixa da legenda. A navegação entre falas é por gestos:
 
 | Ação | Celular | Notebook |
 |---|---|---|
-| Voltar uma fala | Arrastar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda | Seta ← |
-| Avançar uma fala | Arrastar para a **direita** | Seta → |
+| Avançar uma fala | Arrastar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda (como virar página) | Seta → |
+| Voltar uma fala | Arrastar para a **direita** | Seta ← |
 | Repetir a fala | Segurar o dedo no vídeo | R ou ↓ |
 | Tocar / pausar | Toque no vídeo, ou o botão amarelo | Espaço |
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
 | Repetir a fala atual sem parar | Botão **Loop** (seta com 1); toque de novo para desligar | L |
-| Repetir um trecho | Toque em **A–B** (a legenda fica com borda tracejada). Toque **na legenda** na fala onde o trecho começa (A); avance até a fala final e toque **na legenda** de novo (B). O trecho começa a repetir e a legenda muda de estilo: borda âmbar cheia, fundo levemente âmbar e o selo “Repetindo A–B” com o trecho. Toque em **A–B** para parar | B (inicia e marca) |
+| Repetir um trecho | Toque em **A–B**: o vídeo pausa e as falas aparecem numa lista na tela inteira, com a fala atual no meio (selo “agora”). Role e toque na fala onde o trecho começa (A) e depois na fala onde termina (B; pode ser a mesma). A tela volta para o vídeo, que repete o trecho; a legenda fica com borda âmbar cheia e o selo “Repetindo A–B”. **✕** ou o voltar do celular cancelam. Toque em **A–B** de novo para parar | B (abre a lista) |
 | Ver a fala anterior, a atual e a próxima | Botão **Lista** (três barras, ao lado do 文A). A atual fica no meio; a anterior e a próxima, mais apagadas. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez | V |
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
 | Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
@@ -36,7 +36,7 @@ De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**,
 
 Quando a tradução não está na tela (desativada, ou vídeo tocando no modo “só quando pausar”), a legenda original fica maior, ocupando o lugar das duas. No modo lista, as três falas mudam de tamanho juntas. Se uma fala não couber na caixa, as letras diminuem um pouco (até 70%) em vez de aparecer rolagem.
 
-Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela aparecer adiantada ou atrasada), tradução automática (para qual idioma, ou não traduzir), tamanho das letras e inverter a direção do arraste.
+Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela aparecer adiantada ou atrasada), tradução automática (para qual idioma, ou não traduzir), tamanho das letras e inverter a direção do arraste (volta ao sentido antigo: esquerda volta, direita avança).
 
 ### Frases montadas
 

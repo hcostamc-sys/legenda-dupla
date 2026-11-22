@@ -6,8 +6,11 @@ const STORE = 'videos';
 const CHAVE_AJUSTES = 'ld.ajustes';
 
 // Versão 2 (22/11/2026): interface enxuta. Os ajustes antigos que saíram são ignorados.
+// Versão 3 (22/11/2026): o sentido padrão do arraste foi invertido (esquerda avança); o
+// "inverter" salvo antes valia para o sentido antigo, por isso volta ao padrão.
+export const VERSAO_AJUSTES = 3;
 export const AJUSTES_PADRAO = Object.freeze({
-  versao: 2,
+  versao: VERSAO_AJUSTES,
   idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
   destino: 'pt', // idioma da tradução automática; 'nao' = não traduzir
   inverterArraste: false,
@@ -35,7 +38,8 @@ export function misturarAjustes(salvos) {
     for (const k of Object.keys(AJUSTES_PADRAO)) {
       if (k === 'versao' || !(k in salvos)) continue;
       // O tamanho de letra da versão 1 (22 px) ficava grande demais no celular: volta ao novo padrão.
-      if (k === 'fonteL1' && salvos.versao !== 2) continue;
+      if (k === 'fonteL1' && !(salvos.versao >= 2)) continue;
+      if (k === 'inverterArraste' && !(salvos.versao >= 3)) continue;
       const v = salvos[k];
       if (typeof v !== typeof AJUSTES_PADRAO[k]) continue;
       if (typeof v === 'number' && !Number.isFinite(v)) continue;
@@ -58,7 +62,7 @@ export function carregarAjustes() {
 
 export function salvarAjustes(ajustes) {
   try {
-    localStorage.setItem(CHAVE_AJUSTES, JSON.stringify({ ...ajustes, versao: 2 }));
+    localStorage.setItem(CHAVE_AJUSTES, JSON.stringify({ ...ajustes, versao: VERSAO_AJUSTES }));
     return true;
   } catch {
     return false;
@@ -204,7 +208,7 @@ export async function montarBackup(ajustes) {
   return {
     versao: 1,
     exportadoEm: new Date().toISOString(),
-    ajustes: { ...ajustes, versao: 2 },
+    ajustes: { ...ajustes, versao: VERSAO_AJUSTES },
     videos: await listarVideos(),
   };
 }

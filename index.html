@@ -101,17 +101,12 @@
       <span id="tempo-total" class="tempo">0:00</span>
     </div>
     <div class="controles">
-      <div class="ctrl-esq">
+      <!-- Play/pausa fica na ponta direita, perto do polegar direito -->
+      <div class="ctrl-grupo">
         <button id="btn-loop" type="button" class="btn-ctrl" aria-pressed="false" aria-label="Repetir a fala atual (loop)" title="Loop da fala">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z"/></svg>
         </button>
         <button id="btn-ab" type="button" class="btn-ctrl btn-ab" aria-pressed="false" aria-label="Repetir um trecho de A até B" title="Loop do trecho A–B">A–B</button>
-      </div>
-      <button id="btn-play" type="button" class="btn-play" aria-label="Tocar">
-        <svg class="ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-        <svg class="ico-pausa" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
-      </button>
-      <div class="ctrl-dir">
         <button id="btn-traducao" type="button" class="btn-ctrl" aria-haspopup="menu" aria-expanded="false" aria-label="Opções da tradução" title="Tradução">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
           <span class="marca-modo" aria-hidden="true"></span>
@@ -120,6 +115,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="2.2" rx="1.1" opacity="0.5"/><rect x="3" y="9.6" width="18" height="4.8" rx="1.6"/><rect x="5" y="18.3" width="14" height="2.2" rx="1.1" opacity="0.5"/></svg>
         </button>
       </div>
+      <button id="btn-play" type="button" class="btn-play" aria-label="Tocar">
+        <svg class="ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <svg class="ico-pausa" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -145,6 +144,19 @@
     <span id="aviso-legenda" aria-live="polite"></span>
     <button id="btn-tentar-traducao" type="button" class="btn-link" hidden>Tentar de novo</button>
   </div>
+
+  <!-- Escolha do trecho A–B: lista de falas em tela cheia, com rolagem -->
+  <section id="tela-ab" class="tela-ab" hidden role="dialog" aria-modal="true" aria-labelledby="ab-titulo">
+    <header class="ab-topo">
+      <button id="ab-cancelar" type="button" class="btn-topo" aria-label="Cancelar o trecho A–B">✕</button>
+      <div class="ab-texto">
+        <h2 id="ab-titulo">Escolha o início (A)</h2>
+        <p id="ab-sub">Role a lista e toque na fala onde o trecho começa.</p>
+      </div>
+      <button id="ab-refazer" type="button" class="btn-link" hidden>Refazer A</button>
+    </header>
+    <ol id="ab-lista" class="ab-lista"></ol>
+  </section>
 
   <div id="cartao-palavra" class="cartao-palavra" hidden role="dialog" aria-label="Palavra">
     <div class="cp-topo">
@@ -234,14 +246,14 @@
     <div class="grupo">
       <h3>Gestos</h3>
       <ul class="lista-gestos">
-        <li>Arrastar para a <b>esquerda</b> no vídeo ou na legenda: fala anterior.</li>
-        <li>Arrastar para a <b>direita</b>: próxima fala.</li>
+        <li>Arrastar para a <b>esquerda</b> no vídeo ou na legenda: próxima fala (como virar página).</li>
+        <li>Arrastar para a <b>direita</b>: fala anterior.</li>
         <li><b>Segurar</b> o dedo no vídeo: repete a fala.</li>
         <li><b>Tocar</b> no vídeo: toca ou pausa.</li>
         <li>Tocar numa <b>palavra</b> da legenda: traduzir ou copiar.</li>
         <li>Para ir a qualquer ponto: arraste a barra do tempo.</li>
         <li><b>Loop</b> (seta com 1): repete a fala atual até você desligar.</li>
-        <li><b>A–B</b>: toque no botão; depois toque na legenda na fala onde o trecho começa (A), vá até a fala final e toque na legenda de novo (B). Toque no botão para parar.</li>
+        <li><b>A–B</b>: toque no botão; abre a lista das falas na tela inteira. Role, toque na fala onde o trecho começa (A) e depois na fala onde termina (B). O vídeo volta e repete o trecho. Toque no botão de novo para parar.</li>
         <li><b>文A</b>: mostrar a tradução sempre, só quando pausar, ou desativar.</li>
         <li><b>Lista</b> (três barras, ao lado do 文A): mostra a fala anterior, a atual no meio e a próxima. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez.</li>
       </ul>
