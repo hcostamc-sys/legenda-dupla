@@ -93,7 +93,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Anúncios:** aparece o selo **Anúncio** no vídeo e, quando o YouTube deixa pular, o botão amarelo **Pular anúncio** (também dentro da janela de carregamento).
 - Vídeo sem legenda nenhuma no YouTube (nem automática): o app avisa e oferece **Voltar ao YouTube** ou **Assistir sem legenda**.
 - **Voltar** (botão do topo ou do celular) sai do vídeo e volta para o YouTube; se o vídeo foi aberto em **Meus vídeos**, volta para a lista.
-- O vídeo fica em **Meus vídeos** com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
+- O vídeo fica em **Meus vídeos** com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Idioma do vídeo**.
 - No app não há mais arquivos de legenda (DownSub), campo de link nem busca: tudo vem do YouTube. No navegador (fora do app) o site continua com os arquivos.
 - **Idiomas (versão 7):** a legenda já vem marcada pelo idioma do **áudio original** do vídeo (em vídeos com dublagem automática o app volta para o áudio original) e a tradução no **idioma do celular**; dá para trocar nas listas, que têm todos os idiomas do tradutor do Google. O app também aparece no idioma do celular (a página é traduzida na primeira abertura e guardada no aparelho).
 - **Palavra:** tocar numa palavra mostra o significado dela no próprio app, com **Copiar**, **Copiar frase** e **Dicionário** (Cambridge para palavras em inglês; Wikcionário para os outros idiomas).
