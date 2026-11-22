@@ -822,6 +822,11 @@ def t_app_novo(browser, base):
     expect(page.locator('#carregando-sem')).to_be_visible()
     expect(page.locator('#carregando-voltar')).to_have_text('Voltar ao YouTube')
     page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-sem-legenda.png'))
+    expect(page.locator('#carregando-diag')).to_be_visible()
+    page.click('#carregando-diag')
+    expect(page.locator('#toast')).to_contain_text('Diagnóstico copiado')
+    diag = page.evaluate('window.__ld.textoDiagnostico()')
+    assert 'resposta SEM legendas' in diag and 'Gancho v2' in diag, diag
     n = len(msgs())
     page.click('#carregando-voltar')
     expect(page.locator('#tela-biblioteca')).to_be_visible()
@@ -897,6 +902,85 @@ def t_app_novo(browser, base):
     time.sleep(0.3)
     assert not any(m.get('acao') == 'youtube' for m in msgs()[n:]), msgs()[n:]
     assert not erros, erros
+    ctx.close()
+
+
+@caso('12c. Vídeo só com legenda automática: a API do iframe não mostra, o gancho mostra e baixa')
+def t_so_automatica(browser, base):
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android&apk=5&mockSoAsr=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=JJJJJJJJJJJ')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    expect(page.locator('#sel-legenda-video option')).to_have_text(['Inglês (automática)'])
+    page.click('#idioma-ok')
+    expect(page.locator('#toast')).to_contain_text('30 falas')
+    assert page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[Inglês (auto-generated)]')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    expect(page.locator('#caixa-l1')).to_contain_text('from YouTube', timeout=4000)
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('14. Gancho dentro de um player falso: lista a automática e baixa direto pelo endereço da faixa')
+def t_gancho(browser, base):
+    import json as _json
+    gancho = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'gancho.js')
+    ctx = browser.new_context()
+    ctx.add_init_script(path=gancho)
+    page = ctx.new_page()
+    vid = 'VVVVVVVVVVV'
+    embed = """<!doctype html><html><body><div id="movie_player" class="html5-video-player"></div><script>
+      const p = document.getElementById('movie_player');
+      p.getVideoData = () => ({ video_id: '%s' });
+      p.getOption = (m, o, op) => (op && op.includeAsr ? [{ languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' }] : []);
+      p.loadModule = () => {};
+      p.setOption = (m, o, v) => { window.__faixa = v; }; // este player falso não baixa nada
+      fetch('/youtubei/v1/player?prettyPrint=false', { method: 'POST' }).then((r) => r.text());
+    </script></body></html>""" % vid
+    resposta = {
+        'playabilityStatus': {'status': 'OK'}, 'videoDetails': {'videoId': vid}, 'streamingData': {},
+        'captions': {'playerCaptionsTracklistRenderer': {'captionTracks': [
+            {'baseUrl': f'/api/timedtext?v={vid}&lang=en&kind=asr&caps=asr', 'name': {'simpleText': 'English (auto-generated)'},
+             'vssId': 'a.en', 'languageCode': 'en', 'kind': 'asr'}]}},
+    }
+    pedidos = []
+    def rota(route):
+        u = route.request.url
+        if '/embed/' in u:
+            route.fulfill(status=200, content_type='text/html', body=embed)
+        elif '/youtubei/v1/player' in u:
+            route.fulfill(status=200, content_type='application/json', body=_json.dumps(resposta))
+        elif '/api/timedtext' in u:
+            pedidos.append(u)
+            route.fulfill(status=200, content_type='application/json', body=_json.dumps({'events': [
+                {'tStartMs': 0, 'dDurationMs': 1500, 'segs': [{'utf8': 'hello'}]}]}))
+        else:
+            route.continue_()
+    page.route('**/*', rota)
+    page.goto(base + 'tests/fixtures/nao_legenda.txt')  # qualquer página do servidor de teste
+    page.evaluate("""() => {
+      window.__vistas = [];
+      window.addEventListener('message', (e) => window.__vistas.push(e.data));
+      const f = document.createElement('iframe');
+      f.src = '/embed/%s';
+      document.body.appendChild(f);
+      window.__f = f;
+    }""" % vid)
+    esperar(lambda: page.evaluate("window.__vistas.some((d) => d && d.ldFaixas && d.faixas.length)"), limite=6, msg='gancho listou as faixas')
+    faixas = page.evaluate("window.__vistas.filter((d) => d && d.ldFaixas && d.faixas.length).pop()")
+    assert faixas['video'] == vid and faixas['fontes'] == ['resposta', 'tracklist'], faixas
+    assert faixas['faixas'][0]['kind'] == 'asr' and faixas['faixas'][0]['baseUrl'], faixas
+    page.evaluate("window.__f.contentWindow.postMessage({ ldBaixar: { languageCode: 'en', kind: 'asr', vss_id: 'a.en' } }, '*')")
+    esperar(lambda: page.evaluate("window.__vistas.some((d) => d && d.ldLegenda)"), limite=6, msg='legenda baixada direto')
+    leg = page.evaluate("window.__vistas.find((d) => d && d.ldLegenda)")
+    assert 'fmt=json3' in leg['url'] and 'kind=asr' in leg['url'] and leg['status'] == 200 and 'hello' in leg['texto'], leg
+    assert page.evaluate("window.__f.contentWindow.__faixa.kind") == 'asr'  # pediu antes ao próprio player
+    esperar(lambda: page.evaluate("window.__vistas.some((d) => d && d.ldBaixou && d.ok)"), limite=3, msg='aviso de download')
     ctx.close()
 
 
@@ -1053,6 +1137,8 @@ def main():
         t_capturas(browser, url, en, pt)
         t_android(browser, base)
         t_app_novo(browser, base)
+        t_so_automatica(browser, base)
+        t_gancho(browser, base)
         t_busca(browser, base)
         browser.close()
     srv.shutdown()

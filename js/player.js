@@ -84,7 +84,10 @@ export class PlayerYouTube extends Emissor {
   /** Faz o player baixar a legenda desta faixa (o gancho do app Android copia a resposta). */
   pedirLegenda(faixa) {
     try { this.yt?.loadModule('captions'); } catch { /* nada */ }
-    try { this.yt?.setOption('captions', 'track', { ...faixa }); return true; } catch { return false; }
+    const t = { languageCode: faixa.languageCode, kind: faixa.kind || '' };
+    if (faixa.vss_id) t.vss_id = faixa.vss_id;
+    if (faixa.languageName) t.languageName = faixa.languageName;
+    try { this.yt?.setOption('captions', 'track', t); return true; } catch { return false; }
   }
 
   /** Some com a legenda desenhada pelo YouTube (o app mostra a dele). */
@@ -99,9 +102,19 @@ export class PlayerYouTube extends Emissor {
     try { if (sim) this.yt?.mute(); else this.yt?.unMute(); } catch { /* nada */ }
   }
 
+  _paraGancho(msg) {
+    try { this.iframe?.contentWindow?.postMessage(msg, 'https://www.youtube.com'); } catch { /* nada */ }
+  }
+
   /** Pede ao gancho do app Android (dentro do player) que toque em "Pular anúncio". */
-  pularAnuncio() {
-    try { this.iframe?.contentWindow?.postMessage({ ldPular: true }, 'https://www.youtube.com'); } catch { /* nada */ }
+  pularAnuncio() { this._paraGancho({ ldPular: true }); }
+
+  /** Pede ao gancho a lista de faixas agora (inclui as automáticas, que a API do iframe esconde). */
+  pedirFaixasAoGancho() { this._paraGancho({ ldFaixasAgora: true }); }
+
+  /** Pede ao gancho que baixe a faixa (pelo player e, se não vier, direto pelo endereço dela). */
+  baixarPeloGancho(f) {
+    this._paraGancho({ ldBaixar: { languageCode: f.languageCode, kind: f.kind || '', vss_id: f.vss_id || '' } });
   }
 
   /** Posição do player na tela (para o toque de verdade do app Android). */
@@ -288,6 +301,7 @@ export class PlayerFalso extends Emissor {
     this._jaTocou = false; // como no YouTube: as faixas de legenda só aparecem depois que o vídeo começa
     this._anuncio = null; // { fim, pulavelEm } durante o anúncio de teste (?mockAnuncio=1)
     this.pedidosPular = 0;
+    this._voltas = 0;
   }
 
   carregar(videoId, inicioSeg = 0) {
@@ -315,6 +329,7 @@ export class PlayerFalso extends Emissor {
   }
 
   _tique() {
+    if (++this._voltas % 16 === 0) this._avisarFaixasGancho(); // como o gancho: a cada 0,8 s
     if (this._anuncio) {
       if (performance.now() >= this._anuncio.fim) this._fimAnuncio();
       else this._avisarAnuncio();
@@ -409,8 +424,33 @@ export class PlayerFalso extends Emissor {
   manterLegendas() {}
 
   /** Faixas de teste: inglês automática, inglês feita por pessoa e português. ?mockSemLegenda=1: nenhuma. */
+  /** Simula o gancho do app: lista de faixas vista dentro do player (inclui a automática). */
+  _avisarFaixasGancho() {
+    if (!this._jaTocou || !(this.opcoes.soAsr || this.opcoes.semLegenda)) return;
+    const faixas = this.opcoes.soAsr
+      ? [{ languageCode: 'en', kind: 'asr', languageName: 'English (auto-generated)', vss_id: 'a.en' }]
+      : [];
+    window.postMessage({
+      ldFaixas: true, versao: 2, video: this._videoId, faixas, fontes: faixas.length ? ['resposta'] : [],
+      status: 'OK', temResposta: true, semCaptions: !faixas.length, getPlayerResponse: true,
+    }, '*');
+  }
+
+  pedirFaixasAoGancho() { this._avisarFaixasGancho(); }
+
+  /** Simula o download pelo gancho (só no modo ?mockSoAsr=1, em que a API do iframe não vê a faixa). */
+  baixarPeloGancho(f) {
+    if (!this.opcoes.soAsr || f.kind !== 'asr') return;
+    const events = [];
+    for (let i = 0; i < 30; i++) {
+      events.push({ tStartMs: Math.round((0.5 + i * 2.2) * 1000), dDurationMs: 2000, segs: [{ utf8: `auto line ${i + 1} from YouTube` }] });
+    }
+    const url = `https://www.youtube.com/api/timedtext?v=${this._videoId}&lang=en&kind=asr&fmt=json3`;
+    setTimeout(() => window.postMessage({ ldLegenda: true, via: 'mock-gancho', status: 200, url, texto: JSON.stringify({ events }) }, '*'), 200);
+  }
+
   faixasLegenda() {
-    if (this.opcoes.semLegenda || !this._jaTocou) return { faixas: [], traducoes: [] };
+    if (this.opcoes.semLegenda || this.opcoes.soAsr || !this._jaTocou) return { faixas: [], traducoes: [] };
     return {
       faixas: [
         { languageCode: 'en', languageName: 'Inglês', kind: 'asr', vss_id: 'a.en' },
@@ -424,6 +464,7 @@ export class PlayerFalso extends Emissor {
   /** Simula o gancho do app Android: manda pela janela a resposta de /api/timedtext em json3. */
   pedirLegenda(faixa) {
     this.pedidos.push(faixa);
+    if (this.opcoes.soAsr) return true; // como no YouTube real: a API do iframe não baixa a automática
     const pt = faixa.languageCode.startsWith('pt');
     const events = [];
     for (let i = 0; i < 40; i++) {
@@ -468,6 +509,7 @@ export function criarPlayer(container) {
       erro: p.get('mockErro'),
       semLegenda: p.get('mockSemLegenda') === '1',
       anuncio: p.get('mockAnuncio') === 'teimoso' ? 'teimoso' : p.get('mockAnuncio') === '1',
+      soAsr: p.get('mockSoAsr') === '1',
     });
   }
   return new PlayerYouTube(container);

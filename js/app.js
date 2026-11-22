@@ -108,7 +108,16 @@ function novoEstadoYt() {
   return {
     estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false,
     fase: null, preparando: false, retorno: null, geracao: 0,
+    // gancho do app (dentro do player): última lista de faixas (inclui as automáticas) e diagnóstico
+    gancho: null, vistoGancho: false, diag: [], baixou: [], inicioDiag: performance.now(),
   };
+}
+
+/** Linha do diagnóstico (botão "Copiar diagnóstico" quando a legenda não vem). */
+function diag(texto) {
+  const d = S.yt.diag;
+  d.push(`${((performance.now() - S.yt.inicioDiag) / 1000).toFixed(1)} s · ${texto}`);
+  if (d.length > 80) d.splice(0, d.length - 80);
 }
 
 // ============================================================ utilidades de interface
@@ -953,8 +962,29 @@ function chaveFaixa(languageCode, asr) {
 }
 
 function nomeFaixa(f) {
-  const nome = f.languageName || f.displayName || NOMES_IDIOMA_LONGOS[(f.languageCode || '').split('-')[0]] || f.languageCode;
-  return `${nome}${f.kind === 'asr' ? ' (automática)' : ''}`;
+  const base = (f.languageCode || '').split('-')[0];
+  let nome = f.languageName || f.displayName || '';
+  if (f.kind === 'asr') {
+    // O YouTube chama de "English (auto-generated)": fica "Inglês (automática)".
+    nome = NOMES_IDIOMA_LONGOS[base] || nome.replace(/\s*\([^)]*\)\s*$/, '') || f.languageCode;
+    return `${nome} (automática)`;
+  }
+  return nome || NOMES_IDIOMA_LONGOS[base] || f.languageCode;
+}
+
+const mesmaFaixa = (a, b) => a.languageCode === b.languageCode && (a.kind === 'asr') === (b.kind === 'asr');
+
+/**
+ * Faixas do vídeo aberto: as do gancho do app (lidas dentro do player, inclusive as automáticas)
+ * mais as da API do iframe (que deixa as automáticas de fora).
+ */
+function juntarFaixas(p) {
+  const reg = S.registro;
+  const g = S.yt.gancho && reg && S.yt.gancho.video === reg.id ? S.yt.gancho.faixas : [];
+  const a = p.faixasLegenda().faixas;
+  const lista = g.map((f) => ({ ...f }));
+  for (const f of a) if (!lista.some((x) => mesmaFaixa(x, f))) lista.push(f);
+  return { faixas: lista, doGancho: g.length, daApi: a.length };
 }
 
 function zerarLegendaYoutube() {
@@ -984,7 +1014,9 @@ async function escolherLegendaYoutube(trocando = false) {
   S.yt.estado = 'pegando';
   $('#erro-player').hidden = true;
   atualizarAviso();
-  let r = p.faixasLegenda();
+  diag(`procurando legendas${trocando ? ' (troca de idioma)' : ''}; app ${APK || '?'}`);
+  p.pedirFaixasAoGancho?.();
+  let r = juntarFaixas(p);
   if (!r.faixas.length) {
     if (!S.yt.preparando) {
       S.yt.retorno = { tempo: trocando ? p.tempo() : S.inicio, tocava: trocando && p.estado() === 1 };
@@ -997,6 +1029,7 @@ async function escolherLegendaYoutube(trocando = false) {
     r = await esperarFaixas(p, vale);
     if (!r) return; // fechou o vídeo, cancelou ou o vídeo não começou
   }
+  diag(`faixas: ${r.faixas.length} (gancho ${r.doGancho ?? 0}, API ${r.daApi ?? 0}): ${r.faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || 'nenhuma'}`);
   if (!r.faixas.length) {
     S.yt.estado = 'sem';
     S.yt.fase = 'sem';
@@ -1033,22 +1066,33 @@ async function escolherLegendaYoutube(trocando = false) {
 async function esperarFaixas(p, vale) {
   let tocandoSemLegenda = 0; // ms do vídeo de verdade tocando sem o player informar legenda
   let parado = 0; // ms sem tocar (nem anúncio)
+  let esperaGancho = 0; // a API achou faixas, mas o gancho (que vê também as automáticas) ainda não listou
+  let semConfirmado = 0; // ms com o gancho dizendo que a resposta do YouTube não tem legenda
   let ultimoTempo = p.tempo();
+  let ultimoEstado = null;
   for (;;) {
     await espera(500);
     if (!vale() || S.yt.fase !== 'procurando') return null;
-    const r = p.faixasLegenda();
-    if (r.faixas.length) return r;
+    const r = juntarFaixas(p);
+    if (r.faixas.length) {
+      if (!r.doGancho && S.yt.vistoGancho && esperaGancho < 2000) { esperaGancho += 500; continue; }
+      return r;
+    }
     const t = p.tempo();
     // Só conta o vídeo de verdade andando: num anúncio o tempo do vídeo fica parado
     // (vale mesmo se o aviso de anúncio do gancho falhar).
     const andou = t - ultimoTempo > 0.2;
     ultimoTempo = t;
+    const est = p.estado();
+    if (est !== ultimoEstado) { diag(`player: estado ${est}, ${t.toFixed(1)} s${S.anuncio.ativo ? ', anúncio' : ''}`); ultimoEstado = est; }
     if (S.anuncio.ativo) { parado = 0; continue; } // durante o anúncio o player não informa as legendas
-    if (p.estado() === 1) {
+    if (est === 1) {
       parado = 0;
       if (andou) tocandoSemLegenda += 500;
-      if (tocandoSemLegenda >= 8000) return { faixas: [], traducoes: [] };
+      const g = S.yt.gancho;
+      if (g && g.video === S.registro?.id && g.semCaptions && andou) semConfirmado += 500;
+      // O gancho viu a resposta do YouTube sem nenhuma legenda: confirma em 1,5 s. Sem essa certeza, 12 s.
+      if (semConfirmado >= 1500 || tocandoSemLegenda >= 12000) return { faixas: [], traducoes: [], doGancho: 0, daApi: 0 };
     } else {
       parado += 500;
       if (parado % 3000 === 0) { p.silenciar?.(true); p.tocar(); } // insiste: o player pode ter ignorado
@@ -1096,8 +1140,14 @@ function mostrarCarregando() {
       : 'Há um anúncio antes do vídeo. A legenda carrega quando ele terminar (o botão Pular aparece em alguns segundos, se o anúncio permitir).';
   }
   if (f === 'sem') {
-    titulo = 'Este vídeo não tem legenda';
-    texto = 'O YouTube não tem legenda para este vídeo, nem a automática. Escolha outro vídeo.';
+    const g = S.yt.gancho;
+    const certeza = !!g && g.video === S.registro?.id && g.semCaptions;
+    titulo = certeza ? 'Este vídeo não tem legenda' : 'Não achei a legenda deste vídeo';
+    texto = certeza
+      ? 'O YouTube não tem legenda para este vídeo, nem a automática. Escolha outro vídeo.'
+      : !S.yt.vistoGancho && ANDROID
+        ? 'Instale a versão nova do app (o mesmo link de sempre): ela acha também as legendas automáticas. Depois tente de novo.'
+        : 'Toque em Copiar diagnóstico e mande para o Claude, para ele achar o problema.';
   } else if (f === 'erro') {
     titulo = 'Não consegui baixar a legenda';
     texto = 'Confira a internet e toque em Tentar de novo.';
@@ -1111,7 +1161,8 @@ function mostrarCarregando() {
   $('#carregando-roda').hidden = !esperando;
   $('#carregando-pular').hidden = !(esperando && a.ativo && a.pulavel);
   $('#carregando-sem').hidden = f !== 'sem' || S.yt.trocando;
-  $('#carregando-tentar').hidden = !(f === 'erro' || f === 'parado');
+  $('#carregando-tentar').hidden = !(f === 'erro' || f === 'parado' || (f === 'sem' && !S.yt.trocando));
+  $('#carregando-diag').hidden = !(f === 'sem' || f === 'erro' || f === 'parado');
   $('#carregando-voltar').textContent = S.yt.trocando ? 'Cancelar' : APP_NOVO && S.origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar';
   tela.hidden = false;
 }
@@ -1181,7 +1232,9 @@ function pedirFaixa(faixa) {
     p.tocar();
   }
   S.yt.tentativas += 1;
+  diag(`pedindo ${faixa.languageCode}${faixa.kind === 'asr' ? '/asr' : ''} (tentativa ${S.yt.tentativas})`);
   p.pedirLegenda(faixa);
+  p.baixarPeloGancho?.(faixa); // dentro do player: pelo próprio player e, se ele não baixar, direto
   clearTimeout(S.yt.timer);
   S.yt.timer = setTimeout(() => {
     if (S.player !== p || S.yt.estado !== 'pegando' || S.yt.faixa !== faixa) return;
@@ -1191,6 +1244,82 @@ function pedirFaixa(faixa) {
     atualizarAviso();
     if (S.yt.fase === 'baixando') { S.yt.fase = 'erro'; mostrarCarregando(); }
   }, 8000);
+}
+
+// ============================================================ faixas e downloads vistos pelo gancho
+
+function deQuadroDoPlayer(ev) {
+  const p = S.player;
+  if (!p) return false;
+  if (!MOCK) {
+    let host = '';
+    try { host = new URL(ev.origin).hostname; } catch { /* nada */ }
+    if (!/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return false;
+  }
+  const janela = p.janela?.();
+  return !janela || ev.source === janela;
+}
+
+function aoReceberDoGancho(ev) {
+  const d = ev.data;
+  if (!ANDROID || !d || typeof d !== 'object' || !(d.ldFaixas === true || d.ldBaixou === true)) return;
+  if (!deQuadroDoPlayer(ev)) return;
+  const texto = (v) => (typeof v === 'string' ? v.slice(0, 80) : '');
+  if (d.ldBaixou) {
+    const linha = d.ok ? `download direto ok (${d.tamanho} letras)` : `download direto falhou: ${texto(d.motivo) || `HTTP ${d.status}, ${d.tamanho} letras`}`;
+    S.yt.baixou.push(linha);
+    diag(linha + (d.token ? ', com token' : ''));
+    return;
+  }
+  const faixas = (Array.isArray(d.faixas) ? d.faixas : [])
+    .filter((f) => f && typeof f.languageCode === 'string' && f.languageCode)
+    .map((f) => ({ languageCode: f.languageCode, kind: f.kind === 'asr' ? 'asr' : texto(f.kind), languageName: texto(f.languageName), vss_id: texto(f.vss_id) }));
+  const novo = {
+    video: texto(d.video), faixas, fontes: Array.isArray(d.fontes) ? d.fontes.map(texto).join('+') : '',
+    status: texto(d.status), semCaptions: !!d.semCaptions, temResposta: !!d.temResposta,
+    getPlayerResponse: !!d.getPlayerResponse, versao: Number(d.versao) || 0,
+  };
+  const antes = S.yt.gancho;
+  if (!S.yt.vistoGancho) diag(`gancho v${novo.versao} respondeu`);
+  S.yt.vistoGancho = true;
+  if (!antes || antes.video !== novo.video || antes.faixas.length !== faixas.length || antes.semCaptions !== novo.semCaptions || antes.fontes !== novo.fontes) {
+    diag(`gancho: vídeo ${novo.video || '?'}, ${faixas.length} faixas (${faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${novo.fontes || '—'}, resposta ${novo.temResposta ? novo.status || 'sim' : 'não'}${novo.semCaptions ? ', SEM legendas' : ''}`);
+  }
+  S.yt.gancho = novo;
+}
+
+/** Texto do diagnóstico para o usuário colar na conversa. */
+function textoDiagnostico() {
+  const g = S.yt.gancho;
+  const p = S.player;
+  let api = 0;
+  try { api = p?.faixasLegenda?.().faixas.length || 0; } catch { /* nada */ }
+  return [
+    'Legenda Dupla — diagnóstico da legenda',
+    `Data: ${new Date().toLocaleString('pt-BR')}`,
+    `App: versão ${APK || '?'}; vídeo: ${S.registro?.id || '?'}`,
+    `Faixas pela API do iframe: ${api}`,
+    g ? `Gancho v${g.versao}: vídeo ${g.video || '?'}, ${g.faixas.length} faixas (${g.faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${g.fontes || '—'}, resposta do player ${g.temResposta ? g.status || 'sim' : 'não'}, getPlayerResponse ${g.getPlayerResponse ? 'sim' : 'não'}${g.semCaptions ? ', resposta SEM legendas' : ''}` : 'Gancho: não respondeu',
+    `Downloads diretos: ${S.yt.baixou.join(' | ') || 'nenhum'}`,
+    `Legendas capturadas: ${[...S.yt.capturas.keys()].join(', ') || 'nenhuma'}`,
+    'Linha do tempo:',
+    ...S.yt.diag,
+  ].join('\n');
+}
+
+async function copiarDiagnostico() {
+  const t = textoDiagnostico();
+  try {
+    await navigator.clipboard.writeText(t);
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = t;
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); } catch { /* nada */ }
+    area.remove();
+  }
+  toast('Diagnóstico copiado. Cole na conversa com o Claude.', 3500);
 }
 
 // ============================================================ anúncios (app Android)
@@ -1265,14 +1394,18 @@ function aoReceberLegenda(ev) {
   try { host = new URL(ev.origin).hostname; } catch { /* nada */ }
   if (!MOCK && !/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return;
   const reg = S.registro;
-  if (!reg || Number(d.status) !== 200) return;
+  if (!reg) return;
   const info = infoUrl(d.url);
+  const nome = `${info.idioma || '?'}${info.automatica ? '/asr' : ''}`;
+  if (info.video === reg.id && Number(d.status) !== 200) diag(`legenda ${nome}: HTTP ${d.status} (${d.via || '?'})`);
+  if (Number(d.status) !== 200) return;
   // Legenda de um anúncio (outro vídeo) ou traduzida pelo YouTube: não serve.
   if (info.video !== reg.id || info.traducao) return;
   const r = lerTimedText(d.texto);
-  if (!r.falas?.length) return;
+  if (!r.falas?.length) { diag(`legenda ${nome} veio sem falas: ${r.erro || '?'} (${String(d.texto || '').length} letras, ${d.via || '?'})`); return; }
   const cap = { idioma: info.idioma, automatica: info.automatica, falas: r.falas };
   S.yt.capturas.set(chaveFaixa(info.idioma, info.automatica), cap);
+  diag(`legenda capturada: ${info.idioma}${info.automatica ? '/asr' : ''}, ${r.falas.length} falas (${d.via || '?'})`);
   const f = S.yt.faixa;
   if (S.yt.estado === 'pegando' && f && f.languageCode === info.idioma && (f.kind === 'asr') === info.automatica) {
     aplicarLegendaYoutube(cap);
@@ -2453,6 +2586,8 @@ function ligarEventos() {
   });
   window.addEventListener('message', aoReceberLegenda);
   window.addEventListener('message', aoReceberAnuncio);
+  window.addEventListener('message', aoReceberDoGancho);
+  $('#carregando-diag').addEventListener('click', copiarDiagnostico);
   $('#btn-pular').addEventListener('click', pularAnuncio);
   $('#carregando-pular').addEventListener('click', pularAnuncio);
   $('#carregando-voltar').addEventListener('click', cancelarCarregando);
@@ -2560,6 +2695,7 @@ async function iniciar() {
       S,
       tempo: () => S.player?.tempo(),
       estado: () => S.player?.estado(),
+      textoDiagnostico,
     };
   }
 }
