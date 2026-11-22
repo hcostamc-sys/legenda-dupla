@@ -124,6 +124,8 @@
     <button id="btn-tocar-grande" type="button" class="btn-tocar-grande">▶ Tocar</button>
     <p id="aviso-toque" class="aviso-toque" hidden>Toque no vídeo para começar</p>
     <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
+    <!-- Selo dos botões de controle (loop, A–B, tradução, lista, velocidade) -->
+    <div id="selo-controle" class="selo-controle" role="status" aria-live="polite"><span class="selo-icone" hidden></span><span class="selo-texto"></span></div>
     <!-- Anúncio do YouTube (app Android): aviso e botão para pular -->
     <div id="selo-anuncio" class="selo-anuncio" hidden>
       <span id="selo-anuncio-texto">Anúncio</span>
@@ -279,17 +281,16 @@
       <p class="dica">Use “−” se a legenda aparece atrasada e “+” se aparece adiantada.</p>
     </div>
 
-    <div id="grupo-legenda-youtube" class="grupo so-android">
-      <h3>Legenda do YouTube</h3>
-      <button id="btn-trocar-legenda" type="button" class="btn">Trocar o idioma da legenda deste vídeo</button>
-    </div>
-
     <div class="grupo">
-      <h3>Tradução automática</h3>
-      <p class="dica">Padrão: o idioma do seu celular. Escolha outro na lista quando quiser.</p>
+      <h3>Legenda e tradução</h3>
+      <label id="ajuste-legenda-video" class="ajuste so-android">Idioma do vídeo
+        <select id="sel-legenda-ajustes" translate="no" aria-describedby="dica-legenda-ajustes"></select>
+      </label>
+      <p id="dica-legenda-ajustes" class="dica so-android" hidden></p>
       <label class="ajuste">Traduzir para
         <select data-ajuste="destino"></select>
       </label>
+      <p class="dica">Idioma do vídeo: as legendas que o YouTube tem para este vídeo. Traduzir para: o padrão é o idioma do seu celular.</p>
       <label class="ajuste oculto-no-app">Idioma falado no vídeo
         <select data-ajuste="idioma"></select>
       </label>
@@ -314,7 +315,7 @@
         <li><b>A–B</b> (setas com A-B): abre a lista das falas na tela inteira. Toque na fala onde o trecho começa (A) e numa fala depois dela, onde termina (B): o trecho tem no mínimo 2 falas e fica repetindo. Toque no botão de novo para parar.</li>
         <li><b>文A</b>: mostrar a tradução sempre, só quando pausar, ou desativar.</li>
         <li><b>Lista</b> (três barras): mostra a fala anterior, a atual no meio e a próxima. Toque na anterior ou na próxima para ir até ela.</li>
-        <li>Ao abrir um vídeo, a legenda já vem escolhida pelo <b>idioma do áudio original</b> e a tradução no <b>idioma do seu celular</b>. Dá para trocar nas listas antes de tocar em Começar, ou depois em <b>Trocar o idioma da legenda deste vídeo</b> (aqui nos Ajustes).</li>
+        <li>Ao abrir um vídeo, a legenda já vem escolhida pelo <b>idioma do áudio original</b> e a tradução no <b>idioma do seu celular</b>. Dá para trocar nas listas antes de tocar em Começar, ou depois em <b>Idioma do vídeo</b> (aqui nos Ajustes).</li>
         <li>A tradução pode ser para qualquer idioma do tradutor do Google: escolha em <b>Tradução automática</b>, acima. Se o vídeo já estiver no idioma da tradução, a segunda linha não aparece.</li>
         <li>O app aparece no idioma do seu celular.</li>
       </ul>

@@ -935,14 +935,31 @@ def t_android(browser, base):
     page.screenshot(path=os.path.join(CAPTURAS, 'android-assistir.png'))
     # trocar o idioma pelo ⚙ Ajustes
     page.click('#btn-ajustes')
-    expect(page.locator('#btn-trocar-legenda')).to_be_visible()
-    page.click('#btn-trocar-legenda')
-    expect(page.locator('#tela-idioma')).to_be_visible()
-    expect(page.locator('#idioma-cancelar')).to_have_text('Cancelar')
-    page.select_option('#sel-legenda-video', '0')
-    page.click('#idioma-ok')
+    # um bloco só: "Idioma do vídeo" (lista das legendas, com a atual marcada) e "Traduzir para"
+    expect(page.locator('#sel-legenda-ajustes')).to_be_visible()
+    expect(page.locator('#sel-legenda-ajustes option')).to_have_text(['Inglês (automática)', 'Inglês', 'Português (Brasil)'])
+    expect(page.locator('#sel-legenda-ajustes')).to_have_value('1')
+    page.wait_for_timeout(300)  # fim da animação do painel
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-ajustes-legenda.png'))
+    page.select_option('#sel-legenda-ajustes', '0')  # troca direto, sem a janela de escolha
+    expect(page.locator('#painel-ajustes')).to_be_hidden()
+    expect(page.locator('#tela-idioma')).to_be_hidden()
     esperar(lambda: page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[English (auto-generated)]'), msg='trocou para a automática')
     assert page.evaluate('window.__ld.S.frases') is True  # automática: frases montadas
+    page.click('#btn-ajustes')
+    expect(page.locator('#sel-legenda-ajustes')).to_have_value('0')  # a atual (automática) marcada
+    page.click('#btn-fechar-ajustes')
+    # selo dos botões: no meio do vídeo, com o ícone do botão
+    page.click('#btn-modo-legenda')
+    expect(page.locator('#selo-controle')).to_have_class(re.compile('visivel'))
+    expect(page.locator('#selo-controle .selo-texto')).to_have_text(re.compile('Lista|Uma fala por vez'))
+    expect(page.locator('#selo-controle .selo-icone svg')).to_have_count(1)
+    caixa_selo = page.locator('#selo-controle').bounding_box()
+    caixa_video = page.locator('#area-video').bounding_box()
+    assert caixa_video['y'] <= caixa_selo['y'] and caixa_selo['y'] + caixa_selo['height'] <= caixa_video['y'] + caixa_video['height'], (caixa_selo, caixa_video)
+    page.wait_for_timeout(250)  # fim da animação do selo
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-selo-controle.png'))
+    page.click('#btn-modo-legenda')
     # volta para a biblioteca: o vídeo ficou salvo e reabre sem perguntar
     page.click('#btn-voltar')
     expect(page.locator('.item-bib')).to_have_count(1)

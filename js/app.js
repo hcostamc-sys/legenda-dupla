@@ -142,9 +142,55 @@ let timerToast = null;
 function toast(msg, ms = 2600) {
   const el = $('#toast');
   el.textContent = msg;
+  posicionarToast(el);
   el.hidden = false;
+  el.classList.remove('visivel');
+  void el.offsetWidth; // reinicia a animação de entrada
+  el.classList.add('visivel');
   clearTimeout(timerToast);
-  timerToast = setTimeout(() => { el.hidden = true; }, ms);
+  timerToast = setTimeout(() => { el.classList.remove('visivel'); el.hidden = true; }, ms);
+}
+
+/**
+ * Na tela do vídeo, o aviso fica logo acima dos botões (antes ficava em cima deles).
+ * Nas outras telas, perto da borda de baixo.
+ */
+function posicionarToast(el) {
+  el.style.bottom = '';
+  const barra = $('#barra-botoes');
+  if ($('#tela-assistir').hidden || !barra || document.body.classList.contains('imersivo')) return;
+  const topo = barra.getBoundingClientRect().top;
+  if (topo > 0 && topo < window.innerHeight) el.style.bottom = `${Math.round(window.innerHeight - topo + 10)}px`;
+}
+
+// Ícone de velocidade (não há botão de velocidade na barra para copiar o desenho).
+const ICONE_VELOCIDADE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>';
+
+let timerSelo = null;
+/**
+ * Selo dos botões de controle (loop, A–B, tradução, lista, velocidade): aparece no meio do vídeo,
+ * no estilo do app (ícone âmbar do próprio botão + texto). desligado: ícone apagado.
+ * icone: seletor do botão (o desenho dele é copiado) ou o SVG pronto.
+ */
+function selo(msg, ms = 1300, icone = '', desligado = false) {
+  const el = $('#selo-controle');
+  if (!el || $('#tela-assistir').hidden) { toast(msg, ms); return; }
+  const caixa = el.querySelector('.selo-icone');
+  caixa.textContent = '';
+  if (icone.startsWith('<')) caixa.innerHTML = icone;
+  else {
+    const svg = icone ? $(icone)?.querySelector('svg') : null;
+    if (svg) caixa.appendChild(svg.cloneNode(true));
+  }
+  caixa.hidden = !caixa.firstChild;
+  el.querySelector('.selo-texto').textContent = msg;
+  el.classList.toggle('desligado', !!desligado);
+  el.classList.toggle('longo', msg.length > 34);
+  el.classList.remove('visivel');
+  void el.offsetWidth;
+  el.classList.add('visivel');
+  clearTimeout(timerSelo);
+  timerSelo = setTimeout(() => el.classList.remove('visivel'), ms);
 }
 
 let timerRetorno = null;
@@ -1606,7 +1652,7 @@ function aplicarLegendaYoutube(cap) {
   const nome = nomeFaixa(S.yt.faixa || { languageCode: cap.idioma, kind: cap.automatica ? 'asr' : '' });
   // "(auto-generated)" no nome faz o app montar frases inteiras, como nos arquivos do DownSub.
   const rotulo = cap.automatica ? `${nomeIdioma(codigoTradutor(cap.idioma) || cap.idioma, 'en')} (auto-generated)` : nome;
-  reg.estudo = { arquivo: `[${rotulo}] ${titulo || 'YouTube'}`, falas: cap.falas, origem: 'youtube', idioma: cap.idioma };
+  reg.estudo = { arquivo: `[${rotulo}] ${titulo || 'YouTube'}`, falas: cap.falas, origem: 'youtube', idioma: cap.idioma, automatica: !!cap.automatica };
   if (S.yt.trocando) { reg.traducao = null; reg.ajusteEstudo = 0; reg.ajusteTraducao = 0; }
   reg.traducaoAuto = null;
   if (!reg.titulo && titulo) reg.titulo = titulo;
@@ -1929,7 +1975,7 @@ function alternarModoLegenda() {
   salvar();
   atualizarBotaoModoLegenda();
   renderLegenda(true);
-  toast(modoLista() ? 'Lista: fala anterior, atual e próxima' : 'Uma fala por vez', 1200);
+  selo(modoLista() ? 'Lista: fala anterior, atual e próxima' : 'Uma fala por vez', 1300, '#btn-modo-legenda');
 }
 
 function atualizarBotaoModoLegenda() {
@@ -2036,7 +2082,7 @@ function alternarLoop() {
   S.loop.alvo = S.loop.ligado ? (falaAtual() >= 0 ? falaAtual() : null) : null;
   if (S.loop.ligado) S.ab = { a: null, b: null }; // um modo de repetição por vez
   atualizarBotoesRepeticao();
-  toast(S.loop.ligado ? 'Loop da fala ligado' : 'Loop da fala desligado', 1200);
+  selo(S.loop.ligado ? 'Loop da fala ligado' : 'Loop da fala desligado', 1300, '#btn-loop', !S.loop.ligado);
 }
 
 /** Botão A–B: abre a tela de escolha do trecho; com o trecho repetindo, desliga. */
@@ -2046,7 +2092,7 @@ function tocarAB() {
   if (a !== null && b !== null) {
     S.ab = { a: null, b: null };
     atualizarBotoesRepeticao();
-    toast('Trecho A–B desligado', 1200);
+    selo('Trecho A–B desligado', 1300, '#btn-ab', true);
     return;
   }
   abrirTelaAB();
@@ -2199,7 +2245,7 @@ function escolherPontoAB(i) {
   S.marcandoAB = null;
   fecharTelaAB(false);
   atualizarBotoesRepeticao();
-  toast(`Repetindo de ${formatarTempo(S.unidades[S.ab.a].s)} até ${formatarTempo(S.unidades[S.ab.b].e)}. Toque em A–B para parar.`, 3500);
+  selo(`Repetindo de ${formatarTempo(S.unidades[S.ab.a].s)} até ${formatarTempo(S.unidades[S.ab.b].e)}. Toque em A–B para parar.`, 3500, '#btn-ab');
   // Começa já pelo ponto A, tocando.
   irParaIndice(S.ab.a);
   if (S.player && S.player.estado() !== 1) {
@@ -2291,11 +2337,15 @@ function definirModoTraducao(modo) {
   renderLegenda(false);
 }
 
+function seloTraducao(modo) {
+  selo({ sempre: 'Tradução: mostrar sempre', pausado: 'Tradução: só quando pausar', desligada: 'Tradução desativada' }[modo], 1300, '#btn-traducao', modo === 'desligada');
+}
+
 function ciclarModoTraducao() {
   const ordem = ['sempre', 'pausado', 'desligada'];
   const novo = ordem[(ordem.indexOf(S.ajustes.modoTraducao) + 1) % 3];
   definirModoTraducao(novo);
-  toast({ sempre: 'Tradução: mostrar sempre', pausado: 'Tradução: só quando pausar', desligada: 'Tradução desativada' }[novo], 1200);
+  seloTraducao(novo);
 }
 
 // ============================================================ navegação por gesto (7.4)
@@ -2388,7 +2438,7 @@ function mudarVelocidadePasso(passo) {
   const j = Math.min(vels.length - 1, Math.max(0, i + passo));
   if (j !== i) {
     pedirVelocidade(vels[j]);
-    toast(`Velocidade ${rotuloVelocidade(vels[j])}×`, 1000);
+    selo(`Velocidade ${rotuloVelocidade(vels[j])}×`, 1100, ICONE_VELOCIDADE);
   }
 }
 
@@ -2607,7 +2657,7 @@ function sincronizarPainel() {
   montarVelocidades();
   const reg = S.registro;
   $('#grupo-sincronia').hidden = !reg;
-  $('#grupo-legenda-youtube').hidden = !reg;
+  montarLegendaAjustes();
   if (reg) {
     for (const bloco of $$('.ajuste-sinc')) {
       const alvo = bloco.dataset.alvo;
@@ -2617,6 +2667,79 @@ function sincronizarPainel() {
       if (alvo === 'ajusteTraducao') bloco.hidden = !reg.traducao;
     }
   }
+}
+
+/** Faixa da legenda que está na tela: { languageCode, kind } ou null. */
+function faixaAtualDoVideo() {
+  const e = S.registro?.estudo;
+  if (!e || e.origem !== 'youtube' || !e.idioma) return null;
+  // Vídeos salvos antes desta versão não guardavam "automatica": o nome do arquivo diz.
+  const auto = e.automatica ?? /\(auto-generated\)/.test(e.arquivo || '');
+  return { languageCode: e.idioma, kind: auto ? 'asr' : '' };
+}
+
+/**
+ * Ajustes → "Idioma do vídeo": a lista das legendas que o YouTube tem para o vídeo aberto,
+ * com a que está na tela já marcada. Trocar na lista baixa a outra legenda na hora.
+ */
+function montarLegendaAjustes() {
+  const sel = $('#sel-legenda-ajustes');
+  const rotulo = $('#ajuste-legenda-video');
+  const dica = $('#dica-legenda-ajustes');
+  const reg = S.registro;
+  const p = S.player;
+  const disponivel = !!(reg && p?.faixasLegenda);
+  rotulo.hidden = !disponivel;
+  dica.hidden = true;
+  if (!disponivel) return;
+  const atual = faixaAtualDoVideo();
+  const faixas = juntarFaixas(p).faixas;
+  if (atual && !faixas.some((f) => mesmaFaixa(f, atual))) faixas.unshift(atual);
+  S.faixasAjustes = faixas;
+  sel.textContent = '';
+  if (!atual) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = t('Escolha a legenda');
+    sel.appendChild(o);
+  }
+  faixas.forEach((f, i) => {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = nomeFaixa(f);
+    sel.appendChild(o);
+  });
+  sel.value = atual ? String(faixas.findIndex((f) => mesmaFaixa(f, atual))) : '';
+  sel.disabled = S.yt.estado === 'pegando';
+  if (faixas.length <= 1) {
+    dica.textContent = t(faixas.length ? 'O YouTube só tem esta legenda para este vídeo.' : 'O YouTube ainda não mostrou as legendas deste vídeo.');
+    dica.hidden = false;
+  }
+}
+
+function aoTrocarLegendaAjustes(ev) {
+  const faixa = (S.faixasAjustes || [])[Number(ev.target.value)];
+  const atual = faixaAtualDoVideo();
+  if (!faixa || (atual && mesmaFaixa(faixa, atual))) return;
+  fecharPaineis();
+  trocarFaixaDireto(faixa);
+}
+
+/** Troca a legenda do vídeo aberto por outra faixa, sem a janela de escolha. */
+function trocarFaixaDireto(faixa) {
+  const p = S.player;
+  if (!p || !S.registro) return;
+  clearTimeout(S.yt.timer);
+  S.yt.geracao++;
+  p.manterLegendas?.(true);
+  S.yt.trocando = true;
+  S.yt.tentativas = 0;
+  S.yt.faixa = null;
+  $('#erro-player').hidden = true;
+  diag(`troca pelos Ajustes: ${faixa.languageCode}${faixa.kind === 'asr' ? '/asr' : ''}`);
+  S.yt.fase = 'baixando';
+  mostrarCarregando();
+  pedirFaixa(faixa);
 }
 
 function abrirPainel(id) {
@@ -2899,7 +3022,7 @@ function ligarEventos() {
   $('#btn-modo-legenda').addEventListener('click', alternarModoLegenda);
   window.addEventListener('resize', () => ajustarEscala());
   for (const op of $$('#menu-traducao [data-modo]')) {
-    op.addEventListener('click', (ev) => { ev.stopPropagation(); definirModoTraducao(op.dataset.modo); });
+    op.addEventListener('click', (ev) => { ev.stopPropagation(); definirModoTraducao(op.dataset.modo); seloTraducao(op.dataset.modo); });
   }
   $('#btn-tela-cheia').addEventListener('click', alternarTelaCheia);
   $('#btn-liberar').addEventListener('click', liberarToque);
@@ -2911,10 +3034,7 @@ function ligarEventos() {
     cancelarTraducaoAuto();
     iniciarTraducaoAuto();
   });
-  $('#btn-trocar-legenda').addEventListener('click', () => {
-    fecharPaineis();
-    if (S.registro) escolherLegendaYoutube(true);
-  });
+  $('#sel-legenda-ajustes').addEventListener('change', aoTrocarLegendaAjustes);
   window.addEventListener('message', aoReceberLegenda);
   window.addEventListener('message', aoReceberAnuncio);
   window.addEventListener('message', aoReceberDoGancho);
