@@ -484,22 +484,49 @@ export function lerArquivoLegendaDupla(buffer, alvo = 'pt', estudoPreferido = 'a
 // ---------------------------------------------------------------------------
 
 const RE_MARCA_INTEIRA = /^(?:\s*(?:\[[^\[\]]*\]|\([^()]*\))\s*)+$/;
-const RE_MARCA_MEIO = /\[\p{Ll}+(?:[ '’-]\p{Ll}+){0,2}\]/gu;
+// Qualquer trecho entre colchetes no meio da fala: [Music], [Applause], [Música], [risos], [clears throat]...
+const RE_COLCHETES = /\[[^\[\]]*\]/g;
 
 export function ehMarcacao(texto) {
   return RE_MARCA_INTEIRA.test(texto);
 }
 
-/** Opção "Esconder marcações de som". */
+/** Tira os trechos entre colchetes de uma fala (o resto do texto fica igual). */
+export function tirarColchetes(texto) {
+  return String(texto || '').replace(RE_COLCHETES, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Palavras com tempo sem as que estão entre colchetes ("[clears" e "throat]" somem juntas). */
+function palavrasSemColchetes(ps) {
+  const saida = [];
+  let dentro = false;
+  for (const p of ps) {
+    let w = '';
+    for (const ch of p.w) {
+      if (ch === '[') dentro = true;
+      else if (ch === ']' && dentro) dentro = false;
+      else if (!dentro) w += ch;
+    }
+    w = w.trim();
+    if (w) saida.push(w === p.w ? p : { ...p, w });
+  }
+  return saida;
+}
+
+/**
+ * Tira as descrições de sons: falas que são só marcação ([Music], (Applause)) somem, e trechos entre
+ * colchetes no meio da fala são apagados. Vale para a legenda estudada e para a tradução (inclusive a
+ * tradução automática do YouTube, que traz "[Música]").
+ */
 export function esconderMarcacoes(falas) {
   const saida = [];
   for (const f of falas) {
     if (ehMarcacao(f.t)) continue;
-    const t = f.t.replace(RE_MARCA_MEIO, ' ').replace(/\s+/g, ' ').trim();
+    const t = tirarColchetes(f.t);
     if (!t) continue;
     const g = { ...f, t };
     if (f.ps && t !== f.t) {
-      const ps = f.ps.filter((p) => !RE_MARCA_INTEIRA.test(p.w));
+      const ps = palavrasSemColchetes(f.ps);
       if (ps.map((p) => p.w).join(' ') === t) g.ps = ps; else delete g.ps;
     }
     saida.push(g);

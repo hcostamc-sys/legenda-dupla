@@ -1754,6 +1754,70 @@ def t_permissao_erros(browser, base):
     ctx.close()
 
 
+@caso('19. Ajustes de 22/11 (3): demonstração com 3 falas, aviso de reconexão, histórico preparado ao abrir')
+def t_ajustes_22_11_3(browser, base, en, pt):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    page.goto(base + '?mock=1&gestos=1')
+    page.fill('#campo-link', f'https://youtu.be/{ID}')
+    page.set_input_files('#arq-estudo', [en, pt])
+    page.click('#btn-abrir')
+    page.click('#btn-tocar-grande')
+    expect(page.locator('#tela-gestos')).to_be_visible()
+    # Demonstração: 3 falas em inglês no estilo lista, sem o ícone de play e sem o aviso da pausa
+    assert page.locator('.demo-play').count() == 0
+    assert page.locator('.demo-linha').count() == 5
+    assert 'Com o vídeo pausado' not in page.inner_text('#tela-gestos')
+    trilha_y = lambda: page.evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.demo-trilha')).transform).m42")
+    y0 = trilha_y()
+    time.sleep(3.2)  # depois do 1º arraste (da esquerda para a direita): fala anterior, a lista desce
+    assert trilha_y() > y0 + 30, (y0, trilha_y())
+    page.click('#gestos-ok')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    # Sem internet com o vídeo ainda andando (o que já foi baixado): sem aviso
+    page.evaluate("window.ldRede('0')")
+    time.sleep(0.8)
+    assert page.locator('#aviso-rede').is_hidden()
+    # Sem internet e o vídeo parado: aviso animado; a internet volta: o aviso some
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausou')
+    expect(page.locator('#aviso-rede')).to_be_visible(timeout=4000)
+    expect(page.locator('#aviso-rede-titulo')).to_have_text('Sem Internet. Tentando reconectar…')
+    page.evaluate("window.ldRede('1')")
+    expect(page.locator('#aviso-rede')).to_be_hidden(timeout=4000)
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando de novo')
+    time.sleep(1.2)  # a volta da internet já pede o trecho de novo (0,8 s depois): conta só os pedidos seguintes
+    # Internet fraca: o vídeo "tocando" e o tempo parado (carregando) → aviso e novo pedido do trecho
+    pedidos = lambda: page.evaluate('window.__ld.textoDiagnostico()').count('pedindo o trecho de novo')
+    n0 = pedidos()
+    page.evaluate("""() => { const p = window.__ld.S.player; window.__tParado = p.tempo();
+      p.__estadoOriginal = p.estado; p.estado = () => 3; p.__tempoOriginal = p.tempo; p.tempo = () => window.__tParado;
+      window.__irPara = 0; const ir = p.irPara.bind(p); p.irPara = (x, b) => { window.__irPara++; return ir(x, b); }; }""")
+    expect(page.locator('#aviso-rede')).to_be_visible(timeout=5000)
+    expect(page.locator('#aviso-rede-titulo')).to_have_text('Internet fraca. Tentando reconectar…')
+    esperar(lambda: pedidos() > n0, limite=14, msg='pediu o trecho de novo')
+    assert page.evaluate('window.__irPara') >= 1
+    page.evaluate("() => { const p = window.__ld.S.player; p.estado = p.__estadoOriginal; p.tempo = p.__tempoOriginal; }")
+    expect(page.locator('#aviso-rede')).to_be_hidden(timeout=5000)
+    ctx.close()
+
+    # App Android 11: ao abrir o vídeo, o app já prepara o registro no histórico
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android&apk=11&mockSoAsr=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HISTORICO02')")
+    hist = lambda: [m for m in page.evaluate('window.__msgs') if m.get('acao') == 'historico']
+    esperar(lambda: any(m['evento'] == 'preparar' and m['video'] == 'HISTORICO02' for m in hist()), msg='histórico: preparar')
+    ctx.close()
+    assert not erros, erros
+
+
 @caso('10. Capturas de tela nos quatro tamanhos')
 def t_capturas(browser, url, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
@@ -1865,6 +1929,7 @@ def main():
         t_busca(browser, base)
         t_ajustes_22_11(browser, base, en, pt)
         t_permissao_erros(browser, base)
+        t_ajustes_22_11_3(browser, base, en, pt)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)

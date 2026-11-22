@@ -343,6 +343,39 @@ body.android .tela-ab { padding-top: 0; }
 }
 .video-preparando .roda { margin: 0; }
 
+/* Sem internet / internet fraca: aviso animado por cima do vídeo (não bloqueia os gestos) */
+.aviso-rede {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 18px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.74);
+  pointer-events: none;
+  animation: aviso-rede-entra 0.35s ease-out;
+}
+.aviso-rede[hidden] { display: none; }
+.rede-icone { width: 58px; height: 48px; overflow: visible; }
+.rede-arco { fill: none; stroke: var(--ambar); stroke-width: 4; stroke-linecap: round; opacity: 0.18; }
+.rede-ponto { fill: var(--ambar); }
+/* os arcos acendem um de cada vez, de dentro para fora, como o Wi-Fi procurando sinal */
+.rede-arco-1 { animation: rede-arco 1.6s infinite; }
+.rede-arco-2 { animation: rede-arco 1.6s 0.25s infinite; }
+.rede-arco-3 { animation: rede-arco 1.6s 0.5s infinite; }
+.rede-ponto { animation: rede-ponto 1.6s infinite; transform-origin: 24px 34px; }
+@keyframes rede-arco { 0%, 100% { opacity: 0.18; } 30%, 55% { opacity: 1; } }
+@keyframes rede-ponto { 0%, 100% { transform: scale(1); } 20% { transform: scale(1.35); } }
+@keyframes aviso-rede-entra { from { opacity: 0; } to { opacity: 1; } }
+.aviso-rede-titulo { margin: 4px 0 0; font-size: 16px; font-weight: 700; color: var(--texto); }
+.aviso-rede-texto { margin: 0; font-size: 13px; color: var(--texto-2); max-width: 300px; }
+.toque-nativo .aviso-rede { pointer-events: none !important; }
+@media (prefers-reduced-motion: reduce) { .rede-arco-1, .rede-arco-2, .rede-arco-3, .rede-ponto { animation-duration: 3.2s; } }
+
 /* Anúncio do YouTube (app Android) */
 .selo-anuncio {
   position: absolute;
@@ -1228,81 +1261,88 @@ html.i18n-carregando body { visibility: hidden; }
 .caixa-gestos .dialogo-botoes .btn { width: 100%; min-height: 50px; font-size: 16px; }
 .btn#btn-ver-gestos { margin-top: 6px; }
 
+/* Caixa da legenda no modo lista, em tamanho grande: 3 falas visíveis (anterior, atual no meio, próxima).
+   A trilha tem 5 falas; a do meio (a 3ª) começa no centro. Cada fala ocupa --demo-fala de altura. */
 .demo-gestos {
+  --demo-fala: 62px;
+  --demo-topo: 38px;
   position: relative;
-  height: 186px;
-  margin: 0 auto 14px;
-  max-width: 300px;
+  height: calc(var(--demo-topo) + 3 * var(--demo-fala) + 12px);
+  margin: 0 auto 16px;
+  max-width: 360px;
   border-radius: 14px;
-  background: #000;
+  background: var(--fundo-2);
   border: 1px solid var(--borda);
   overflow: hidden;
 }
-.demo-video {
+.demo-janela {
   position: absolute;
-  inset: 0 0 auto 0;
-  height: 112px;
-  background: linear-gradient(135deg, #2c2c2c, #151515);
+  left: 0;
+  right: 0;
+  top: var(--demo-topo);
+  height: calc(3 * var(--demo-fala));
+  overflow: hidden;
+  /* anterior e próxima mais apagadas (como no app), a atual no meio com brilho total */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, 0.4) 14px, rgba(0, 0, 0, 0.4) 31%,
+    #000 37%, #000 63%, rgba(0, 0, 0, 0.4) 69%, rgba(0, 0, 0, 0.4) calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, rgba(0, 0, 0, 0.4) 14px, rgba(0, 0, 0, 0.4) 31%,
+    #000 37%, #000 63%, rgba(0, 0, 0, 0.4) 69%, rgba(0, 0, 0, 0.4) calc(100% - 14px), transparent 100%);
+}
+.demo-trilha { transform: translateY(calc(-1 * var(--demo-fala))); animation: demo-trilha 7s infinite; }
+.demo-gestos.invertido .demo-trilha { animation-name: demo-trilha-inv; }
+.demo-linha {
+  height: var(--demo-fala);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--texto);
 }
-.demo-play { width: 36px; height: 36px; fill: rgba(255, 255, 255, 0.28); }
 .demo-selo {
   position: absolute;
-  top: 10px;
+  z-index: 2;
+  top: 7px;
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.75);
+  background: #000;
   color: var(--ambar);
   font-size: 14px;
   font-weight: 700;
   opacity: 0;
 }
-.demo-selo-1 { animation: demo-selo-1 6s infinite; }
-.demo-selo-2 { animation: demo-selo-2 6s infinite; }
-.demo-legenda {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  height: 56px;
-  border-radius: 10px;
-  background: var(--fundo-2);
-  border: 1px solid var(--borda);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
-}
-.demo-fala { position: absolute; }
-.demo-fala-a { animation: demo-fala-a 6s infinite; }
-.demo-fala-b { animation: demo-fala-b 6s infinite; opacity: 0; }
+.demo-selo-1 { animation: demo-selo-1 7s infinite; }
+.demo-selo-2 { animation: demo-selo-2 7s infinite; }
+/* o dedo passa sobre a fala do meio */
 .demo-dedo {
   position: absolute;
-  top: 62px;
+  z-index: 3;
+  top: calc(var(--demo-topo) + 1.5 * var(--demo-fala));
   left: 20%;
-  width: 36px;
-  height: 36px;
-  margin: -18px 0 0 -18px;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
   border-radius: 50%;
-  background: rgba(255, 213, 79, 0.92);
-  box-shadow: 0 0 0 8px rgba(255, 213, 79, 0.22);
-  animation: demo-dedo 6s ease-in-out infinite;
+  background: rgba(255, 213, 79, 0.9);
+  box-shadow: 0 0 0 9px rgba(255, 213, 79, 0.22);
+  animation: demo-dedo 7s ease-in-out infinite;
 }
 .demo-rastro {
   position: absolute;
-  top: 60px;
+  z-index: 3;
+  top: calc(var(--demo-topo) + 1.5 * var(--demo-fala) - 2px);
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 213, 79, 0.55);
-  animation: demo-rastro 6s ease-in-out infinite;
+  animation: demo-rastro 7s ease-in-out infinite;
 }
-/* 0–40%: da esquerda para a direita (padrão: fala anterior); 50–90%: da direita para a esquerda */
+/* 0–40%: da esquerda para a direita; 50–90%: da direita para a esquerda */
 @keyframes demo-dedo {
   0% { left: 20%; opacity: 0; transform: scale(1.3); }
   6% { left: 20%; opacity: 1; transform: scale(1); }
@@ -1322,16 +1362,38 @@ html.i18n-carregando body { visibility: hidden; }
   84% { left: 20%; width: 60%; opacity: 1; }
   92%, 100% { left: 20%; width: 60%; opacity: 0; }
 }
-@keyframes demo-selo-1 { 0%, 34% { opacity: 0; } 38%, 48% { opacity: 1; } 52%, 100% { opacity: 0; } }
-@keyframes demo-selo-2 { 0%, 84% { opacity: 0; } 88%, 97% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes demo-fala-a { 0%, 35% { opacity: 1; transform: none; } 39%, 85% { opacity: 0; transform: scale(0.9); } 89%, 100% { opacity: 1; transform: none; } }
-@keyframes demo-fala-b { 0%, 35% { opacity: 0; transform: scale(0.9); } 39%, 85% { opacity: 1; transform: none; } 89%, 100% { opacity: 0; transform: scale(0.9); } }
+/* As falas acompanham o dedo um pouco para o lado e, no fim do arraste, andam uma posição:
+   padrão: arrastar para a direita = fala anterior (a lista desce); para a esquerda = próxima (a lista sobe). */
+@keyframes demo-trilha {
+  0%, 6% { transform: translate(0, calc(-1 * var(--demo-fala))); }
+  34% { transform: translate(16px, calc(-1 * var(--demo-fala))); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  41%, 56% { transform: translate(0, 0); }
+  84% { transform: translate(-16px, 0); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  91%, 100% { transform: translate(0, calc(-1 * var(--demo-fala))); }
+}
+/* Direção invertida: arrastar para a direita = próxima (a lista sobe); para a esquerda = anterior (desce). */
+@keyframes demo-trilha-inv {
+  0%, 6% { transform: translate(0, calc(-1 * var(--demo-fala))); }
+  34% { transform: translate(16px, calc(-1 * var(--demo-fala))); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  41%, 56% { transform: translate(0, calc(-2 * var(--demo-fala))); }
+  84% { transform: translate(-16px, calc(-2 * var(--demo-fala))); animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  91%, 100% { transform: translate(0, calc(-1 * var(--demo-fala))); }
+}
+@keyframes demo-selo-1 { 0%, 35% { opacity: 0; } 39%, 49% { opacity: 1; } 53%, 100% { opacity: 0; } }
+@keyframes demo-selo-2 { 0%, 85% { opacity: 0; } 89%, 98% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .caixa-gestos { animation: none; }
-  .demo-dedo, .demo-rastro, .demo-selo-1, .demo-selo-2, .demo-fala-a, .demo-fala-b { animation-duration: 12s; }
+  .demo-dedo, .demo-rastro, .demo-selo-1, .demo-selo-2, .demo-trilha { animation-duration: 14s; }
 }
 
-/* Entrada suave do vídeo e da legenda quando o vídeo começa */
-.entrada-suave { animation: entrada-suave 0.9s ease-out both; }
-@keyframes entrada-suave { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .entrada-suave { animation-duration: 0.3s; } }
+/* Entrada suave do vídeo e da legenda quando o vídeo começa: mais longa e mais marcada
+   (fica escuro um instante, clareia devagar e termina com um leve "assentar" da imagem) */
+.entrada-suave { animation: entrada-suave 2.4s cubic-bezier(0.45, 0, 0.25, 1) both; }
+@keyframes entrada-suave {
+  0% { opacity: 0; transform: scale(1.035); filter: brightness(0.2); }
+  15% { opacity: 0; transform: scale(1.03); filter: brightness(0.2); }
+  70% { opacity: 0.9; filter: brightness(0.85); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) { .entrada-suave { animation: entrada-suave-leve 0.6s ease-out both; } }
+@keyframes entrada-suave-leve { from { opacity: 0; } to { opacity: 1; } }

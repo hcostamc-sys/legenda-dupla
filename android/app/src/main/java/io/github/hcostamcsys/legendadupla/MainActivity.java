@@ -8,6 +8,9 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -56,6 +59,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -75,12 +79,17 @@ import java.util.regex.Pattern;
  *    O download só começa com a permissão de notificações (versão 10): sem ela, a página explica e pede de novo.
  * 10) histórico do YouTube (versão 10): o player embutido não grava no histórico da conta; o app avisa o
  *    YouTube, com a conta conectada, que o vídeo foi assistido (como o app oficial faz).
+ *    Versão 11: os endereços de registro são buscados assim que o vídeo abre (o registro sai na hora em que o
+ *    vídeo começa), o progresso vai a cada 10 s e ao pular no vídeo, e o YouTube da tela inicial recarrega
+ *    sozinho ao voltar, para mostrar o histórico e a barrinha vermelha de progresso já atualizados.
+ * 11) internet (versão 11): o Android avisa a página quando a internet cai ou volta (ldRede), para o aviso
+ *    "Tentando reconectar à Internet…" e para o vídeo continuar sozinho.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 10; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 11; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -101,6 +110,11 @@ public class MainActivity extends Activity {
     private String pedidoPendente;
     /** A página já mostrou "o Android não pergunta mais": o próximo toque abre as configurações. */
     private boolean avisouBloqueio;
+    /** Algum vídeo foi registrado no histórico do YouTube desde a última vez que o YouTube apareceu. */
+    private final AtomicBoolean historicoMudou = new AtomicBoolean(false);
+    private ConnectivityManager conectividade;
+    private ConnectivityManager.NetworkCallback ouvinteRede;
+    private Boolean ultimoOnline;
 
     @Override
     protected void onCreate(Bundle salvo) {
@@ -216,6 +230,8 @@ public class MainActivity extends Activity {
                 }
             });
         }
+
+        vigiarInternet();
 
         // Andamento do download dos pacotes: vai para a página.
         ServicoModelos.ouvinte = json -> runOnUiThread(() -> chamarPagina("ldModelosEstado", json));
@@ -462,8 +478,29 @@ public class MainActivity extends Activity {
         String alvo = (url == null || url.isEmpty()) ? (ultimoUrlYt.isEmpty() ? INICIO_YOUTUBE : null) : url;
         if (alvo != null && !alvo.equals(ultimoUrlYt)) {
             ultimoUrlYt = alvo;
+            historicoMudou.set(false); // a página nova já vem atualizada
             ytWeb.loadUrl(alvo);
+        } else if (historicoMudou.get()) {
+            recarregarYoutubeDepoisDoHistorico();
         }
+    }
+
+    /**
+     * Um vídeo foi registrado no histórico: o YouTube da tela inicial ainda mostra a página de antes (sem o
+     * vídeo no histórico e sem a barrinha de progresso). Espera os últimos registros saírem (a fila "rede") e
+     * recarrega a página sozinho, sem a pessoa precisar puxar para atualizar.
+     */
+    private void recarregarYoutubeDepoisDoHistorico() {
+        rede.execute(() -> runOnUiThread(() -> {
+            if (ytWeb == null || painelYt == null) return;
+            // Um instante para o YouTube processar o último registro.
+            ytWeb.postDelayed(() -> {
+                if (painelYt.getVisibility() != View.VISIBLE || !historicoMudou.getAndSet(false)) return;
+                String atual = ytWeb.getUrl();
+                if (atual == null || !atual.contains("youtube.com") || atual.contains("accounts.google")) return;
+                ytWeb.reload();
+            }, 700);
+        }));
     }
 
     private void pausarYoutube() {
@@ -550,8 +587,62 @@ public class MainActivity extends Activity {
         super.onPause();
     }
 
+    // ------------------------------------------------------------------ internet
+
+    /**
+     * Avisa a página quando a internet cai ou volta (e a WebView, que repassa os eventos online/offline).
+     * "Com internet" = o Android confirmou que a rede atual chega à internet (VALIDATED).
+     */
+    private void vigiarInternet() {
+        try {
+            conectividade = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (conectividade == null) return;
+            ouvinteRede = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network n) { conferirInternet(); }
+
+                @Override
+                public void onLost(Network n) { conferirInternet(); }
+
+                @Override
+                public void onCapabilitiesChanged(Network n, NetworkCapabilities c) { conferirInternet(); }
+            };
+            conectividade.registerDefaultNetworkCallback(ouvinteRede);
+            conferirInternet();
+        } catch (Exception e) {
+            ouvinteRede = null; // sem o aviso do Android, a página ainda percebe o vídeo travado
+        }
+    }
+
+    private void conferirInternet() {
+        boolean online = false;
+        try {
+            Network n = conectividade.getActiveNetwork();
+            NetworkCapabilities c = n == null ? null : conectividade.getNetworkCapabilities(n);
+            online = c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        } catch (Exception e) {
+            return;
+        }
+        final boolean valor = online;
+        runOnUiThread(() -> {
+            if (ultimoOnline != null && ultimoOnline == valor) return;
+            ultimoOnline = valor;
+            if (web != null) {
+                web.setNetworkAvailable(valor);
+                chamarPagina("ldRede", valor ? "1" : "0");
+            }
+            if (ytWeb != null) ytWeb.setNetworkAvailable(valor);
+        });
+    }
+
     @Override
     protected void onDestroy() {
+        try {
+            if (conectividade != null && ouvinteRede != null) conectividade.unregisterNetworkCallback(ouvinteRede);
+        } catch (Exception e) {
+            // nada
+        }
         ServicoModelos.ouvinte = null;
         rede.shutdownNow();
         if (ytWeb != null) ytWeb.destroy();
@@ -758,7 +849,7 @@ public class MainActivity extends Activity {
     private double histUltimo = 0;
     private boolean histInicioEnviado;
 
-    /** {"acao":"historico","evento":"inicio"|"progresso","video":"...","tempo":12.3} */
+    /** {"acao":"historico","evento":"preparar"|"inicio"|"progresso","video":"...","tempo":12.3} */
     private void registrarHistorico(JSONObject o) {
         final String video = o.optString("video", "");
         final String evento = o.optString("evento", "");
@@ -768,35 +859,65 @@ public class MainActivity extends Activity {
         if (cookie == null || cookie.isEmpty()) return;
         rede.execute(() -> {
             try {
-                if ("inicio".equals(evento)) {
-                    if (!video.equals(histVideo) || histPlayback.isEmpty()) {
-                        histVideo = video;
-                        histPlayback = "";
-                        histWatchtime = "";
-                        String html = baixarTexto("https://www.youtube.com/watch?v=" + video + "&bpctr=9999999999&has_verified=1", cookie);
-                        histPlayback = extrairUrl(html, "videostatsPlaybackUrl");
-                        histWatchtime = extrairUrl(html, "videostatsWatchtimeUrl");
-                        if (histPlayback.isEmpty()) {
-                            avisarHistorico("a página do vídeo não trouxe o endereço de registro (" + html.length() + " letras)");
-                            return;
-                        }
+                if ("preparar".equals(evento)) {
+                    // O vídeo acabou de abrir: busca já os endereços; o "início" sai sem esperar nada.
+                    histInicioEnviado = false; // abertura nova: o próximo "início" é uma reprodução nova
+                    prepararHistorico(video, cookie);
+                } else if ("inicio".equals(evento)) {
+                    registrarInicio(video, tempo, cookie);
+                } else if ("progresso".equals(evento)) {
+                    // O início não saiu (internet fraca, por exemplo): tenta o início agora, já com este ponto.
+                    if (!histInicioEnviado || !video.equals(histVideo)) {
+                        registrarInicio(video, tempo, cookie);
+                        return;
                     }
-                    histCpn = novoCpn(); // cada abertura do vídeo é uma reprodução nova (como no YouTube)
+                    if (histWatchtime.isEmpty()) return;
+                    int st;
+                    if (tempo < histUltimo - 0.25) {
+                        // Voltou no vídeo: avisa o ponto novo (trecho vazio), para o "continuar de onde parou".
+                        st = chamar(montarRegistro(histWatchtime, tempo, tempo, tempo), cookie, video);
+                    } else {
+                        if (tempo - histUltimo < 0.5) return;
+                        st = chamar(montarRegistro(histWatchtime, tempo, histUltimo, tempo), cookie, video);
+                    }
                     histUltimo = tempo;
-                    int st = chamar(montarRegistro(histPlayback, tempo, -1, -1), cookie, video);
-                    histInicioEnviado = st >= 200 && st < 300;
-                    avisarHistorico("início registrado: HTTP " + st);
-                } else if ("progresso".equals(evento) && histInicioEnviado && video.equals(histVideo) && !histWatchtime.isEmpty()) {
-                    if (tempo < histUltimo) { histUltimo = tempo; return; } // voltou no vídeo
-                    if (tempo - histUltimo < 0.5) return;
-                    int st = chamar(montarRegistro(histWatchtime, tempo, histUltimo, tempo), cookie, video);
-                    histUltimo = tempo;
-                    if (st < 200 || st >= 300) avisarHistorico("tempo assistido: HTTP " + st);
+                    if (st >= 200 && st < 300) historicoMudou.set(true);
+                    else avisarHistorico("tempo assistido: HTTP " + st);
                 }
             } catch (Exception e) {
                 avisarHistorico("falhou: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             }
         });
+    }
+
+    /** Endereços de registro do vídeo (da página do vídeo, com a conta). true se já os tem. Só na thread "rede". */
+    private boolean prepararHistorico(String video, String cookie) throws Exception {
+        if (video.equals(histVideo) && !histPlayback.isEmpty()) return true;
+        histVideo = video;
+        histPlayback = "";
+        histWatchtime = "";
+        histInicioEnviado = false;
+        long t0 = SystemClock.elapsedRealtime();
+        String html = baixarPaginaVideo("https://www.youtube.com/watch?v=" + video + "&bpctr=9999999999&has_verified=1", cookie);
+        histPlayback = extrairUrl(html, "videostatsPlaybackUrl");
+        histWatchtime = extrairUrl(html, "videostatsWatchtimeUrl");
+        if (histPlayback.isEmpty()) {
+            avisarHistorico("a página do vídeo não trouxe o endereço de registro (" + html.length() + " letras)");
+            return false;
+        }
+        avisarHistorico("endereços prontos em " + (SystemClock.elapsedRealtime() - t0) + " ms");
+        return true;
+    }
+
+    /** Registra o começo da reprodução (o vídeo entra no histórico). Só na thread "rede". */
+    private void registrarInicio(String video, double tempo, String cookie) throws Exception {
+        if (!prepararHistorico(video, cookie)) return;
+        histCpn = novoCpn(); // cada abertura do vídeo é uma reprodução nova (como no YouTube)
+        histUltimo = tempo;
+        int st = chamar(montarRegistro(histPlayback, tempo, -1, -1), cookie, video);
+        histInicioEnviado = st >= 200 && st < 300;
+        if (histInicioEnviado) historicoMudou.set(true);
+        avisarHistorico("início registrado: HTTP " + st);
     }
 
     private void avisarHistorico(String texto) {
@@ -841,7 +962,11 @@ public class MainActivity extends Activity {
         return b.build().toString();
     }
 
-    private String baixarTexto(String endereco, String cookie) throws Exception {
+    /**
+     * Página do vídeo, lida só até achar os dois endereços de registro (eles vêm no começo do código da
+     * página): a leitura para ali, em vez de baixar a página inteira (mais de 1 MB). Mais rápido na internet fraca.
+     */
+    private String baixarPaginaVideo(String endereco, String cookie) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(endereco).openConnection();
         try {
             c.setConnectTimeout(15000);
@@ -853,7 +978,18 @@ public class MainActivity extends Activity {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[16384];
                 int n;
-                while ((n = in.read(buf)) > 0 && out.size() < 8_000_000) out.write(buf, 0, n);
+                int conferido = 0;
+                while ((n = in.read(buf)) > 0 && out.size() < 8_000_000) {
+                    out.write(buf, 0, n);
+                    if (out.size() - conferido >= 65536) {
+                        conferido = out.size();
+                        String parcial = new String(out.toByteArray(), StandardCharsets.UTF_8);
+                        if (!extrairUrl(parcial, "videostatsPlaybackUrl").isEmpty()
+                                && !extrairUrl(parcial, "videostatsWatchtimeUrl").isEmpty()) {
+                            return parcial;
+                        }
+                    }
+                }
                 return new String(out.toByteArray(), StandardCharsets.UTF_8);
             }
         } finally {

@@ -127,6 +127,17 @@
     <div id="video-preparando" class="video-preparando" hidden role="status" aria-label="Carregando o vídeo">
       <div class="roda" aria-hidden="true"></div>
     </div>
+    <!-- Sem internet ou internet fraca: aviso animado por cima do vídeo (os gestos continuam funcionando) -->
+    <div id="aviso-rede" class="aviso-rede" hidden role="status" aria-live="polite">
+      <svg class="rede-icone" viewBox="0 0 48 40" aria-hidden="true">
+        <path class="rede-arco rede-arco-3" d="M3 14.5a30 30 0 0 1 42 0"/>
+        <path class="rede-arco rede-arco-2" d="M10 21.5a20 20 0 0 1 28 0"/>
+        <path class="rede-arco rede-arco-1" d="M17 28.5a10 10 0 0 1 14 0"/>
+        <circle class="rede-ponto" cx="24" cy="34" r="3.2"/>
+      </svg>
+      <p id="aviso-rede-titulo" class="aviso-rede-titulo">Tentando reconectar à Internet…</p>
+      <p id="aviso-rede-texto" class="aviso-rede-texto">O vídeo continua sozinho quando a conexão voltar.</p>
+    </div>
     <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
     <!-- Selo dos botões de controle (loop, A–B, tradução, lista, velocidade) -->
     <div id="selo-controle" class="selo-controle" role="status" aria-live="polite"><span class="selo-icone" hidden></span><span class="selo-texto"></span></div>
@@ -412,16 +423,19 @@
 <div id="tela-gestos" class="dialogo dialogo-gestos" hidden role="dialog" aria-modal="true" aria-labelledby="gestos-titulo">
   <div class="dialogo-caixa caixa-gestos">
     <h2 id="gestos-titulo">Como passar as falas</h2>
-    <!-- Demonstração animada: o dedo desliza para um lado e para o outro, e a fala muda -->
-    <div class="demo-gestos" aria-hidden="true">
-      <div class="demo-video">
-        <svg class="demo-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-        <span id="demo-selo-1" class="demo-selo demo-selo-1">◀ Fala anterior</span>
-        <span id="demo-selo-2" class="demo-selo demo-selo-2">Próxima fala ▶</span>
-      </div>
-      <div class="demo-legenda">
-        <span class="demo-fala demo-fala-a">Fala 2</span>
-        <span id="demo-fala-b" class="demo-fala demo-fala-b">Fala 1</span>
+    <!-- Demonstração animada: a caixa da legenda no modo lista (fala anterior, atual e próxima, em inglês);
+         o dedo desliza para um lado e para o outro, e as falas andam no sentido do gesto -->
+    <div id="demo-gestos" class="demo-gestos" aria-hidden="true">
+      <span id="demo-selo-1" class="demo-selo demo-selo-1">◀ Fala anterior</span>
+      <span id="demo-selo-2" class="demo-selo demo-selo-2">Próxima fala ▶</span>
+      <div class="demo-janela">
+        <div class="demo-trilha" translate="no">
+          <div class="demo-linha">Hi! How are you doing?</div>
+          <div class="demo-linha">I'm fine, thanks. And you?</div>
+          <div class="demo-linha">Pretty good, thank you.</div>
+          <div class="demo-linha">Let's watch the next video.</div>
+          <div class="demo-linha">Sure, let's go!</div>
+        </div>
       </div>
       <div class="demo-rastro"></div>
       <div class="demo-dedo"></div>
@@ -431,7 +445,6 @@
       <li><b>Da esquerda para a direita</b>: <span id="gestos-acao-direita">volta para a fala anterior</span>.</li>
       <li><b>Da direita para a esquerda</b>: <span id="gestos-acao-esquerda">avança para a próxima fala</span>.</li>
     </ul>
-    <p class="dica">Com o vídeo pausado, ele continua pausado: só o botão de tocar faz o vídeo andar de novo.</p>
     <label class="ajuste ajuste-check"><input id="gestos-nao-mostrar" type="checkbox"> Não mostrar mais esta explicação</label>
     <div class="dialogo-botoes">
       <button id="gestos-ok" type="button" class="btn btn-principal">Concluir</button>

@@ -61,7 +61,8 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // Valores fixos (antes eram ajustes; saíram do menu para deixá-lo simples).
 const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
 const PRE_ROLAGEM_FRASES = 0.3;
-const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: false };
+// Descrições de sons ([Music], [Applause], [Música]...) sempre saem, de qualquer legenda e da tradução.
+const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: true };
 const opcoesProcessar = () => ({ ...OPCOES_PROCESSAR, usarModelo: S.ajustes.pontuacaoModelo });
 
 // ============================================================ estado
@@ -78,6 +79,9 @@ function ajustesIniciais() {
 
 const S = {
   ajustes: ajustesIniciais(),
+  // internet: online (último aviso do aparelho), travadoDesde (vídeo querendo tocar e o tempo parado),
+  // cutucadas (pedidos do trecho de novo), recarregar (o player deu erro sem internet), reabrir (nem carregou)
+  rede: { online: navigator.onLine !== false, andandoEm: 0, ultimoT: -1, travadoDesde: 0, ultimaCutucada: 0, cutucadas: 0, querTocar: false, recarregar: false, reabrir: null },
   // vídeo aberto
   registro: null,
   unidades: [],
@@ -821,6 +825,7 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   $('#toast').hidden = true;
   S.registro = reg;
   S.inicio = inicio;
+  zerarRede();
   S.pronto = false;
   S.primeiroPlay = false;
   S.tocandoLogico = false;
@@ -828,6 +833,9 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   S.tituloConferido = false;
   S.gestosNestaAbertura = false;
   S.histVideo = null;
+  // O app já busca no YouTube o que precisa para pôr o vídeo no histórico: quando o vídeo começar, o
+  // registro sai na hora (antes, essa busca só começava com o vídeo tocando e atrasava tudo).
+  if (ANDROID && APK >= 11) mandarAoApp({ acao: 'historico', evento: 'preparar', video: reg.id, tempo: 0 });
   cancelarToqueLivre();
   zerarRepeticao();
   fecharMenuTraducao();
@@ -870,6 +878,16 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
     if (!$('#painel-ajustes').hidden) montarVelocidades();
   });
   p.on('erro', (codigo) => {
+    // Erro por falta de internet (ou internet travada): não mostra o erro; o player é recarregado no mesmo
+    // ponto quando a conexão voltar. Erros do próprio vídeo (proibido, não existe) aparecem como antes.
+    if (![2, 100, 101, 150].includes(codigo) && (!S.rede.online || S.rede.travadoDesde)) {
+      diag(`erro ${codigo} do player com a internet ${S.rede.online ? 'fraca' : 'caída'}: recarrega quando voltar`);
+      S.rede.recarregar = true;
+      S.rede.querTocar = S.rede.querTocar || S.tocandoLogico;
+      atualizarAvisoRede(true);
+      if (S.rede.online) setTimeout(() => { if (S.player === p) recuperarRede(); }, 3000);
+      return;
+    }
     // Erro do player durante a espera da legenda: a janela sai para mostrar o erro.
     if (S.yt.fase) { S.yt.fase = null; S.yt.preparando = false; S.yt.geracao++; $('#tela-carregando').hidden = true; }
     mostrarErroPlayer(codigo);
@@ -882,6 +900,13 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   } catch (e) {
     if (S.player !== p) return;
     diag(`player não carregou: ${detalheErro(e)}`);
+    if (!S.rede.online) {
+      // Sem internet: em vez do erro, o aviso de reconexão; o vídeo abre sozinho quando a internet voltar.
+      S.rede.reabrir = { reg, inicio, origem };
+      mostrarPreparandoVideo(false);
+      atualizarAvisoRede();
+      return;
+    }
     mostrarErroPlayer(null, MSG_API);
     return;
   }
@@ -913,6 +938,7 @@ function encerrarPlayer() {
 
 function fecharVideo() {
   S.fimExplicacao?.(false);
+  zerarRede();
   zerarLegendaYoutube();
   zerarAnuncio();
   $('#tela-idioma').hidden = true;
@@ -2226,7 +2252,8 @@ function mostrarExplicacaoGestos() {
     $('#gestos-acao-esquerda').textContent = inv ? anterior : proxima;
     $('#demo-selo-1').textContent = inv ? 'Próxima fala ▶' : '◀ Fala anterior';
     $('#demo-selo-2').textContent = inv ? '◀ Fala anterior' : 'Próxima fala ▶';
-    $('#demo-fala-b').textContent = inv ? 'Fala 3' : 'Fala 1';
+    // As falas da demonstração andam no sentido do gesto: com a direção invertida, o arraste para a direita avança.
+    $('#demo-gestos').classList.toggle('invertido', inv);
     const caixa = $('#gestos-nao-mostrar');
     caixa.checked = !!S.ajustes.gestosExplicados;
     const tela = $('#tela-gestos');
@@ -2257,10 +2284,157 @@ function entradaSuave() {
   }
 }
 
+// ============================================================ internet fraca ou sem internet
+// Com a internet caída ou fraca, o player do YouTube fica parado carregando e parecia que o app tinha
+// travado. Agora aparece por cima do vídeo o aviso animado "Tentando reconectar à Internet…", e o app:
+// pede o trecho de novo de tempos em tempos enquanto estiver travado; quando a internet volta, continua
+// do mesmo ponto (e recarrega o player, se ele deu erro sem internet). Os gestos continuam funcionando.
+
+const REDE_AVISO_MS = 2500; // carregando por mais que isto: mostra o aviso
+const REDE_CUTUCAR_MS = 8000; // ainda travado: pede o trecho de novo (e a cada 10 s depois disso)
+
+function zerarRede() {
+  const r = S.rede;
+  Object.assign(r, { andandoEm: 0, ultimoT: -1, travadoDesde: 0, ultimaCutucada: 0, cutucadas: 0, querTocar: false, recarregar: false, reabrir: null });
+  atualizarAvisoRede();
+}
+
+/** Mostra, troca o texto ou esconde o aviso de reconexão. */
+function atualizarAvisoRede(forcar = false) {
+  const r = S.rede;
+  const aberto = !!S.registro && !$('#tela-assistir').hidden;
+  const agora = performance.now();
+  const travado = !!r.travadoDesde && agora - r.travadoDesde >= REDE_AVISO_MS;
+  // O vídeo está andando: a internet chega, mesmo que o aparelho diga o contrário (rede sem verificação).
+  const andando = agora - r.andandoEm < 1500;
+  const semInternet = !r.online && !andando;
+  const mostrar = aberto && (semInternet || travado || r.recarregar || !!r.reabrir || (forcar && semInternet));
+  const aviso = $('#aviso-rede');
+  if (!mostrar) { if (!aviso.hidden) aviso.hidden = true; return; }
+  const titulo = r.online ? 'Internet fraca. Tentando reconectar…' : 'Sem Internet. Tentando reconectar…';
+  const texto = r.online
+    ? 'Carregando o vídeo. Ele continua sozinho quando a conexão melhorar.'
+    : 'Confira o Wi-Fi ou os dados móveis. O vídeo continua sozinho quando a conexão voltar.';
+  if ($('#aviso-rede-titulo').textContent !== titulo) $('#aviso-rede-titulo').textContent = titulo;
+  if ($('#aviso-rede-texto').textContent !== texto) $('#aviso-rede-texto').textContent = texto;
+  if (aviso.hidden) aviso.hidden = false;
+}
+
+/** A cada 250 ms (pelo laço): o vídeo quer tocar e o tempo não anda? */
+function conferirRede(st, t) {
+  const r = S.rede;
+  const p = S.player;
+  if (!p) return;
+  const agora = performance.now();
+  // Quer tocar: tocando, ou carregando depois de tocar. Pausa, fim, anúncio e o vídeo ainda parado no começo não contam.
+  const querTocar = S.primeiroPlay && !S.anuncio.ativo && (st === 1 || st === 3) && S.tocandoLogico;
+  const andou = r.ultimoT < 0 || Math.abs(t - r.ultimoT) > 0.04;
+  if (st === 1 && andou && r.ultimoT >= 0) r.andandoEm = agora;
+  if (!querTocar || (st === 1 && andou)) {
+    r.ultimoT = t;
+    if (r.travadoDesde) {
+      if (r.cutucadas) diag(`internet: o vídeo voltou a andar (${Math.round((agora - r.travadoDesde) / 1000)} s parado)`);
+      r.travadoDesde = 0;
+      r.cutucadas = 0;
+      if (!querTocar || st === 1) r.querTocar = false;
+    }
+    if (st === 1) r.querTocar = false;
+    atualizarAvisoRede();
+    return;
+  }
+  if (!r.travadoDesde) r.travadoDesde = agora;
+  r.querTocar = true;
+  atualizarAvisoRede();
+  // Com internet, mas travado: pede o trecho de novo. Depois de 3 tentativas, recarrega o player no mesmo ponto.
+  if (r.online && agora - r.travadoDesde >= REDE_CUTUCAR_MS && agora - r.ultimaCutucada >= 10000) {
+    if (r.cutucadas >= 3 && S.registro?.estudo) {
+      r.cutucadas = 0;
+      recarregarPlayer();
+    } else {
+      r.cutucadas++;
+      cutucarPlayer();
+    }
+  }
+}
+
+/** Pede ao player o trecho atual de novo (o YouTube refaz o download a partir dali). */
+function cutucarPlayer() {
+  const p = S.player;
+  if (!p) return;
+  S.rede.ultimaCutucada = performance.now();
+  const t = p.tempo();
+  diag(`internet: vídeo parado em ${t.toFixed(1)} s, pedindo o trecho de novo`);
+  try { p.irPara(t, true); } catch { /* nada */ }
+  if (S.rede.querTocar) p.tocar();
+}
+
+/** Recria o player no mesmo ponto (depois de um erro sem internet, ou travado demais). */
+async function recarregarPlayer() {
+  const p = S.player;
+  const reg = S.registro;
+  if (!p || !reg) return;
+  const t = p.tempo();
+  const tocar = S.rede.querTocar || S.tocandoLogico;
+  S.rede.recarregar = false;
+  S.rede.ultimaCutucada = performance.now();
+  if (!reg.estudo) { abrirVideo(reg, t, S.origem || 'youtube'); return; } // ainda pegava a legenda: começa de novo
+  diag(`internet: recarregando o player em ${t.toFixed(1)} s`);
+  $('#erro-player').hidden = true;
+  try {
+    await p.carregar(reg.id, t);
+  } catch (e) {
+    if (S.player !== p) return;
+    diag(`internet: o player não recarregou: ${detalheErro(e)}`);
+    S.rede.recarregar = true; // tenta de novo na próxima volta da internet
+    atualizarAvisoRede(true);
+    return;
+  }
+  if (S.player !== p) return;
+  aplicarVelocidadeSalva();
+  if (tocar) p.tocar();
+}
+
+/** A internet voltou: continua de onde parou. */
+function recuperarRede() {
+  const r = S.rede;
+  const reg = S.registro;
+  if (!reg || !r.online) { atualizarAvisoRede(); return; }
+  if (r.reabrir && r.reabrir.reg === reg) {
+    const { inicio, origem } = r.reabrir;
+    r.reabrir = null;
+    abrirVideo(reg, inicio, origem);
+    return;
+  }
+  if (r.recarregar) { recarregarPlayer(); return; }
+  if (r.querTocar || S.player?.estado() === 3) cutucarPlayer();
+  atualizarAvisoRede();
+}
+
+/** Aviso do aparelho (eventos online/offline da página e, no app Android 11+, o próprio Android). */
+function aoMudarRede(online) {
+  const r = S.rede;
+  if (r.online === online) return;
+  r.online = online;
+  diag(`internet: ${online ? 'voltou' : 'caiu'}`);
+  if (!online) {
+    r.querTocar = r.querTocar || S.tocandoLogico;
+    atualizarAvisoRede(true);
+    return;
+  }
+  r.cutucadas = 0;
+  // Um instante para a conexão firmar antes de pedir o vídeo de novo.
+  setTimeout(recuperarRede, 800);
+}
+
+window.addEventListener('online', () => aoMudarRede(true));
+window.addEventListener('offline', () => aoMudarRede(false));
+window.ldRede = (v) => aoMudarRede(v === '1' || v === true);
+
 // ============================================================ histórico do YouTube (app Android 10+)
 // O player embutido não põe o vídeo no histórico da conta. O app avisa o YouTube (com a conta conectada):
-// "inicio" quando o vídeo começa de verdade (com som, sem anúncio) e "progresso" a cada 20 s, ao pausar e
-// ao sair (para o histórico guardar até onde a pessoa assistiu).
+// "preparar" quando o vídeo abre (o app já busca os endereços de registro), "inicio" quando o vídeo começa
+// de verdade (com som, sem anúncio) e "progresso" a cada 10 s, ao pausar, ao pular para outro ponto e ao
+// sair (para o histórico guardar até onde a pessoa assistiu).
 
 function avisarHistorico(evento, forcar = false) {
   const reg = S.registro;
@@ -2273,7 +2447,7 @@ function avisarHistorico(evento, forcar = false) {
     S.histUltimo = agora;
   } else {
     if (S.histVideo !== reg.id) return;
-    if (!forcar && agora - S.histUltimo < 20000) return;
+    if (!forcar && agora - S.histUltimo < 10000) return;
     S.histUltimo = agora;
   }
   const t = p.tempo();
@@ -2331,6 +2505,7 @@ function tique() {
     S.ultimoProgresso = agora;
     atualizarProgresso();
     conferirAoVivo();
+    conferirRede(st, t);
   }
   if (st === 1 && agora - S.ultimoSalvamento >= 5000) {
     S.ultimoSalvamento = agora;
@@ -3632,6 +3807,9 @@ function ligarEventos() {
     S.memoriaNav = null;
     S.alvoNav = null;
     renderLegenda(true);
+    // O histórico do YouTube fica com o ponto novo (inclusive quando a pessoa volta no vídeo).
+    const p = S.player;
+    setTimeout(() => { if (S.player === p) avisarHistorico('progresso', true); }, 1500);
   });
 
   // tela cheia ou deitado: tocar na faixa mantém ela visível por mais 3 s

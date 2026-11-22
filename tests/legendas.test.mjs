@@ -231,13 +231,21 @@ test('Manual estilo TED: Automático fica desligado; ligado mantém (Laughter) s
   const esc = processar({ estudo: { falas } }, { modoFrases: 'desligado', esconderMarcacoes: true });
   const t = esc.unidades.map((u) => u.texto);
   assert.ok(!t.includes('(Laughter)'));
-  assert.ok(t.some((x) => x.includes('[Nope!]')));
+  assert.ok(t.includes('My boss just said: and walked away.') && !t.some((x) => x.includes('[')));
 });
 
-test('Esconder marcações: remove [clears throat] do meio e mantém [Nope!]', () => {
-  const r = esconderMarcacoes(F([[0, 1, 'all. [clears throat] the first'], [1, 2, '[Music]'], [2, 3, 'said [Nope!] ok']]));
-  assert.deepEqual(textos(r), ['all. the first', 'said [Nope!] ok']);
+test('Esconder marcações: tira tudo que está entre colchetes, no meio ou sozinho', () => {
+  const r = esconderMarcacoes(F([[0, 1, 'all. [clears throat] the first'], [1, 2, '[Music]'], [2, 3, 'said [Nope!] ok'],
+    [3, 4, '[Applause] [Music]'], [4, 5, 'Olá [Música] mundo [Aplausos]']]));
+  assert.deepEqual(textos(r), ['all. the first', 'said ok', 'Olá mundo']);
   assert.ok(ehMarcacao('(Laughter)') && ehMarcacao('[Música]') && !ehMarcacao('[Nope!] ok'));
+});
+
+test('Esconder marcações: mantém o tempo de cada palavra fora dos colchetes', () => {
+  const ps = [{ w: 'so', s: 0, e: 0.2 }, { w: '[clears', s: 0.2, e: 0.4 }, { w: 'throat]', s: 0.4, e: 0.6 }, { w: 'yes', s: 0.6, e: 0.9 }];
+  const [f] = esconderMarcacoes([{ s: 0, e: 1, t: 'so [clears throat] yes', ps }]);
+  assert.equal(f.t, 'so yes');
+  assert.deepEqual(f.ps.map((p) => [p.w, p.s]), [['so', 0], ['yes', 0.6]]);
 });
 
 test('Tradução pareada por palavra com o modo frases', () => {
