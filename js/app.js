@@ -3376,6 +3376,7 @@ async function iniciar() {
       estado: () => S.player?.estado(),
       textoDiagnostico,
       atualizarEstadoPacotes,
+      PACOTES, // os testes trocam os tamanhos pelos do modelo falso
     };
   }
 }

@@ -63,6 +63,26 @@ class Silencioso(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
+    def do_GET(self):
+        # Como o GitHub Pages: o .wasm vai comprimido (gzip) e o Content-Length é o tamanho comprimido,
+        # menor que o arquivo que o navegador entrega já descomprimido.
+        if self.path.split('?')[0].endswith('.wasm') and 'gzip' in self.headers.get('Accept-Encoding', ''):
+            import gzip
+            caminho = self.translate_path(self.path.split('?')[0])
+            try:
+                with open(caminho, 'rb') as f:
+                    corpo = gzip.compress(f.read(), 6)
+            except OSError:
+                return super().do_GET()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/wasm')
+            self.send_header('Content-Encoding', 'gzip')
+            self.send_header('Content-Length', str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+            return
+        return super().do_GET()
+
 
 def subir_servidor():
     socketserver.TCPServer.allow_reuse_address = True
@@ -1216,6 +1236,10 @@ def t_pontuacao_modelo(browser, base):
     expect(cartao.locator('.pm-baixar')).to_contain_text('MB')
     expect(cartao.locator('.pm-texto')).to_contain_text('Inglês')
     page.screenshot(path=os.path.join(CAPTURAS, 'android-pontuacao-oferta.png'))
+    # o app confere o tamanho exato de cada arquivo: aqui valem os tamanhos do modelo falso
+    page.evaluate(f"""(() => {{ const p = window.__ld.PACOTES.en;
+      p.bytesModelo = {os.path.getsize(os.path.join(pasta_modelo, 'falso.onnx'))};
+      p.bytesSp = {os.path.getsize(os.path.join(pasta_modelo, 'falso.spmodel'))}; }})()""")
     cartao.locator('.pm-baixar').click()
     expect(cartao).to_have_attribute('data-estado', 'erro', timeout=8000)
     expect(cartao.locator('.pm-texto')).to_contain_text('503')

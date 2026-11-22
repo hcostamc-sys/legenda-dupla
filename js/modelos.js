@@ -47,10 +47,13 @@ export async function estadoPacote(id) {
  * Baixa um arquivo e grava direto no cache, sem juntar tudo na memória (o modelo tem até 210 MB):
  * os pedaços passam por um contador (progresso) a caminho do disco.
  */
-async function baixarArquivo(cache, url, aoBytes, sinal) {
+async function baixarArquivo(cache, url, tamanho, aoBytes, sinal) {
   const r = await fetch(url, { signal: sinal, credentials: 'omit', cache: 'no-store' });
   if (!r.ok) throw new Error(`O servidor respondeu ${r.status}.`);
-  const esperado = Number(r.headers.get('content-length')) || 0;
+  // Confere pelo tamanho conhecido do arquivo. O Content-Length não serve: quando o servidor manda
+  // comprimido (o GitHub Pages faz isso com o motor .wasm), ele é o tamanho comprimido, menor que o
+  // arquivo que chega aqui já descomprimido. Foi isso que dava "download incompleto" aos 12 MB.
+  const esperado = tamanho || (r.headers.get('content-encoding') ? 0 : Number(r.headers.get('content-length')) || 0);
   let recebidos = 0;
   let corpo;
   if (r.body?.pipeThrough && typeof TransformStream === 'function') {
@@ -69,7 +72,9 @@ async function baixarArquivo(cache, url, aoBytes, sinal) {
   await cache.put(url, new Response(corpo, { headers: { 'Content-Type': 'application/octet-stream' } }));
   if (esperado && recebidos !== esperado) {
     await cache.delete(url);
-    throw new Error('O download veio incompleto. Tente de novo.');
+    const e = new Error(`O download veio incompleto (${recebidos} de ${esperado} bytes).`);
+    e.repetir = true;
+    throw e;
   }
 }
 
@@ -90,8 +95,22 @@ export async function baixarPacote(id, { aoProgresso = () => {}, sinal } = {}) {
   let feitos = 0;
   aoProgresso(0, total);
   try {
-    for (const [url] of lista) {
-      await baixarArquivo(cache, url, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); }, sinal);
+    for (const [url, tamanho] of lista) {
+      // Internet instável: tenta o mesmo arquivo até 3 vezes antes de desistir.
+      for (let tentativa = 1; ; tentativa++) {
+        const antes = feitos;
+        try {
+          await baixarArquivo(cache, url, tamanho, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); }, sinal);
+          break;
+        } catch (e) {
+          feitos = antes;
+          aoProgresso(feitos, total);
+          const deRede = e?.repetir || e instanceof TypeError; // TypeError: a conexão caiu no meio
+          if (e?.name === 'AbortError' || !deRede || tentativa >= 3) throw e;
+          await new Promise((ok) => setTimeout(ok, 2000 * tentativa));
+          if (sinal?.aborted) throw new DOMException('cancelado', 'AbortError');
+        }
+      }
     }
   } catch (e) {
     // Não deixa o pacote pela metade (o motor fica: serve para o outro pacote).
