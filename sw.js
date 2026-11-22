@@ -1,6 +1,6 @@
 // sw.js — rede primeiro, cache como reserva, só para arquivos do próprio site (PLANO.md seção 4).
 // Ao mudar qualquer arquivo do site, troque o nome do cache (ld-v2, ld-v4...).
-const CACHE = 'ld-v7';
+const CACHE = 'ld-v8';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ARQUIVOS = [
   './js/app.js',
   './js/legendas.js',
   './js/traducao.js',
+  './js/timedtext.js',
   './js/player.js',
   './js/gestos.js',
   './js/armazenamento.js',

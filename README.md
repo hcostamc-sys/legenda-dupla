@@ -68,14 +68,16 @@ A mesma ajuda existe dentro do app (link no rodapé da biblioteca). Pode mudar s
 - O app depende de partes não documentadas do player do YouTube; se o YouTube mudar, pode precisar de ajuste.
 - A tradução automática usa o tradutor público do Google (o mesmo do Chrome), sem chave e sem custo, mas ele não é documentado oficialmente: se o Google mudar ou limitar, aparece “Não consegui traduzir” com o botão **Tentar de novo**. Nesse caso, baixe também a legenda em português no DownSub. O texto da legenda é enviado ao Google para ser traduzido.
 
-## App Android (protótipo, em teste)
+## App Android (pega a legenda do YouTube sozinho)
 
-Teste para o app pegar a legenda sozinho: o próprio player do YouTube baixa a legenda (com o token que ele mesmo gera) e o app Android guarda uma cópia. Num site isso não é possível.
+No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a legenda (com o que o YouTube exige) e o app guarda uma cópia. Num site isso não é possível, por isso o celular Android usa o app.
 
-- Baixar: https://github.com/hcostamc-sys/legenda-dupla/releases/download/android-prototipo/legenda-dupla-android.apk
-- O app abre a página de teste `prototipo.html`, que mostra as legendas do vídeo, pede uma (com ou sem a tradução do YouTube), mostra o que foi capturado e gera um relatório para copiar.
-- Código: pasta `android/` (Java, WebView). O GitHub Actions compila e publica o APK a cada mudança nessa pasta (`.github/workflows/android.yml`).
-- Áudio em outro idioma continua impossível: o player embutido não deixa escolher a faixa de áudio.
+- Baixar e instalar (o mesmo link sempre traz a versão mais nova, que instala por cima): https://github.com/hcostamc-sys/legenda-dupla/releases/download/android-prototipo/legenda-dupla-android.apk
+- Uso: no app do YouTube, **Compartilhar → Legenda Dupla**. O vídeo abre e aparece a escolha do idioma da legenda (já vem marcado o idioma falado) e da tradução. A tradução é a do app, fala por fala, no tempo de cada fala. Também funciona colando o link e tocando em **Abrir vídeo**, sem arquivo.
+- O vídeo fica na biblioteca com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
+- Arquivos do DownSub continuam funcionando (para vídeos sem legenda no YouTube).
+- Limitações: o app não entra na sua conta do YouTube, então pode ter anúncios; áudio em outro idioma não dá para escolher (o player embutido não oferece); depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
+- Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
 ## Como atualizar o site
 

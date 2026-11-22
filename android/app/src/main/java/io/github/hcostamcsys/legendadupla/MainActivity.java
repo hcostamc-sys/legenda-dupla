@@ -2,9 +2,14 @@ package io.github.hcostamcsys.legendadupla;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -32,17 +37,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Protótipo: abre a página de teste do Legenda Dupla numa WebView e
+ * App Android do Legenda Dupla: abre o site numa WebView e
  * 1) injeta o gancho (assets/gancho.js) no player do YouTube, que copia a legenda que o player baixa;
- * 2) anota os pedidos de legenda que passam pela WebView (diagnóstico);
- * 3) oferece à página o objeto LDNativo para baixar de novo uma legenda pelo próprio Android (plano B).
+ * 2) recebe o Compartilhar do app do YouTube;
+ * 3) oferece à página o objeto LDNativo: tela ligada e, no teste, baixar de novo uma legenda;
+ * 4) tela cheia (deitado) quando a página pede.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
-    private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/prototipo.html";
+    private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
 
     private WebView web;
+    private View telaCheia;
+    private WebChromeClient.CustomViewCallback fimTelaCheia;
     private String agenteUsuario = "";
     private final ExecutorService rede = Executors.newSingleThreadExecutor();
 
@@ -88,7 +96,23 @@ public class MainActivity extends Activity {
             ponte = true;
         }
 
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (telaCheia != null) { callback.onCustomViewHidden(); return; }
+                telaCheia = view;
+                fimTelaCheia = callback;
+                ((FrameLayout) getWindow().getDecorView()).addView(view, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                esconderBarras(true);
+                setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                sairTelaCheia();
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest pedido) {
@@ -141,11 +165,36 @@ public class MainActivity extends Activity {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return "";
         String texto = intent.getStringExtra(Intent.EXTRA_TEXT);
         if (texto == null || texto.isEmpty()) return "";
-        return "&link=" + Uri.encode(texto);
+        return "&text=" + Uri.encode(texto);
+    }
+
+    private void esconderBarras(boolean esconder) {
+        View decor = getWindow().getDecorView();
+        if (esconder) {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        } else {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
+    }
+
+    private void sairTelaCheia() {
+        if (telaCheia == null) return;
+        ((FrameLayout) getWindow().getDecorView()).removeView(telaCheia);
+        telaCheia = null;
+        esconderBarras(false);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        if (fimTelaCheia != null) {
+            WebChromeClient.CustomViewCallback cb = fimTelaCheia;
+            fimTelaCheia = null;
+            cb.onCustomViewHidden();
+        }
     }
 
     @Override
     public void onBackPressed() {
+        if (telaCheia != null) { sairTelaCheia(); return; }
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
     }
@@ -165,10 +214,15 @@ public class MainActivity extends Activity {
         web.evaluateJavascript(js, null);
     }
 
-    /** Mensagem da página: {"acao":"baixar","url":"...","id":"..."} */
+    /** Mensagens da página: {"acao":"telaLigada","ligada":true} ou {"acao":"baixar","url":"...","id":"..."} */
     private void aoMensagem(String dados, JavaScriptReplyProxy resposta) {
         try {
             JSONObject o = new JSONObject(dados == null ? "{}" : dados);
+            if ("telaLigada".equals(o.optString("acao"))) {
+                if (o.optBoolean("ligada")) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                return;
+            }
             if (!"baixar".equals(o.optString("acao"))) return;
             final String url = o.optString("url");
             final String id = o.optString("id");

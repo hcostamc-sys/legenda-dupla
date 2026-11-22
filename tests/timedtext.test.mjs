@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lerTimedText, paraSrt, infoUrl } from '../js/timedtext.js';
+import { lerTimedText, paraSrt, infoUrl, faixaSugerida } from '../js/timedtext.js';
 
 test('json3: junta os pedaços de cada evento e ignora eventos sem texto', () => {
   const json = JSON.stringify({
@@ -49,4 +49,33 @@ test('paraSrt e infoUrl', () => {
   const i = infoUrl('https://www.youtube.com/api/timedtext?v=abc&lang=en&kind=asr&tlang=pt&fmt=json3&pot=XYZ');
   assert.deepEqual(i, { video: 'abc', idioma: 'en', traducao: 'pt', formato: 'json3', automatica: true, token: true });
   assert.equal(infoUrl('/api/timedtext?v=abc&lang=fr').token, false);
+});
+
+test('json3 da legenda automática: janelas sobrepostas viram falas em sequência', () => {
+  const json = JSON.stringify({
+    events: [
+      { tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'so today' }, { utf8: ' we talk', tOffsetMs: 600 }] },
+      { tStartMs: 2000, dDurationMs: 10, aAppend: 1, segs: [{ utf8: '\n' }] },
+      { tStartMs: 2010, dDurationMs: 4000, segs: [{ utf8: 'about' }, { utf8: ' creativity', tOffsetMs: 500 }] },
+    ],
+  });
+  const r = lerTimedText(json);
+  assert.deepEqual(r.falas, [{ s: 0, e: 2.01, t: 'so today we talk' }, { s: 2.01, e: 6.01, t: 'about creativity' }]);
+});
+
+test('faixaSugerida: idioma da legenda automática, preferindo a feita por pessoa', () => {
+  const f = [
+    { languageCode: 'pt-BR', kind: '' },
+    { languageCode: 'fr', kind: 'asr' },
+    { languageCode: 'fr-CA', kind: '' },
+    { languageCode: 'en', kind: '' },
+  ];
+  assert.equal(faixaSugerida(f), 2);
+  assert.equal(faixaSugerida([{ languageCode: 'en', kind: 'asr' }]), 0);
+  // sem automática: idioma dos ajustes, depois inglês, depois a primeira
+  const g = [{ languageCode: 'af' }, { languageCode: 'en' }, { languageCode: 'fr' }];
+  assert.equal(faixaSugerida(g, 'fr'), 2);
+  assert.equal(faixaSugerida(g), 1);
+  assert.equal(faixaSugerida([{ languageCode: 'de' }]), 0);
+  assert.equal(faixaSugerida([]), -1);
 });

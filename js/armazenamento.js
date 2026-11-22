@@ -188,7 +188,11 @@ function limparRegistro(v) {
     criadoEm: typeof v.criadoEm === 'string' ? v.criadoEm : new Date().toISOString(),
     abertoEm: typeof v.abertoEm === 'string' ? v.abertoEm : new Date(0).toISOString(),
     posicao: Number.isFinite(v.posicao) ? v.posicao : 0,
-    estudo: { arquivo: String(v.estudo.arquivo || ''), falas: v.estudo.falas.map(({ s, e, t }) => ({ s, e, t })) },
+    estudo: {
+      arquivo: String(v.estudo.arquivo || ''),
+      falas: v.estudo.falas.map(({ s, e, t }) => ({ s, e, t })),
+      ...(v.estudo.origem === 'youtube' ? { origem: 'youtube' } : {}),
+    },
     traducao: v.traducao ? { arquivo: String(v.traducao.arquivo || ''), falas: v.traducao.falas.map(({ s, e, t }) => ({ s, e, t })) } : null,
     ajusteEstudo: Number.isFinite(v.ajusteEstudo) ? v.ajusteEstudo : 0,
     ajusteTraducao: Number.isFinite(v.ajusteTraducao) ? v.ajusteTraducao : 0,

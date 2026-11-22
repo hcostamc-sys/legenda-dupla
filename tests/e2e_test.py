@@ -721,6 +721,66 @@ def t_prototipo(page, base):
     assert 'Capturas: 3' in rel and 'versão do teste 2' in rel and 'token sim' in rel and 'Pedidos de legenda vistos pelo Android: 1' in rel, rel
 
 
+@caso('12. App Android: só o link, escolha do idioma, legenda do YouTube e tradução do app')
+def t_android(browser, base):
+    from urllib.parse import quote
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android')
+    expect(page.locator('#dica-android')).to_be_visible()
+    page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
+    expect(page.locator('#btn-abrir')).to_be_enabled()  # sem arquivo: basta o link
+    page.click('#btn-abrir')
+    expect(page.locator('#tela-idioma')).to_be_visible()
+    # sugerida: inglês feita por pessoa (a automática indica o idioma falado)
+    expect(page.locator('#sel-legenda-video')).to_have_value('1')
+    expect(page.locator('#sel-legenda-video option')).to_have_text(['Inglês (automática)', 'Inglês', 'Português (Brasil)'])
+    expect(page.locator('#sel-traducao-video')).to_have_value('pt')
+    os.makedirs(CAPTURAS, exist_ok=True)
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-escolha-idioma.png'))
+    page.click('#idioma-ok')
+    expect(page.locator('#tela-idioma')).to_be_hidden()
+    expect(page.locator('#toast')).to_contain_text('40 falas')
+    # a legenda do "anúncio" (outro vídeo) foi ignorada
+    assert page.evaluate('window.__ld.S.unidades.length') == 40
+    assert page.evaluate('window.__ld.S.registro.estudo.origem') == 'youtube'
+    assert page.evaluate('window.__ld.S.player.legendasEscondidas') is True
+    page.click('#btn-tocar-grande')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    expect(page.locator('#caixa-l1')).to_contain_text('from YouTube')
+    expect(page.locator('#caixa-l2')).to_contain_text('PT: Line')  # tradução do app
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-assistir.png'))
+    # trocar o idioma pelo ⚙ Ajustes
+    page.click('#btn-ajustes')
+    expect(page.locator('#btn-trocar-legenda')).to_be_visible()
+    page.click('#btn-trocar-legenda')
+    expect(page.locator('#tela-idioma')).to_be_visible()
+    page.select_option('#sel-legenda-video', '0')
+    page.click('#idioma-ok')
+    esperar(lambda: page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[Inglês (auto-generated)]'), msg='trocou para a automática')
+    assert page.evaluate('window.__ld.S.frases') is True  # automática: frases montadas
+    # volta para a biblioteca: o vídeo ficou salvo e reabre sem perguntar
+    page.click('#btn-voltar')
+    expect(page.locator('.item-bib')).to_have_count(1)
+    page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
+    page.click('#btn-abrir')
+    esperar(lambda: page.evaluate('window.__ld.S.unidades.length') > 0, msg='reabriu com a legenda salva')
+    time.sleep(0.3)
+    expect(page.locator('#tela-idioma')).to_be_hidden()
+    page.click('#btn-voltar')
+    # compartilhar do app do YouTube: abre direto e pergunta o idioma
+    page.goto(base + '?mock=1&text=' + quote('Olha https://youtu.be/DDDDDDDDDDD'))
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    expect(page.locator('#tela-idioma')).to_be_visible()
+    page.click('#idioma-cancelar')
+    expect(page.locator('#toast')).to_contain_text('Trocar o idioma da legenda')
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('10. Capturas de tela nos quatro tamanhos')
 def t_capturas(browser, url, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
@@ -816,6 +876,7 @@ def main():
         t_prototipo(page, base)
         ctx.close()
         t_capturas(browser, url, en, pt)
+        t_android(browser, base)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)

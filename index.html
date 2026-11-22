@@ -31,6 +31,7 @@
       <button id="btn-colar" type="button" class="btn">Colar</button>
     </div>
     <p id="msg-link" class="msg" aria-live="polite"></p>
+    <p id="dica-android" class="dica so-android">No app Android, a legenda vem do próprio YouTube: basta o link (ou <b>Compartilhar → Legenda Dupla</b> no app do YouTube). Os arquivos abaixo são opcionais.</p>
 
     <div id="zona-arquivos" class="zona-arquivos">
       <div class="escolha">
@@ -211,6 +212,11 @@
       <p class="dica">Use “−” se a legenda aparece atrasada e “+” se aparece adiantada.</p>
     </div>
 
+    <div id="grupo-legenda-youtube" class="grupo so-android">
+      <h3>Legenda do YouTube</h3>
+      <button id="btn-trocar-legenda" type="button" class="btn">Trocar o idioma da legenda deste vídeo</button>
+    </div>
+
     <div class="grupo">
       <h3>Tradução automática</h3>
       <p class="dica">Vale quando o vídeo não tem arquivo de tradução.</p>
@@ -283,6 +289,30 @@
 
   </div>
 </section>
+
+<!-- ============================== IDIOMA DA LEGENDA (app Android) ============================== -->
+<div id="tela-idioma" class="dialogo" hidden role="dialog" aria-modal="true" aria-labelledby="idioma-titulo">
+  <div class="dialogo-caixa caixa-idioma">
+    <h2 id="idioma-titulo">Legendas do vídeo</h2>
+    <label class="ajuste">Idioma falado no vídeo (a legenda que você estuda)
+      <select id="sel-legenda-video"></select>
+    </label>
+    <label class="ajuste">Tradução embaixo (feita pelo app, no tempo de cada fala)
+      <select id="sel-traducao-video">
+        <option value="pt">Português</option>
+        <option value="en">Inglês</option>
+        <option value="es">Espanhol</option>
+        <option value="fr">Francês</option>
+        <option value="nao">Não traduzir</option>
+      </select>
+    </label>
+    <p class="dica">O áudio em outro idioma não dá para escolher aqui: o player do YouTube usado fora do YouTube não tem essa opção.</p>
+    <div class="dialogo-botoes">
+      <button id="idioma-cancelar" type="button" class="btn">Agora não</button>
+      <button id="idioma-ok" type="button" class="btn btn-principal">Começar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ============================== DIÁLOGO E AVISOS ============================== -->
 <div id="dialogo" class="dialogo" hidden role="dialog" aria-modal="true" aria-labelledby="dialogo-texto">

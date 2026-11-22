@@ -617,6 +617,12 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .cp-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .cp-botoes .btn { padding: 0 8px; font-size: 15px; min-height: 44px; }
 
+/* Só no app Android (body.android) */
+body:not(.android) .so-android { display: none !important; }
+.caixa-idioma h2 { margin: 0 0 12px; font-size: 18px; }
+.caixa-idioma .ajuste { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.caixa-idioma select { min-height: 44px; }
+
 /* Escolha do trecho A–B: lista de falas na tela inteira */
 .tela-ab {
   position: fixed;

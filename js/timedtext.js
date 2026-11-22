@@ -2,7 +2,7 @@
 // json3, srv3 (XML com <p t= d=>), formato 1 (XML com <text start= dur=>) ou WebVTT.
 // Usado pelo protótipo do app Android (prototipo.html). Sem DOM: funciona também no Node (testes).
 
-import { lerLegenda } from './legendas.js';
+import { lerLegenda, corrigirSequencia } from './legendas.js';
 
 const ENTIDADES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -74,7 +74,8 @@ export function lerTimedText(texto) {
   if (!bruto) return { erro: 'Resposta vazia (o YouTube não entregou o texto).' };
   try {
     if (bruto[0] === '{') {
-      const falas = lerJson3(JSON.parse(bruto));
+      // corrigirSequencia: ordena, tira a rolagem da legenda automática e as sobreposições
+      const falas = corrigirSequencia(lerJson3(JSON.parse(bruto)));
       return falas.length ? { formato: 'json3', falas } : { erro: 'JSON sem falas.' };
     }
     if (/^WEBVTT/.test(bruto)) {
@@ -85,7 +86,7 @@ export function lerTimedText(texto) {
       let falas = lerSrv3(bruto);
       let formato = 'srv3';
       if (!falas.length) { falas = lerFormato1(bruto); formato = 'xml'; }
-      return falas.length ? { formato, falas } : { erro: 'XML sem falas.' };
+      return falas.length ? { formato, falas: corrigirSequencia(falas) } : { erro: 'XML sem falas.' };
     }
   } catch (e) {
     return { erro: `Não consegui ler: ${e.message}` };
@@ -124,4 +125,25 @@ export function infoUrl(url) {
   } catch {
     return { video: '', idioma: '', traducao: '', formato: '', automatica: false, token: false };
   }
+}
+
+// ---------------------------------------------------------------- escolha da faixa
+
+/**
+ * Faixa sugerida: a do idioma falado. A legenda automática do YouTube só existe no idioma do
+ * áudio, então ela indica o idioma; se houver uma feita por pessoa nesse idioma, ela é melhor.
+ */
+export function faixaSugerida(faixas, idiomaAjuste = 'auto') {
+  if (!faixas.length) return -1;
+  const base = (c) => String(c || '').split('-')[0];
+  const asr = faixas.find((f) => f.kind === 'asr');
+  let idioma = asr ? base(asr.languageCode) : '';
+  if (!idioma && idiomaAjuste !== 'auto' && faixas.some((f) => base(f.languageCode) === idiomaAjuste)) idioma = idiomaAjuste;
+  if (!idioma) {
+    const padrao = faixas.find((f) => f.is_default);
+    idioma = padrao ? base(padrao.languageCode) : faixas.some((f) => base(f.languageCode) === 'en') ? 'en' : base(faixas[0].languageCode);
+  }
+  const doIdioma = faixas.map((f, i) => ({ f, i })).filter(({ f }) => base(f.languageCode) === idioma);
+  const humana = doIdioma.find(({ f }) => f.kind !== 'asr');
+  return (humana || doIdioma[0] || { i: 0 }).i;
 }

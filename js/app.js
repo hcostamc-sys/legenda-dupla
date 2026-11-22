@@ -8,6 +8,7 @@ import {
 } from './legendas.js';
 import { textosPendentes, aplicarMapa, traduzirTodos, NOMES_IDIOMA } from './traducao.js';
 import { criarPlayer, MSG_API } from './player.js';
+import { lerTimedText, infoUrl, faixaSugerida } from './timedtext.js';
 import { ligarGestos } from './gestos.js';
 import {
   carregarAjustes, salvarAjustes, salvarVideo, obterVideo, listarVideos,
@@ -17,6 +18,17 @@ import {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const MOCK = new URLSearchParams(location.search).get('mock') === '1';
+
+// Dentro do app Android (?app=android na primeira abertura): a legenda vem do próprio YouTube
+// (PLANO.md 15.10). Fica guardado na sessão, porque o endereço perde os parâmetros depois.
+const ANDROID = (() => {
+  try {
+    if (new URLSearchParams(location.search).get('app') === 'android') sessionStorage.setItem('ld.android', '1');
+    return sessionStorage.getItem('ld.android') === '1';
+  } catch {
+    return new URLSearchParams(location.search).get('app') === 'android';
+  }
+})();
 
 // Valores fixos (antes eram ajustes; saíram do menu para deixá-lo simples).
 const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
@@ -62,6 +74,8 @@ const S = {
   trad: { estado: 'ocioso', feitos: 0, total: 0, controle: null },
   // formulário
   escolha: { estudo: null, traducao: null },
+  // legenda pega do YouTube (app Android)
+  yt: { estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false },
 };
 
 // ============================================================ utilidades de interface
@@ -166,7 +180,8 @@ function validarFormulario() {
     msg.textContent = '';
     msg.className = 'msg';
   }
-  $('#btn-abrir').disabled = !(link && S.escolha.estudo);
+  // No app Android basta o link: a legenda vem do YouTube.
+  $('#btn-abrir').disabled = !(link && (S.escolha.estudo || ANDROID));
 }
 
 /** Idioma da tradução: o da tradução automática (ou português, se ela estiver desligada). */
@@ -366,9 +381,21 @@ function limparFormulario() {
 
 async function abrirDoFormulario() {
   const link = lerLink($('#campo-link').value);
-  if (!link || !S.escolha.estudo) return;
+  if (!link || (!S.escolha.estudo && !ANDROID)) return;
   const existente = await obterVideo(link.videoId);
   const agora = new Date().toISOString();
+  if (!S.escolha.estudo) {
+    // App Android, só o link: vídeo já na biblioteca abre como está; vídeo novo pega a legenda do YouTube.
+    const reg = existente ? { ...existente, abertoEm: agora } : {
+      id: link.videoId, titulo: '', criadoEm: agora, abertoEm: agora, posicao: 0,
+      estudo: null, traducao: null, ajusteEstudo: 0, ajusteTraducao: 0, traducaoAuto: null,
+    };
+    const inicio = link.inicioSeg > 0 ? link.inicioSeg : existente ? Math.max(0, reg.posicao - 2) : 0;
+    if (existente) await salvarVideo(reg);
+    limparFormulario();
+    abrirVideo(reg, inicio);
+    return;
+  }
   const so = (e) => (e ? { arquivo: e.arquivo, falas: e.falas } : null);
   const estudo = so(S.escolha.estudo);
   const reg = {
@@ -700,6 +727,8 @@ async function abrirVideo(reg, inicio) {
   });
   p.on('erro', (codigo) => mostrarErroPlayer(codigo));
   p.on('autoplayBloqueado', mostrarAvisoToque);
+  zerarLegendaYoutube();
+  if (ANDROID && !reg.estudo) p.manterLegendas?.(true);
   iniciarLaco();
   try {
     await p.carregar(reg.id, inicio);
@@ -712,6 +741,7 @@ async function abrirVideo(reg, inicio) {
   S.pronto = true;
   aplicarVelocidadeSalva();
   lerTitulo();
+  if (ANDROID && !reg.estudo) escolherLegendaYoutube();
   if (corrigido) toast(`As legendas estavam trocadas e foram arrumadas: a tradução (${NOMES_IDIOMAS[idiomaAlvo()]}) fica embaixo.`, 4000);
   $('#titulo-video').textContent = tituloAtual();
   atualizarProgresso(true);
@@ -727,6 +757,8 @@ function encerrarPlayer() {
 }
 
 function fecharVideo() {
+  zerarLegendaYoutube();
+  $('#tela-idioma').hidden = true;
   encerrarPlayer();
   cancelarToqueLivre();
   cancelarTraducaoAuto();
@@ -846,6 +878,9 @@ async function iniciarTraducaoAuto() {
 function atualizarAviso() {
   const partes = [];
   let erro = false;
+  if (S.yt.estado === 'pegando') partes.push('Pegando a legenda do YouTube…');
+  else if (S.yt.estado === 'erro') { partes.push('Não consegui pegar a legenda do YouTube.'); erro = true; }
+  else if (S.yt.estado === 'sem') partes.push('Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
   if (S.frases) partes.push('Frases montadas pelo app');
   if (traducaoAutomaticaAtiva()) {
     const nome = NOMES_IDIOMA[S.ajustes.destino] || S.ajustes.destino;
@@ -862,6 +897,159 @@ function atualizarAviso() {
   }
   $('#aviso-legenda').textContent = partes.join(' · ');
   $('#btn-tentar-traducao').hidden = !erro;
+}
+
+// ============================================================ legenda do próprio YouTube (app Android, 15.10)
+// O app Android injeta um gancho no player do YouTube que manda para esta página uma cópia de
+// cada legenda que o player baixa (/api/timedtext). Aqui: escolher a faixa, pedir e guardar.
+
+const NOMES_IDIOMA_LONGOS = { pt: 'Português', en: 'Inglês', es: 'Espanhol', fr: 'Francês', it: 'Italiano', de: 'Alemão' };
+
+function chaveFaixa(languageCode, asr) {
+  return `${languageCode}|${asr ? 'asr' : ''}`;
+}
+
+function nomeFaixa(f) {
+  const nome = f.languageName || f.displayName || NOMES_IDIOMA_LONGOS[(f.languageCode || '').split('-')[0]] || f.languageCode;
+  return `${nome}${f.kind === 'asr' ? ' (automática)' : ''}`;
+}
+
+function zerarLegendaYoutube() {
+  clearTimeout(S.yt.timer);
+  S.yt = { estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false };
+}
+
+/** Espera o player informar as faixas (até 15 s) e abre a escolha de idioma. */
+async function escolherLegendaYoutube(trocando = false) {
+  const p = S.player;
+  const reg = S.registro;
+  if (!p || !reg || !p.faixasLegenda) return;
+  p.manterLegendas?.(true);
+  S.yt.trocando = trocando;
+  S.yt.tentativas = 0;
+  S.yt.estado = 'pegando';
+  atualizarAviso();
+  let r = p.faixasLegenda();
+  for (let k = 0; k < 30 && !r.faixas.length; k++) {
+    await new Promise((ok) => setTimeout(ok, 500));
+    if (S.player !== p || S.registro !== reg) return;
+    r = p.faixasLegenda();
+  }
+  if (!r.faixas.length) {
+    S.yt.estado = 'sem';
+    atualizarAviso();
+    p.esconderLegendas?.();
+    toast('Este vídeo não tem legenda no YouTube. Para estudar com ele, use arquivos de legenda (DownSub).', 6000);
+    return;
+  }
+  const escolha = await perguntarIdioma(r.faixas);
+  if (S.player !== p || S.registro !== reg) return;
+  if (!escolha) {
+    S.yt.estado = 'ocioso';
+    p.esconderLegendas?.();
+    atualizarAviso();
+    if (!reg.estudo) toast('Sem legenda. Para escolher depois: ⚙ Ajustes → Trocar o idioma da legenda.', 4000);
+    return;
+  }
+  if (escolha.destino !== S.ajustes.destino) {
+    S.ajustes.destino = escolha.destino;
+    salvar();
+  }
+  pedirFaixa(escolha.faixa);
+}
+
+/** Janela de escolha: idioma da legenda (as faixas do vídeo) e tradução. Devolve { faixa, destino } ou null. */
+function perguntarIdioma(faixas) {
+  return new Promise((resolve) => {
+    const sel = $('#sel-legenda-video');
+    sel.textContent = '';
+    faixas.forEach((f, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = nomeFaixa(f);
+      sel.appendChild(o);
+    });
+    sel.value = String(faixaSugerida(faixas, S.ajustes.idioma));
+    $('#sel-traducao-video').value = S.ajustes.destino;
+    const tela = $('#tela-idioma');
+    tela.hidden = false;
+    $('#idioma-ok').focus();
+    const fim = (r) => {
+      tela.hidden = true;
+      $('#idioma-ok').onclick = null;
+      $('#idioma-cancelar').onclick = null;
+      resolve(r);
+    };
+    $('#idioma-ok').onclick = () => fim({ faixa: faixas[Number(sel.value)], destino: $('#sel-traducao-video').value });
+    $('#idioma-cancelar').onclick = () => fim(null);
+  });
+}
+
+/** Pede a faixa ao player. Se a legenda não chegar, tenta de novo (o player pode estar num anúncio). */
+function pedirFaixa(faixa) {
+  const p = S.player;
+  if (!p) return;
+  S.yt.faixa = faixa;
+  S.yt.estado = 'pegando';
+  atualizarAviso();
+  // Já chegou antes (o player baixa sozinho a legenda do idioma do aparelho): usa na hora.
+  const guardada = S.yt.capturas.get(chaveFaixa(faixa.languageCode, faixa.kind === 'asr'));
+  if (guardada) { aplicarLegendaYoutube(guardada); return; }
+  S.yt.tentativas += 1;
+  p.pedirLegenda(faixa);
+  clearTimeout(S.yt.timer);
+  S.yt.timer = setTimeout(() => {
+    if (S.player !== p || S.yt.estado !== 'pegando') return;
+    if (S.yt.tentativas < 8) { pedirFaixa(faixa); return; }
+    S.yt.estado = 'erro';
+    atualizarAviso();
+  }, 8000);
+}
+
+/** Cópia de uma legenda que o player baixou (vinda do gancho do app Android). */
+function aoReceberLegenda(ev) {
+  const d = ev.data;
+  if (!ANDROID || !d || typeof d !== 'object' || d.ldLegenda !== true) return;
+  let host = '';
+  try { host = new URL(ev.origin).hostname; } catch { /* nada */ }
+  if (!MOCK && !/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return;
+  const reg = S.registro;
+  if (!reg || Number(d.status) !== 200) return;
+  const info = infoUrl(d.url);
+  // Legenda de um anúncio (outro vídeo) ou traduzida pelo YouTube: não serve.
+  if (info.video !== reg.id || info.traducao) return;
+  const r = lerTimedText(d.texto);
+  if (!r.falas?.length) return;
+  const cap = { idioma: info.idioma, automatica: info.automatica, falas: r.falas };
+  S.yt.capturas.set(chaveFaixa(info.idioma, info.automatica), cap);
+  const f = S.yt.faixa;
+  if (S.yt.estado === 'pegando' && f && f.languageCode === info.idioma && (f.kind === 'asr') === info.automatica) {
+    aplicarLegendaYoutube(cap);
+  }
+}
+
+function aplicarLegendaYoutube(cap) {
+  const reg = S.registro;
+  const p = S.player;
+  if (!reg) return;
+  clearTimeout(S.yt.timer);
+  const titulo = reg.titulo || p?.titulo() || '';
+  const nome = nomeFaixa(S.yt.faixa || { languageCode: cap.idioma, kind: cap.automatica ? 'asr' : '' });
+  // "(auto-generated)" no nome faz o app montar frases inteiras, como nos arquivos do DownSub.
+  const rotulo = cap.automatica ? `${NOMES_IDIOMA_LONGOS[cap.idioma.split('-')[0]] || cap.idioma} (auto-generated)` : nome;
+  reg.estudo = { arquivo: `[${rotulo}] ${titulo || 'YouTube'}`, falas: cap.falas, origem: 'youtube' };
+  if (S.yt.trocando) { reg.traducao = null; reg.ajusteEstudo = 0; reg.ajusteTraducao = 0; }
+  reg.traducaoAuto = null;
+  if (!reg.titulo && titulo) reg.titulo = titulo;
+  S.yt.estado = 'ok';
+  S.yt.faixa = null;
+  S.tituloConferido = true; // a legenda veio do próprio vídeo: não há o que conferir
+  p?.esconderLegendas?.();
+  salvarVideo(reg);
+  zerarRepeticao();
+  reprocessar();
+  atualizarAviso();
+  toast(`Legenda em ${nome}: ${cap.falas.length.toLocaleString('pt-BR')} falas.`, 2500);
 }
 
 // ============================================================ primeiro play (7.2)
@@ -893,6 +1081,8 @@ function aoMudarEstado(st) {
     $('#aviso-toque').hidden = true;
     document.body.classList.add('gestos-ativos');
   }
+  // Pedido de legenda feito antes de um anúncio pode se perder: pede de novo quando o vídeo toca.
+  if (st === 1 && S.yt.estado === 'pegando' && S.yt.faixa) S.player?.pedirLegenda?.(S.yt.faixa);
   if (st === 1 && !S.ajustouVelInicio && S.pronto) {
     S.ajustouVelInicio = true;
     aplicarVelocidadeSalva(); // o player pode ter ignorado o pedido feito antes de tocar
@@ -928,6 +1118,7 @@ function conferirTitulo(tituloVideo) {
   if (!reg || !tituloVideo || S.tituloConferido) return;
   S.tituloConferido = true;
   const nome = reg.estudo?.arquivo || '';
+  if (reg.estudo?.origem === 'youtube') return; // a legenda veio do próprio vídeo
   if (!/^\s*\[/.test(nome)) return; // só nomes no padrão do DownSub trazem o título
   const doArquivo = tituloDoArquivo(nome);
   if (titulosParecidos(tituloVideo, doArquivo)) return;
@@ -951,6 +1142,8 @@ function alternarPlay() {
 // ============================================================ tela ligada (7.8)
 
 async function pedirTelaLigada() {
+  // App Android: a própria janela fica acesa (o Wake Lock pode não existir na WebView).
+  try { if (ANDROID) window.LDNativo?.postMessage(JSON.stringify({ acao: 'telaLigada', ligada: true })); } catch { /* nada */ }
   try {
     if (!('wakeLock' in navigator) || S.telaLigada || document.visibilityState !== 'visible') return;
     S.telaLigada = await navigator.wakeLock.request('screen');
@@ -961,6 +1154,7 @@ async function pedirTelaLigada() {
 }
 
 function soltarTelaLigada() {
+  try { if (ANDROID) window.LDNativo?.postMessage(JSON.stringify({ acao: 'telaLigada', ligada: false })); } catch { /* nada */ }
   try { S.telaLigada?.release(); } catch { /* nada */ }
   S.telaLigada = null;
 }
@@ -1700,6 +1894,7 @@ function sincronizarPainel() {
   montarVelocidades();
   const reg = S.registro;
   $('#grupo-sincronia').hidden = !reg;
+  $('#grupo-legenda-youtube').hidden = !reg;
   if (reg) {
     for (const bloco of $$('.ajuste-sinc')) {
       const alvo = bloco.dataset.alvo;
@@ -1813,6 +2008,12 @@ function lerCompartilhamento() {
     return;
   }
   $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
+  if (ANDROID) {
+    // App Android: o vídeo abre direto e a legenda vem do YouTube.
+    validarFormulario();
+    abrirDoFormulario();
+    return;
+  }
   const msg = $('#msg-link');
   msg.textContent = 'Link recebido. Agora escolha os arquivos de legenda.';
   msg.className = 'msg msg-alerta';
@@ -1879,9 +2080,15 @@ function ligarEventos() {
   $('#btn-fechar-ajustes').addEventListener('click', fecharPaineis);
   $('#fundo-painel').addEventListener('click', fecharPaineis);
   $('#btn-tentar-traducao').addEventListener('click', () => {
+    if (S.yt.estado === 'erro') { escolherLegendaYoutube(); return; }
     cancelarTraducaoAuto();
     iniciarTraducaoAuto();
   });
+  $('#btn-trocar-legenda').addEventListener('click', () => {
+    fecharPaineis();
+    if (S.registro) escolherLegendaYoutube(true);
+  });
+  window.addEventListener('message', aoReceberLegenda);
 
   // barra de progresso
   const barra = $('#barra-progresso');
@@ -1959,6 +2166,7 @@ function ligarEventos() {
 }
 
 async function iniciar() {
+  document.body.classList.toggle('android', ANDROID);
   aplicarAparencia();
   ligarEventos();
   lerCompartilhamento();

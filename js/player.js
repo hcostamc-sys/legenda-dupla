@@ -4,7 +4,10 @@
 // carregar(videoId, inicioSeg) -> Promise (resolvida no "pronto")
 // tocar() pausar() irPara(seg, buscar = true) tempo() duracao() estado() titulo()
 // velocidades() velocidade() definirVelocidade(v) destruir()
-// eventos (on): pronto, estado, velocidade, erro, autoplayBloqueado
+// eventos (on): pronto, estado, velocidade, erro, autoplayBloqueado, modulos
+//
+// Legendas do próprio YouTube (só no app Android, PLANO.md 15.10):
+// manterLegendas(sim) faixasLegenda() pedirLegenda(faixa) esconderLegendas()
 
 class Emissor {
   constructor() { this._ouvintes = {}; }
@@ -61,6 +64,33 @@ export class PlayerYouTube extends Emissor {
     this._legendasDesligadas = false;
     this._congelado = false; // pausa pedida, ainda sem confirmação do player
     this._token = 0;
+    this._manterLegendas = false; // app Android: o módulo de legendas fica até a legenda ser pega
+  }
+
+  /** true: não descarrega o módulo de legendas do YouTube (precisamos dele para pegar a legenda). */
+  manterLegendas(sim) { this._manterLegendas = !!sim; }
+
+  /** { faixas, traducoes } informadas pelo player (funções não documentadas). */
+  faixasLegenda() {
+    let faixas = [];
+    let traducoes = [];
+    try { this.yt?.loadModule('captions'); } catch { /* nada */ }
+    try { faixas = this.yt?.getOption('captions', 'tracklist') || []; } catch { /* nada */ }
+    try { traducoes = this.yt?.getOption('captions', 'translationLanguages') || []; } catch { /* nada */ }
+    return { faixas: Array.isArray(faixas) ? faixas : [], traducoes: Array.isArray(traducoes) ? traducoes : [] };
+  }
+
+  /** Faz o player baixar a legenda desta faixa (o gancho do app Android copia a resposta). */
+  pedirLegenda(faixa) {
+    try { this.yt?.loadModule('captions'); } catch { /* nada */ }
+    try { this.yt?.setOption('captions', 'track', { ...faixa }); return true; } catch { return false; }
+  }
+
+  /** Some com a legenda desenhada pelo YouTube (o app mostra a dele). */
+  esconderLegendas() {
+    this._manterLegendas = false;
+    try { this.yt?.setOption('captions', 'track', {}); } catch { /* nada */ }
+    this._aplicarSemLegendas();
   }
 
   async carregar(videoId, inicioSeg = 0) {
@@ -85,7 +115,7 @@ export class PlayerYouTube extends Emissor {
       this.yt = new window.YT.Player(iframe, {
         events: {
           onReady: () => {
-            this._aplicarSemLegendas();
+            if (!this._manterLegendas) this._aplicarSemLegendas();
             try { this._vel = this.yt.getPlaybackRate() || 1; } catch { /* nada */ }
             this.emitir('pronto');
             resolve();
@@ -96,7 +126,7 @@ export class PlayerYouTube extends Emissor {
             this._ler();
             if (!this._seekAtivo() && this._lido !== null) this._base = this._lido;
             this._marca = performance.now();
-            if (e.data === 1 && !this._legendasDesligadas) {
+            if (e.data === 1 && !this._legendasDesligadas && !this._manterLegendas) {
               this._aplicarSemLegendas();
               this._legendasDesligadas = true;
             }
@@ -109,6 +139,7 @@ export class PlayerYouTube extends Emissor {
           },
           onError: (e) => this.emitir('erro', e.data),
           onAutoplayBlocked: () => this.emitir('autoplayBloqueado'),
+          onApiChange: () => this.emitir('modulos'),
         },
       });
     });
@@ -226,6 +257,9 @@ export class PlayerFalso extends Emissor {
     super();
     this.container = container;
     this.opcoes = opcoes;
+    this._videoId = '';
+    this.legendasEscondidas = false;
+    this.pedidos = [];
     this._dur = 600;
     this._estado = -1;
     this._vel = 1;
@@ -237,6 +271,7 @@ export class PlayerFalso extends Emissor {
 
   carregar(videoId, inicioSeg = 0) {
     this.destruir();
+    this._videoId = videoId;
     const el = document.createElement('div');
     el.className = 'player-falso';
     el.id = 'yt';
@@ -307,6 +342,40 @@ export class PlayerFalso extends Emissor {
   duracao() { return this._dur; }
   estado() { return this._estado; }
   titulo() { return 'Vídeo de teste'; }
+
+  manterLegendas() {}
+
+  /** Faixas de teste: inglês automática, inglês feita por pessoa e português. ?mockSemLegenda=1: nenhuma. */
+  faixasLegenda() {
+    if (this.opcoes.semLegenda) return { faixas: [], traducoes: [] };
+    return {
+      faixas: [
+        { languageCode: 'en', languageName: 'Inglês', kind: 'asr', vss_id: 'a.en' },
+        { languageCode: 'en', languageName: 'Inglês', kind: '', vss_id: '.en' },
+        { languageCode: 'pt-BR', languageName: 'Português (Brasil)', kind: '', vss_id: '.pt-BR' },
+      ],
+      traducoes: [{ languageCode: 'pt', languageName: 'Português' }],
+    };
+  }
+
+  /** Simula o gancho do app Android: manda pela janela a resposta de /api/timedtext em json3. */
+  pedirLegenda(faixa) {
+    this.pedidos.push(faixa);
+    const pt = faixa.languageCode.startsWith('pt');
+    const events = [];
+    for (let i = 0; i < 40; i++) {
+      const s = Math.round((0.5 + i * 2.2) * 1000);
+      events.push({ tStartMs: s, dDurationMs: 2000, segs: [{ utf8: pt ? `Linha ${i + 1} do YouTube, com ação.` : `Line ${i + 1} from YouTube, with words.` }] });
+    }
+    const kind = faixa.kind === 'asr' ? '&kind=asr' : '';
+    const url = `https://www.youtube.com/api/timedtext?v=${this._videoId}&lang=${faixa.languageCode}${kind}&fmt=json3`;
+    // primeiro a legenda de um "anúncio" (outro vídeo), que deve ser ignorada
+    setTimeout(() => window.postMessage({ ldLegenda: true, via: 'mock', status: 200, url: url.replace(this._videoId, 'ANUNCIO0000'), texto: JSON.stringify({ events: events.slice(0, 2) }) }, '*'), 40);
+    setTimeout(() => window.postMessage({ ldLegenda: true, via: 'mock', status: 200, url, texto: JSON.stringify({ events }) }, '*'), 120);
+    return true;
+  }
+
+  esconderLegendas() { this.legendasEscondidas = true; }
   velocidades() { return VELS_FALSAS.slice(); }
   velocidade() { return this._vel; }
 
@@ -330,6 +399,6 @@ export class PlayerFalso extends Emissor {
 /** Cria o player certo conforme o endereço (?mock=1 usa o falso). */
 export function criarPlayer(container) {
   const p = new URLSearchParams(location.search);
-  if (p.get('mock') === '1') return new PlayerFalso(container, { erro: p.get('mockErro') });
+  if (p.get('mock') === '1') return new PlayerFalso(container, { erro: p.get('mockErro'), semLegenda: p.get('mockSemLegenda') === '1' });
   return new PlayerYouTube(container);
 }
