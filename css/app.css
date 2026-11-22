@@ -110,6 +110,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .cabecalho-bib { display: flex; align-items: center; gap: 10px; }
 .cabecalho-bib img { border-radius: 10px; }
 .cabecalho-bib h1 { font-size: 24px; margin: 8px 0; }
+.btn-ir-youtube { margin-left: auto; gap: 6px; min-height: 42px; border-radius: 999px; padding: 0 16px; }
+.btn-ir-youtube svg { width: 22px; height: 22px; fill: currentColor; }
 
 .cartao {
   background: var(--fundo-2);
@@ -228,22 +230,47 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .barra-topo {
   display: flex;
   align-items: center;
-  gap: 0;
-  min-height: 48px;
-  padding: env(safe-area-inset-top) 2px 0;
+  gap: 2px;
+  min-height: 56px;
+  padding: env(safe-area-inset-top) 4px 0;
   flex: none;
 }
 .barra-topo .btn-topo { min-width: 44px; min-height: 44px; font-size: 20px; padding: 0 8px; }
-#btn-voltar { font-size: 22px; }
+/* Botões redondos só com ícone (voltar, tela cheia, ajustes) */
+.btn-icone {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--texto);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  touch-action: manipulation;
+}
+.btn-icone svg { width: 24px; height: 24px; fill: currentColor; }
+.btn-icone:active { background: #333; }
+.btn-icone:focus-visible { outline: 2px solid var(--ambar); outline-offset: 0; }
+#btn-voltar { background: var(--fundo-3); width: 40px; height: 40px; margin: 0 4px 0 2px; }
+#btn-voltar:active { background: #3a3a3a; }
 .titulo-video {
   flex: 1;
   min-width: 0;
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
   margin: 0 4px;
-  white-space: nowrap;
+  /* até duas linhas, com reticências no fim */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .area-video {
@@ -283,6 +310,44 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 }
 .gestos-ativos .camada-gestos { pointer-events: auto; }
 .toque-livre .camada-gestos { pointer-events: none; }
+/* Toque de verdade do app Android no "Pular" do YouTube: tudo que fica por cima do player deixa o toque passar */
+.toque-nativo .camada-gestos, .toque-nativo .dialogo, .toque-nativo .selo-anuncio, .toque-nativo .btn-tocar-grande { pointer-events: none !important; }
+
+/* Anúncio do YouTube (app Android) */
+.selo-anuncio {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#selo-anuncio-texto {
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--ambar);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.btn-pular {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ambar);
+  color: #111;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.btn-pular svg, .btn-pular-grande svg { width: 20px; height: 20px; fill: currentColor; }
+.btn-pular-grande { width: 100%; gap: 8px; margin: 4px 0 12px; font-size: 17px; }
 .toque-livre .area-video { outline: 3px solid var(--ambar); outline-offset: -3px; }
 .btn-liberar { font-variant-numeric: tabular-nums; }
 
@@ -625,6 +690,9 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 
 /* Só no app Android (body.android) */
 body:not(.android) .so-android { display: none !important; }
+/* App Android novo (versão 4 ou mais nova): o YouTube é a tela inicial e não há arquivos de legenda */
+body.app-novo .oculto-no-app { display: none !important; }
+body:not(.app-novo) .so-app { display: none !important; }
 .caixa-idioma h2 { margin: 0 0 12px; font-size: 18px; }
 .caixa-idioma .ajuste { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .caixa-idioma select { min-height: 44px; }
@@ -864,7 +932,25 @@ body.imersivo:not(.faixa-visivel) .faixa { opacity: 0; pointer-events: none; }
   padding: 0 12px;
   margin-bottom: 12px;
 }
-.dialogo-botoes { display: flex; justify-content: flex-end; gap: 8px; }
+.dialogo-botoes { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+/* Janela "Carregando a legenda" */
+.caixa-carregando { text-align: center; }
+.caixa-carregando h2 { margin: 4px 0 6px; font-size: 19px; }
+.caixa-carregando .dica { margin: 0 0 16px; font-size: 15px; }
+.caixa-carregando .dialogo-botoes { flex-direction: column-reverse; align-items: stretch; }
+.caixa-carregando .dialogo-botoes .btn { width: 100%; }
+.roda {
+  width: 44px;
+  height: 44px;
+  margin: 4px auto 10px;
+  border-radius: 50%;
+  border: 4px solid var(--fundo-3);
+  border-top-color: var(--ambar);
+  animation: girar 0.9s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .roda { animation-duration: 2.5s; } }
 
 .toast {
   position: fixed;

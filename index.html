@@ -20,10 +20,15 @@
   <header class="cabecalho-bib">
     <img src="./icons/icon-192.png" alt="" width="40" height="40">
     <h1>Legenda Dupla</h1>
+    <!-- App Android novo: a tela inicial é o YouTube; aqui ficam só os vídeos já estudados -->
+    <button id="btn-ir-youtube" type="button" class="btn btn-principal btn-ir-youtube so-app">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8zM10 15V9l5.2 3z"/></svg>
+      YouTube
+    </button>
   </header>
 
   <!-- Busca no YouTube (só no app Android): abre o YouTube dentro do app; tocar num vídeo abre aqui -->
-  <section class="cartao so-android" id="area-busca" aria-labelledby="t-busca">
+  <section class="cartao so-android oculto-no-app" id="area-busca" aria-labelledby="t-busca">
     <h2 id="t-busca" class="rotulo">Buscar no YouTube</h2>
     <div id="busca-ativa">
       <form id="form-busca" class="linha-link" role="search">
@@ -44,7 +49,7 @@
     <p id="busca-atualizar" class="msg msg-alerta" hidden>Para buscar no YouTube dentro do app, atualize o app Android (baixe e instale de novo pelo mesmo link).</p>
   </section>
 
-  <section class="cartao" id="area-novo" aria-labelledby="t-novo">
+  <section class="cartao oculto-no-app" id="area-novo" aria-labelledby="t-novo">
     <h2 id="t-novo" class="visualmente-oculto">Abrir um vídeo</h2>
     <label for="campo-link" class="rotulo">Link do vídeo do YouTube</label>
     <div class="linha-link">
@@ -78,27 +83,33 @@
   </section>
 
   <section class="cartao" aria-labelledby="t-continuar">
-    <h2 id="t-continuar">Continuar assistindo</h2>
+    <h2 id="t-continuar"><span class="oculto-no-app">Continuar assistindo</span><span class="so-app">Meus vídeos</span></h2>
     <p id="aviso-memoria" class="msg msg-alerta" hidden>O navegador não deixou salvar. O vídeo funciona, mas não ficará na biblioteca.</p>
     <ul id="lista-biblioteca" class="lista-biblioteca"></ul>
-    <p id="biblioteca-vazia" class="msg">Nenhum vídeo ainda. Cole um link e escolha as legendas acima.</p>
+    <p id="biblioteca-vazia" class="msg"><span class="oculto-no-app">Nenhum vídeo ainda. Cole um link e escolha as legendas acima.</span><span class="so-app">Nenhum vídeo ainda. Toque em <b>YouTube</b> e escolha um vídeo para estudar.</span></p>
   </section>
 
   <footer class="rodape">
     <button id="btn-exportar" type="button" class="btn">Exportar biblioteca</button>
     <button id="btn-importar" type="button" class="btn">Importar biblioteca</button>
-    <button id="btn-ajuda" type="button" class="btn-link">Como baixar legendas no DownSub</button>
+    <button id="btn-ajuda" type="button" class="btn-link oculto-no-app">Como baixar legendas no DownSub</button>
   </footer>
 </main>
 
 <!-- ============================== ASSISTIR ============================== -->
 <main id="tela-assistir" class="tela" hidden>
   <header id="barra-topo" class="barra-topo">
-    <button id="btn-voltar" type="button" class="btn-topo" aria-label="Voltar para a biblioteca">←</button>
+    <button id="btn-voltar" type="button" class="btn-icone" aria-label="Voltar" title="Voltar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"/></svg>
+    </button>
     <h1 id="titulo-video" class="titulo-video"></h1>
-    <button id="btn-liberar" type="button" class="btn-topo btn-liberar" aria-label="Liberar o toque no vídeo por 10 segundos, para tocar em Pular anúncio" title="Liberar o toque no vídeo por 10 s (para Pular anúncio)">👆</button>
-    <button id="btn-tela-cheia" type="button" class="btn-topo" aria-label="Tela cheia">⛶</button>
-    <button id="btn-ajustes" type="button" class="btn-topo" aria-label="Ajustes">⚙</button>
+    <button id="btn-liberar" type="button" class="btn-topo btn-liberar oculto-no-app" aria-label="Liberar o toque no vídeo por 10 segundos, para tocar em Pular anúncio" title="Liberar o toque no vídeo por 10 s (para Pular anúncio)">👆</button>
+    <button id="btn-tela-cheia" type="button" class="btn-icone" aria-label="Tela cheia" title="Tela cheia">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/></svg>
+    </button>
+    <button id="btn-ajustes" type="button" class="btn-icone" aria-label="Ajustes" title="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58a7.4 7.4 0 0 0 0 1.88l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+    </button>
   </header>
 
   <div id="area-video" class="area-video">
@@ -111,6 +122,13 @@
     <button id="btn-tocar-grande" type="button" class="btn-tocar-grande">▶ Tocar</button>
     <p id="aviso-toque" class="aviso-toque" hidden>Toque no vídeo para começar</p>
     <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
+    <!-- Anúncio do YouTube (app Android): aviso e botão para pular -->
+    <div id="selo-anuncio" class="selo-anuncio" hidden>
+      <span id="selo-anuncio-texto">Anúncio</span>
+      <button id="btn-pular" type="button" class="btn-pular" hidden>Pular anúncio
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6zm10-12v12h2V6z"/></svg>
+      </button>
+    </div>
     <div id="erro-player" class="erro-player" hidden>
       <p id="erro-texto"></p>
       <a id="erro-abrir-yt" class="btn" href="#" target="_blank" rel="noopener" hidden>Abrir no YouTube</a>
@@ -333,6 +351,23 @@
     <div class="dialogo-botoes">
       <button id="idioma-cancelar" type="button" class="btn">Agora não</button>
       <button id="idioma-ok" type="button" class="btn btn-principal">Começar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== CARREGANDO A LEGENDA (app Android) ============================== -->
+<div id="tela-carregando" class="dialogo" hidden role="dialog" aria-modal="true" aria-labelledby="carregando-titulo">
+  <div class="dialogo-caixa caixa-carregando">
+    <div id="carregando-roda" class="roda" aria-hidden="true"></div>
+    <h2 id="carregando-titulo">Carregando a legenda…</h2>
+    <p id="carregando-texto" class="dica">Aguarde: o vídeo começa quando a legenda estiver pronta.</p>
+    <button id="carregando-pular" type="button" class="btn btn-principal btn-pular-grande" hidden>Pular anúncio
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6zm10-12v12h2V6z"/></svg>
+    </button>
+    <div class="dialogo-botoes">
+      <button id="carregando-voltar" type="button" class="btn">Voltar</button>
+      <button id="carregando-sem" type="button" class="btn" hidden>Assistir sem legenda</button>
+      <button id="carregando-tentar" type="button" class="btn btn-principal" hidden>Tentar de novo</button>
     </div>
   </div>
 </div>

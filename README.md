@@ -32,7 +32,7 @@ De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**,
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
 | Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
-| Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar) | Igual |
+| Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar). No app Android novo não há 👆: aparece o botão **Pular anúncio** | Igual |
 
 Quando a tradução não está na tela (desativada, ou vídeo tocando no modo “só quando pausar”), a legenda original fica maior, ocupando o lugar das duas. No modo lista, as três falas mudam de tamanho juntas. Se uma fala não couber na caixa, as letras diminuem um pouco (até 70%) em vez de aparecer rolagem.
 
@@ -73,11 +73,14 @@ A mesma ajuda existe dentro do app (link no rodapé da biblioteca). Pode mudar s
 No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a legenda (com o que o YouTube exige) e o app guarda uma cópia. Num site isso não é possível, por isso o celular Android usa o app.
 
 - Baixar e instalar (o mesmo link sempre traz a versão mais nova, que instala por cima): https://github.com/hcostamc-sys/legenda-dupla/releases/download/android-prototipo/legenda-dupla-android.apk
-- Uso: no app do YouTube, **Compartilhar → Legenda Dupla**. O vídeo abre e aparece a escolha do idioma da legenda (já vem marcado o idioma falado) e da tradução. A tradução é a do app, fala por fala, no tempo de cada fala. Também funciona colando o link e tocando em **Abrir vídeo**, sem arquivo.
-- **Buscar no YouTube** (no topo da biblioteca): digite e toque em **Buscar**. O YouTube abre dentro do app, com os resultados; os **Filtros** (data de envio, duração, ordem e “só com legenda feita por pessoa”) ficam guardados. Tocar num vídeo fecha o YouTube e abre o vídeo no Legenda Dupla, já com a escolha do idioma. **← Legenda Dupla** no topo (ou o voltar do celular) fecha sem escolher. O campo de link continua logo abaixo.
-- O vídeo fica na biblioteca com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
-- Arquivos do DownSub continuam funcionando (para vídeos sem legenda no YouTube).
-- Limitações: o app não entra na sua conta do YouTube, então pode ter anúncios; áudio em outro idioma não dá para escolher (o player embutido não oferece); depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
+- **Tela inicial = YouTube.** O app abre direto no YouTube. No topo: **Meus vídeos** (os vídeos que você já estudou) e **Entrar** (aparece só quando você não está conectado ao YouTube; conectado, quem tem Premium não vê anúncios). O Google às vezes recusa login dentro de apps; se recusar, o app funciona sem conta.
+- **Estudar um vídeo:** toque nele no YouTube (ou, no app do YouTube, **Compartilhar → Legenda Dupla**). Aparece a janela **Carregando a legenda…**: o vídeo toca sem som por trás até o YouTube entregar a legenda. Depois vem a escolha do idioma da legenda (já vem marcado o idioma falado) e da tradução. Com a legenda pronta, o vídeo começa do início, com som.
+- **Anúncios:** aparece o selo **Anúncio** no vídeo e, quando o YouTube deixa pular, o botão amarelo **Pular anúncio** (também dentro da janela de carregamento).
+- Vídeo sem legenda nenhuma no YouTube (nem automática): o app avisa e oferece **Voltar ao YouTube** ou **Assistir sem legenda**.
+- **Voltar** (botão do topo ou do celular) sai do vídeo e volta para o YouTube; se o vídeo foi aberto em **Meus vídeos**, volta para a lista.
+- O vídeo fica em **Meus vídeos** com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
+- No app não há mais arquivos de legenda (DownSub), campo de link nem busca: tudo vem do YouTube. No navegador (fora do app) o site continua com os arquivos.
+- Limitações: áudio em outro idioma não dá para escolher (o player embutido não oferece); o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
 ## Como atualizar o site

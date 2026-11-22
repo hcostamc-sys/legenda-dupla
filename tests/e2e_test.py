@@ -721,7 +721,7 @@ def t_prototipo(page, base):
     assert 'Capturas: 3' in rel and 'versão do teste 2' in rel and 'token sim' in rel and 'Pedidos de legenda vistos pelo Android: 1' in rel, rel
 
 
-@caso('12. App Android: só o link, escolha do idioma, legenda do YouTube e tradução do app')
+@caso('12. App Android: janela de carregar a legenda, escolha do idioma, legenda do YouTube e tradução do app')
 def t_android(browser, base):
     from urllib.parse import quote
     ctx = browser.new_context(viewport={'width': 412, 'height': 915})
@@ -734,7 +734,10 @@ def t_android(browser, base):
     page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
     expect(page.locator('#btn-abrir')).to_be_enabled()  # sem arquivo: basta o link
     page.click('#btn-abrir')
+    # o player só informa as legendas depois de começar: o vídeo toca sem som atrás da janela
     expect(page.locator('#tela-idioma')).to_be_visible()
+    assert page.evaluate('window.__ld.S.player.mudo') is True
+    assert page.evaluate('window.__ld.S.yt.preparando') is True
     # sugerida: inglês feita por pessoa (a automática indica o idioma falado)
     expect(page.locator('#sel-legenda-video')).to_have_value('1')
     expect(page.locator('#sel-legenda-video option')).to_have_text(['Inglês (automática)', 'Inglês', 'Português (Brasil)'])
@@ -744,12 +747,15 @@ def t_android(browser, base):
     page.click('#idioma-ok')
     expect(page.locator('#tela-idioma')).to_be_hidden()
     expect(page.locator('#toast')).to_contain_text('40 falas')
+    expect(page.locator('#tela-carregando')).to_be_hidden()
     # a legenda do "anúncio" (outro vídeo) foi ignorada
     assert page.evaluate('window.__ld.S.unidades.length') == 40
     assert page.evaluate('window.__ld.S.registro.estudo.origem') == 'youtube'
     assert page.evaluate('window.__ld.S.player.legendasEscondidas') is True
-    page.click('#btn-tocar-grande')
+    # com a legenda pronta: volta ao começo, com som, tocando
+    assert page.evaluate('window.__ld.S.player.mudo') is False
     esperar(lambda: estado(page) == 1, msg='tocando')
+    assert tempo(page) < 2, tempo(page)
     expect(page.locator('#caixa-l1')).to_contain_text('from YouTube')
     expect(page.locator('#caixa-l2')).to_contain_text('PT: Line')  # tradução do app
     page.screenshot(path=os.path.join(CAPTURAS, 'android-assistir.png'))
@@ -758,6 +764,7 @@ def t_android(browser, base):
     expect(page.locator('#btn-trocar-legenda')).to_be_visible()
     page.click('#btn-trocar-legenda')
     expect(page.locator('#tela-idioma')).to_be_visible()
+    expect(page.locator('#idioma-cancelar')).to_have_text('Cancelar')
     page.select_option('#sel-legenda-video', '0')
     page.click('#idioma-ok')
     esperar(lambda: page.evaluate('window.__ld.S.registro.estudo.arquivo').startswith('[Inglês (auto-generated)]'), msg='trocou para a automática')
@@ -768,15 +775,127 @@ def t_android(browser, base):
     page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
     page.click('#btn-abrir')
     esperar(lambda: page.evaluate('window.__ld.S.unidades.length') > 0, msg='reabriu com a legenda salva')
-    time.sleep(0.3)
+    time.sleep(0.8)
     expect(page.locator('#tela-idioma')).to_be_hidden()
+    expect(page.locator('#tela-carregando')).to_be_hidden()
     page.click('#btn-voltar')
-    # compartilhar do app do YouTube: abre direto e pergunta o idioma
+    # compartilhar do app do YouTube: abre direto e pergunta o idioma; "Voltar" sai do vídeo sem salvar
     page.goto(base + '?mock=1&text=' + quote('Olha https://youtu.be/DDDDDDDDDDD'))
     expect(page.locator('#tela-assistir')).to_be_visible()
     expect(page.locator('#tela-idioma')).to_be_visible()
     page.click('#idioma-cancelar')
-    expect(page.locator('#toast')).to_contain_text('Trocar o idioma da legenda')
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    expect(page.locator('.item-bib')).to_have_count(1)
+    assert not erros, erros
+    ctx.close()
+
+
+@caso('12b. App novo: YouTube na tela inicial, sem arquivos, sem legenda, anúncio com Pular e voltar')
+def t_app_novo(browser, base):
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    msgs = lambda: page.evaluate('window.__msgs')
+    page.goto(base + '?mock=1&app=android&apk=4')
+    # "Meus vídeos": nada de arquivos, link, busca ou DownSub
+    for sel in ['#area-novo', '#area-busca', '#btn-ajuda', '#zona-arquivos']:
+        expect(page.locator(sel)).to_be_hidden()
+    expect(page.locator('#btn-ir-youtube')).to_be_visible()
+    assert page.locator('#t-continuar').inner_text() == 'Meus vídeos'
+    assert 'Toque em YouTube' in page.locator('#biblioteca-vazia').inner_text()
+    os.makedirs(CAPTURAS, exist_ok=True)
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-meus-videos-vazio.png'))
+    page.click('#btn-ir-youtube')
+    assert msgs()[-1] == {'acao': 'youtube', 'url': ''}, msgs()
+    assert page.evaluate('window.ldVoltar()') == 'nao'  # na lista: o app volta ao YouTube
+
+    # vídeo sem legenda nenhuma
+    page.goto(base + '?mock=1&app=android&apk=4&mockSemLegenda=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=GGGGGGGGGGG')")
+    expect(page.locator('#tela-carregando')).to_be_visible()
+    expect(page.locator('#carregando-titulo')).to_have_text('Carregando a legenda…')
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-carregando.png'))
+    expect(page.locator('#carregando-titulo')).to_have_text('Este vídeo não tem legenda', timeout=15000)
+    expect(page.locator('#carregando-sem')).to_be_visible()
+    expect(page.locator('#carregando-voltar')).to_have_text('Voltar ao YouTube')
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-sem-legenda.png'))
+    n = len(msgs())
+    page.click('#carregando-voltar')
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    assert [m for m in msgs()[n:] if m.get('acao') != 'telaLigada'] == [{'acao': 'youtube', 'url': ''}], msgs()[n:]
+    expect(page.locator('.item-bib')).to_have_count(0)  # não entra em "Meus vídeos"
+
+    # anúncio que ignora o clique por código: o app toca de verdade no "Pular"
+    page.goto(base + '?mock=1&app=android&apk=4&mockAnuncio=teimoso')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=HHHHHHHHHHH')")
+    expect(page.locator('#tela-carregando')).to_be_visible()
+    expect(page.locator('#carregando-texto')).to_contain_text('anúncio')
+    expect(page.locator('#carregando-pular')).to_be_visible()
+    expect(page.locator('#selo-anuncio')).to_be_visible()
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-anuncio.png'))
+    n = len(msgs())
+    page.click('#carregando-pular')
+    esperar(lambda: any(m.get('acao') == 'tocar' for m in msgs()[n:]), limite=3, msg='toque nativo pedido')
+    toque = [m for m in msgs()[n:] if m.get('acao') == 'tocar'][0]
+    r = page.evaluate("(() => { const r = window.__ld.S.player.retangulo(); return { l: r.left, t: r.top }; })()")
+    assert abs(toque['x'] - (r['l'] + 245)) < 1 and abs(toque['y'] - (r['t'] + 165)) < 1, (toque, r)
+    assert toque['largura'] == 412, toque
+    assert page.evaluate('window.__ld.S.player.pedidosPular') == 1
+    # o anúncio de teste acaba sozinho: a legenda carrega e o vídeo começa do início, com som
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=8000)
+    expect(page.locator('#selo-anuncio')).to_be_hidden()
+    expect(page.locator('#idioma-cancelar')).to_have_text('Voltar ao YouTube')
+    page.click('#idioma-ok')
+    expect(page.locator('#toast')).to_contain_text('40 falas')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    assert page.evaluate('window.__ld.S.player.mudo') is False
+    expect(page.locator('#btn-liberar')).to_be_hidden()  # sem a mãozinha no app novo
+    expect(page.locator('#btn-voltar')).to_have_attribute('aria-label', 'Voltar ao YouTube')
+    page.screenshot(path=os.path.join(CAPTURAS, 'app-novo-assistir.png'))
+    # o voltar do celular fecha o menu e depois sai do vídeo, de volta ao YouTube
+    page.click('#btn-traducao')
+    assert page.evaluate('window.ldVoltar()') == 'ok'
+    expect(page.locator('#menu-traducao')).to_be_hidden()
+    n = len(msgs())
+    assert page.evaluate('window.ldVoltar()') == 'ok'
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    esperar(lambda: {'acao': 'youtube', 'url': ''} in msgs()[n:], limite=3, msg='voltou ao YouTube')
+    expect(page.locator('.item-bib')).to_have_count(1)
+    expect(page.locator('#lista-biblioteca .item-bib button.btn-topo')).to_have_count(1)
+    page.click('#lista-biblioteca .item-bib button.btn-topo')
+    expect(page.locator('.menu-item-opcoes button')).to_have_text(['Renomear', 'Apagar'])
+    page.keyboard.press('Escape')
+    page.click('body', position={'x': 5, 'y': 5})
+
+    # anúncio comum: o clique do gancho basta
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=IIIIIIIIIII')")
+    expect(page.locator('#tela-carregando')).to_be_visible()
+    page.goto(base + '?mock=1&app=android&apk=4&mockAnuncio=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=IIIIIIIIIII')")
+    expect(page.locator('#carregando-pular')).to_be_visible()
+    n = len(msgs())
+    page.click('#carregando-pular')
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=3000)
+    assert not any(m.get('acao') == 'tocar' for m in msgs()[n:]), msgs()[n:]
+
+    # "Meus vídeos" com um vídeo aberto: fecha o vídeo e mostra a lista
+    page.click('#idioma-ok')
+    expect(page.locator('#toast')).to_contain_text('40 falas')
+    page.evaluate('window.ldMostrarBiblioteca()')
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    expect(page.locator('.item-bib')).to_have_count(2)
+    # vídeo aberto pela lista: voltar volta para a lista, não para o YouTube
+    n = len(msgs())
+    page.locator('.item-bib .abrir-item').first.click()
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    expect(page.locator('#btn-voltar')).to_have_attribute('aria-label', 'Voltar para Meus vídeos')
+    page.click('#btn-voltar')
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    time.sleep(0.3)
+    assert not any(m.get('acao') == 'youtube' for m in msgs()[n:]), msgs()[n:]
     assert not erros, erros
     ctx.close()
 
@@ -933,6 +1052,7 @@ def main():
         ctx.close()
         t_capturas(browser, url, en, pt)
         t_android(browser, base)
+        t_app_novo(browser, base)
         t_busca(browser, base)
         browser.close()
     srv.shutdown()

@@ -42,6 +42,12 @@ const APK = (() => {
   }
 })();
 
+// App Android versão 4 ou mais nova (22/11/2026): o YouTube é a tela inicial do app, a legenda vem só
+// do YouTube (sem arquivos) e há botão "Pular anúncio". Esta página vira o player e a lista "Meus vídeos".
+const APP_NOVO = ANDROID && APK >= 4;
+
+const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
 // Valores fixos (antes eram ajustes; saíram do menu para deixá-lo simples).
 const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
 const PRE_ROLAGEM_FRASES = 0.3;
@@ -82,13 +88,28 @@ const S = {
   telaLigada: null,
   timerFaixa: null,
   vindoDaBiblioteca: false,
+  origem: 'youtube', // de onde o vídeo foi aberto: 'youtube' ou 'biblioteca' (app novo: para onde voltar)
   // tradução automática
   trad: { estado: 'ocioso', feitos: 0, total: 0, controle: null },
   // formulário
   escolha: { estudo: null, traducao: null },
   // legenda pega do YouTube (app Android)
-  yt: { estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false },
+  yt: novoEstadoYt(),
+  // anúncio do YouTube (avisado pelo gancho do app Android)
+  anuncio: { ativo: false, pulavel: false, x: 0, y: 0, w: 0, h: 0 },
 };
+
+/**
+ * fase: null | 'procurando' (vídeo toca sem som até o player informar as legendas) | 'escolhendo' |
+ * 'baixando' | 'sem' (o vídeo não tem legenda) | 'erro' | 'parado' (o vídeo não começou).
+ * preparando: o vídeo está tocando sem som por causa da legenda; retorno: { tempo, tocava } para depois.
+ */
+function novoEstadoYt() {
+  return {
+    estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false,
+    fase: null, preparando: false, retorno: null, geracao: 0,
+  };
+}
 
 // ============================================================ utilidades de interface
 
@@ -482,7 +503,7 @@ async function renderBiblioteca() {
       if (!reg) return;
       reg.abertoEm = new Date().toISOString();
       await salvarVideo(reg);
-      abrirVideo(reg, Math.max(0, (reg.posicao || 0) - 2));
+      abrirVideo(reg, Math.max(0, (reg.posicao || 0) - 2), 'biblioteca');
     });
 
     const menu = document.createElement('div');
@@ -507,7 +528,7 @@ async function renderBiblioteca() {
         op.appendChild(b);
       };
       item('Renomear', () => renomear(v.id));
-      item('Trocar legendas', () => trocarLegendas(v));
+      if (!APP_NOVO) item('Trocar legendas', () => trocarLegendas(v)); // no app: ⚙ Ajustes do vídeo
       item('Apagar', () => apagar(v));
       menu.appendChild(op);
     });
@@ -631,8 +652,10 @@ function rota() {
       mostrarTelaAssistir();
     }
   } else {
+    const voltarAoYoutube = APP_NOVO && !!S.registro && S.origem === 'youtube';
     if (S.registro) fecharVideo();
     mostrarBiblioteca();
+    if (voltarAoYoutube) abrirYoutube(''); // o vídeo veio do YouTube: volta para lá
   }
 }
 
@@ -690,8 +713,12 @@ function corrigirPapeisSalvos(reg) {
   return true;
 }
 
-async function abrirVideo(reg, inicio) {
+async function abrirVideo(reg, inicio, origem = 'youtube') {
   if (S.player) encerrarPlayer();
+  zerarLegendaYoutube();
+  zerarAnuncio();
+  S.origem = origem;
+  $('#btn-voltar').setAttribute('aria-label', !APP_NOVO ? 'Voltar para a biblioteca' : origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar para Meus vídeos');
   const corrigido = corrigirPapeisSalvos(reg);
   clearTimeout(timerToast);
   $('#toast').hidden = true;
@@ -737,9 +764,12 @@ async function abrirVideo(reg, inicio) {
     }
     if (!$('#painel-ajustes').hidden) montarVelocidades();
   });
-  p.on('erro', (codigo) => mostrarErroPlayer(codigo));
+  p.on('erro', (codigo) => {
+    // Erro do player durante a espera da legenda: a janela sai para mostrar o erro.
+    if (S.yt.fase) { S.yt.fase = null; S.yt.preparando = false; S.yt.geracao++; $('#tela-carregando').hidden = true; }
+    mostrarErroPlayer(codigo);
+  });
   p.on('autoplayBloqueado', mostrarAvisoToque);
-  zerarLegendaYoutube();
   if (ANDROID && !reg.estudo) p.manterLegendas?.(true);
   iniciarLaco();
   try {
@@ -770,6 +800,7 @@ function encerrarPlayer() {
 
 function fecharVideo() {
   zerarLegendaYoutube();
+  zerarAnuncio();
   $('#tela-idioma').hidden = true;
   encerrarPlayer();
   cancelarToqueLivre();
@@ -892,7 +923,7 @@ function atualizarAviso() {
   let erro = false;
   if (S.yt.estado === 'pegando') partes.push('Pegando a legenda do YouTube…');
   else if (S.yt.estado === 'erro') { partes.push('Não consegui pegar a legenda do YouTube.'); erro = true; }
-  else if (S.yt.estado === 'sem') partes.push('Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
+  else if (S.yt.estado === 'sem') partes.push(APP_NOVO ? 'Este vídeo não tem legenda no YouTube.' : 'Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
   if (S.frases) partes.push('Frases montadas pelo app');
   if (traducaoAutomaticaAtiva()) {
     const nome = NOMES_IDIOMA[S.ajustes.destino] || S.ajustes.destino;
@@ -928,50 +959,182 @@ function nomeFaixa(f) {
 
 function zerarLegendaYoutube() {
   clearTimeout(S.yt.timer);
-  S.yt = { estado: 'ocioso', faixa: null, capturas: new Map(), tentativas: 0, timer: 0, trocando: false };
+  const geracao = S.yt.geracao + 1;
+  S.yt = novoEstadoYt();
+  S.yt.geracao = geracao; // cancela as esperas que estavam em andamento
+  $('#tela-carregando').hidden = true;
 }
 
-/** Espera o player informar as faixas (até 15 s) e abre a escolha de idioma. */
+/**
+ * Pega a legenda do YouTube. O player só informa quais legendas o vídeo tem depois que o vídeo começa
+ * (e depois do anúncio, se houver): por isso o vídeo toca sem som atrás da janela "Carregando a legenda"
+ * e volta ao começo, com som, quando a legenda chega.
+ */
 async function escolherLegendaYoutube(trocando = false) {
   const p = S.player;
   const reg = S.registro;
   if (!p || !reg || !p.faixasLegenda) return;
+  clearTimeout(S.yt.timer);
+  const geracao = ++S.yt.geracao;
+  const vale = () => S.player === p && S.registro === reg && S.yt.geracao === geracao;
   p.manterLegendas?.(true);
   S.yt.trocando = trocando;
   S.yt.tentativas = 0;
+  S.yt.faixa = null;
   S.yt.estado = 'pegando';
+  $('#erro-player').hidden = true;
   atualizarAviso();
   let r = p.faixasLegenda();
-  for (let k = 0; k < 30 && !r.faixas.length; k++) {
-    await new Promise((ok) => setTimeout(ok, 500));
-    if (S.player !== p || S.registro !== reg) return;
-    r = p.faixasLegenda();
+  if (!r.faixas.length) {
+    if (!S.yt.preparando) {
+      S.yt.retorno = { tempo: trocando ? p.tempo() : S.inicio, tocava: trocando && p.estado() === 1 };
+      S.yt.preparando = true;
+    }
+    S.yt.fase = 'procurando';
+    mostrarCarregando();
+    p.silenciar?.(true);
+    if (p.estado() !== 1) p.tocar();
+    r = await esperarFaixas(p, vale);
+    if (!r) return; // fechou o vídeo, cancelou ou o vídeo não começou
   }
   if (!r.faixas.length) {
     S.yt.estado = 'sem';
-    atualizarAviso();
+    S.yt.fase = 'sem';
     p.esconderLegendas?.();
-    toast('Este vídeo não tem legenda no YouTube. Para estudar com ele, use arquivos de legenda (DownSub).', 6000);
+    atualizarAviso();
+    mostrarCarregando();
     return;
   }
-  const escolha = await perguntarIdioma(r.faixas);
-  if (S.player !== p || S.registro !== reg) return;
+  S.yt.fase = 'escolhendo';
+  $('#tela-carregando').hidden = true;
+  const escolha = await perguntarIdioma(r.faixas, trocando);
+  if (!vale()) return;
   if (!escolha) {
     S.yt.estado = 'ocioso';
-    p.esconderLegendas?.();
     atualizarAviso();
-    if (!reg.estudo) toast('Sem legenda. Para escolher depois: ⚙ Ajustes → Trocar o idioma da legenda.', 4000);
+    if (trocando) {
+      finalizarPreparo(S.yt.retorno?.tocava);
+    } else if (APP_NOVO || !S.primeiroPlay || S.yt.preparando) {
+      // Vídeo novo sem legenda escolhida: não há o que estudar. Volta (ao YouTube, no app novo).
+      voltarParaBiblioteca();
+    }
     return;
   }
   if (escolha.destino !== S.ajustes.destino) {
     S.ajustes.destino = escolha.destino;
     salvar();
   }
+  S.yt.fase = 'baixando';
+  mostrarCarregando();
   pedirFaixa(escolha.faixa);
 }
 
+/** Espera o player informar as faixas. Devolve { faixas } (vazio: o vídeo não tem legenda) ou null. */
+async function esperarFaixas(p, vale) {
+  let tocandoSemLegenda = 0; // ms do vídeo de verdade tocando sem o player informar legenda
+  let parado = 0; // ms sem tocar (nem anúncio)
+  let ultimoTempo = p.tempo();
+  for (;;) {
+    await espera(500);
+    if (!vale() || S.yt.fase !== 'procurando') return null;
+    const r = p.faixasLegenda();
+    if (r.faixas.length) return r;
+    const t = p.tempo();
+    // Só conta o vídeo de verdade andando: num anúncio o tempo do vídeo fica parado
+    // (vale mesmo se o aviso de anúncio do gancho falhar).
+    const andou = t - ultimoTempo > 0.2;
+    ultimoTempo = t;
+    if (S.anuncio.ativo) { parado = 0; continue; } // durante o anúncio o player não informa as legendas
+    if (p.estado() === 1) {
+      parado = 0;
+      if (andou) tocandoSemLegenda += 500;
+      if (tocandoSemLegenda >= 8000) return { faixas: [], traducoes: [] };
+    } else {
+      parado += 500;
+      if (parado % 3000 === 0) { p.silenciar?.(true); p.tocar(); } // insiste: o player pode ter ignorado
+      if (parado >= 20000) {
+        S.yt.fase = 'parado';
+        S.yt.estado = 'erro';
+        atualizarAviso();
+        mostrarCarregando();
+        return null;
+      }
+    }
+  }
+}
+
+/** Fim da espera: o vídeo volta ao ponto de antes, com som; tocando se for o caso. */
+function finalizarPreparo(tocar) {
+  const p = S.player;
+  const ret = S.yt.retorno;
+  S.yt.fase = null;
+  $('#tela-carregando').hidden = true;
+  if (!p || !S.yt.preparando) return;
+  S.yt.preparando = false;
+  S.yt.retorno = null;
+  if (!tocar) p.pausar();
+  p.irPara(ret ? ret.tempo : S.inicio);
+  p.silenciar?.(false);
+  S.memoriaNav = null;
+  S.alvoNav = null;
+  if (tocar && p.estado() !== 1) p.tocar();
+  renderLegenda(true);
+}
+
+/** Janela "Carregando a legenda": textos e botões conforme a fase e o anúncio. */
+function mostrarCarregando() {
+  const f = S.yt.fase;
+  const tela = $('#tela-carregando');
+  if (!f || f === 'escolhendo') { tela.hidden = true; return; }
+  const a = S.anuncio;
+  let titulo = 'Carregando a legenda…';
+  let texto = 'Aguarde: o vídeo começa quando a legenda estiver pronta.';
+  if (f === 'baixando') titulo = 'Baixando a legenda…';
+  if ((f === 'procurando' || f === 'baixando') && a.ativo) {
+    texto = a.pulavel
+      ? 'Há um anúncio antes do vídeo. Toque em Pular anúncio para continuar.'
+      : 'Há um anúncio antes do vídeo. A legenda carrega quando ele terminar (o botão Pular aparece em alguns segundos, se o anúncio permitir).';
+  }
+  if (f === 'sem') {
+    titulo = 'Este vídeo não tem legenda';
+    texto = 'O YouTube não tem legenda para este vídeo, nem a automática. Escolha outro vídeo.';
+  } else if (f === 'erro') {
+    titulo = 'Não consegui baixar a legenda';
+    texto = 'Confira a internet e toque em Tentar de novo.';
+  } else if (f === 'parado') {
+    titulo = 'O vídeo não começou';
+    texto = 'O YouTube não começou o vídeo, por isso a legenda não carregou. Toque em Tentar de novo.';
+  }
+  const esperando = f === 'procurando' || f === 'baixando';
+  $('#carregando-titulo').textContent = titulo;
+  $('#carregando-texto').textContent = texto;
+  $('#carregando-roda').hidden = !esperando;
+  $('#carregando-pular').hidden = !(esperando && a.ativo && a.pulavel);
+  $('#carregando-sem').hidden = f !== 'sem' || S.yt.trocando;
+  $('#carregando-tentar').hidden = !(f === 'erro' || f === 'parado');
+  $('#carregando-voltar').textContent = S.yt.trocando ? 'Cancelar' : APP_NOVO && S.origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar';
+  tela.hidden = false;
+}
+
+/** Botão Voltar/Cancelar da janela de carregamento (e o voltar do celular). */
+function cancelarCarregando() {
+  const trocando = S.yt.trocando;
+  clearTimeout(S.yt.timer);
+  S.yt.geracao++;
+  S.yt.estado = 'ocioso';
+  S.yt.faixa = null;
+  atualizarAviso();
+  if (trocando) {
+    finalizarPreparo(S.yt.retorno?.tocava);
+    return;
+  }
+  S.yt.fase = null;
+  $('#tela-carregando').hidden = true;
+  voltarParaBiblioteca();
+}
+
 /** Janela de escolha: idioma da legenda (as faixas do vídeo) e tradução. Devolve { faixa, destino } ou null. */
-function perguntarIdioma(faixas) {
+function perguntarIdioma(faixas, trocando = false) {
   return new Promise((resolve) => {
     const sel = $('#sel-legenda-video');
     sel.textContent = '';
@@ -983,6 +1146,7 @@ function perguntarIdioma(faixas) {
     });
     sel.value = String(faixaSugerida(faixas, S.ajustes.idioma));
     $('#sel-traducao-video').value = S.ajustes.destino;
+    $('#idioma-cancelar').textContent = trocando ? 'Cancelar' : APP_NOVO && S.origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar';
     const tela = $('#tela-idioma');
     tela.hidden = false;
     $('#idioma-ok').focus();
@@ -1007,15 +1171,90 @@ function pedirFaixa(faixa) {
   // Já chegou antes (o player baixa sozinho a legenda do idioma do aparelho): usa na hora.
   const guardada = S.yt.capturas.get(chaveFaixa(faixa.languageCode, faixa.kind === 'asr'));
   if (guardada) { aplicarLegendaYoutube(guardada); return; }
+  // O player só baixa a legenda com o vídeo andando: toca sem som se estiver parado.
+  if (p.estado() !== 1) {
+    if (!S.yt.preparando) {
+      S.yt.retorno = { tempo: p.tempo(), tocava: false };
+      S.yt.preparando = true;
+    }
+    p.silenciar?.(true);
+    p.tocar();
+  }
   S.yt.tentativas += 1;
   p.pedirLegenda(faixa);
   clearTimeout(S.yt.timer);
   S.yt.timer = setTimeout(() => {
-    if (S.player !== p || S.yt.estado !== 'pegando') return;
+    if (S.player !== p || S.yt.estado !== 'pegando' || S.yt.faixa !== faixa) return;
+    if (S.anuncio.ativo) { S.yt.tentativas -= 1; pedirFaixa(faixa); return; } // anúncio não conta tentativa
     if (S.yt.tentativas < 8) { pedirFaixa(faixa); return; }
     S.yt.estado = 'erro';
     atualizarAviso();
+    if (S.yt.fase === 'baixando') { S.yt.fase = 'erro'; mostrarCarregando(); }
   }, 8000);
+}
+
+// ============================================================ anúncios (app Android)
+// O gancho do app avisa quando o player mostra anúncio e quando o "Pular" do YouTube aparece.
+
+function zerarAnuncio() {
+  S.anuncio = { ativo: false, pulavel: false, x: 0, y: 0, w: 0, h: 0 };
+  document.body.classList.remove('toque-nativo');
+  atualizarAnuncio();
+}
+
+function aoReceberAnuncio(ev) {
+  const d = ev.data;
+  if (!ANDROID || !d || typeof d !== 'object' || d.ldAnuncio !== true) return;
+  const p = S.player;
+  if (!p) return;
+  if (!MOCK) {
+    let host = '';
+    try { host = new URL(ev.origin).hostname; } catch { /* nada */ }
+    if (!/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return;
+  }
+  const janela = p.janela?.();
+  if (janela && ev.source !== janela) return; // aviso de outro quadro
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  S.anuncio = { ativo: !!d.ativo, pulavel: !!d.ativo && !!d.pulavel, x: n(d.x), y: n(d.y), w: n(d.w), h: n(d.h) };
+  atualizarAnuncio();
+}
+
+function atualizarAnuncio() {
+  const a = S.anuncio;
+  $('#selo-anuncio').hidden = !a.ativo;
+  $('#selo-anuncio-texto').textContent = a.pulavel ? 'Anúncio' : 'Anúncio · aguarde';
+  $('#btn-pular').hidden = !(a.ativo && a.pulavel);
+  if (S.yt.fase === 'procurando' || S.yt.fase === 'baixando') mostrarCarregando();
+}
+
+let pulando = false;
+/** "Pular anúncio": o gancho clica no botão do YouTube; se o YouTube ignorar, o app toca nele de verdade. */
+async function pularAnuncio() {
+  const p = S.player;
+  if (!p || pulando) return;
+  pulando = true;
+  try {
+    p.pularAnuncio?.();
+    await espera(700);
+    if (S.player !== p || !S.anuncio.ativo || !S.anuncio.pulavel) return;
+    const r = p.retangulo?.();
+    const a = S.anuncio;
+    if (!r || !window.LDNativo || !APP_NOVO || a.w <= 0) {
+      toast('O YouTube não deixou pular. Tente de novo em instantes.');
+      return;
+    }
+    const x = r.left + a.x + a.w / 2;
+    const y = r.top + a.y + a.h / 2;
+    document.body.classList.add('toque-nativo'); // o toque passa por cima da janela e chega ao player
+    try {
+      window.LDNativo.postMessage(JSON.stringify({ acao: 'tocar', x, y, largura: window.innerWidth }));
+    } catch { /* nada */ }
+    await espera(900);
+    document.body.classList.remove('toque-nativo');
+    if (S.player === p && S.anuncio.ativo && S.anuncio.pulavel) toast('O YouTube não deixou pular. Tente de novo em instantes.');
+  } finally {
+    pulando = false;
+  }
 }
 
 /** Cópia de uma legenda que o player baixou (vinda do gancho do app Android). */
@@ -1057,6 +1296,8 @@ function aplicarLegendaYoutube(cap) {
   S.yt.faixa = null;
   S.tituloConferido = true; // a legenda veio do próprio vídeo: não há o que conferir
   p?.esconderLegendas?.();
+  // Vídeo novo: começa do início, com som. Troca de idioma: volta como estava.
+  if (S.yt.preparando || S.yt.fase) finalizarPreparo(S.yt.trocando ? !!S.yt.retorno?.tocava : true);
   salvarVideo(reg);
   zerarRepeticao();
   reprocessar();
@@ -1118,7 +1359,7 @@ function lerTitulo() {
   const t = S.player?.titulo();
   if (reg && t && !reg.titulo) {
     reg.titulo = t;
-    salvarVideo(reg);
+    if (reg.estudo || !ANDROID) salvarVideo(reg); // no app, o vídeo só entra na lista com a legenda
     $('#titulo-video').textContent = tituloAtual();
   }
   conferirTitulo(t);
@@ -1414,6 +1655,8 @@ function salvarPosicao() {
   const reg = S.registro;
   const p = S.player;
   if (!reg || !p || !S.pronto) return;
+  // Vídeo tocando sem som enquanto a legenda carrega, ou vídeo do app sem legenda: não entra na lista.
+  if (S.yt.preparando || (ANDROID && !reg.estudo)) return;
   const t = p.tempo();
   if (!Number.isFinite(t)) return;
   reg.posicao = Math.round(t * 10) / 10;
@@ -2074,9 +2317,9 @@ function aoMudarFiltro(el) {
   resumirFiltros();
 }
 
-/** Abre o YouTube dentro do app Android (tela por cima, com "← Legenda Dupla" no topo). */
+/** Abre o YouTube dentro do app Android (tela por cima). Sem endereço: volta ao YouTube onde estava. */
 function abrirYoutube(url) {
-  if (!window.LDNativo) { toast('A busca no YouTube só funciona dentro do app Android.'); return; }
+  if (!window.LDNativo) { if (url) toast('A busca no YouTube só funciona dentro do app Android.'); return; }
   try {
     window.LDNativo.postMessage(JSON.stringify({ acao: 'youtube', url }));
   } catch {
@@ -2093,6 +2336,34 @@ window.ldAbrirDoYoutube = (url) => {
   $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
   validarFormulario();
   abrirDoFormulario();
+};
+
+/** O app Android chama esta função no botão "Meus vídeos" (em cima do YouTube). */
+window.ldMostrarBiblioteca = () => {
+  if (S.registro) {
+    fecharVideo();
+    history.replaceState(null, '', location.pathname + location.search + '#biblioteca');
+  }
+  mostrarBiblioteca();
+  renderBiblioteca();
+  window.scrollTo(0, 0);
+};
+
+/**
+ * O app Android chama esta função no "voltar" do celular. Devolve 'ok' se a página fez algo
+ * (fechou uma janela ou saiu do vídeo) e 'nao' se não há o que fazer (o app volta ao YouTube).
+ */
+window.ldVoltar = () => {
+  if (!$('#dialogo').hidden) { $('#dialogo-cancelar').click(); return 'ok'; }
+  if (!$('#tela-carregando').hidden) { cancelarCarregando(); return 'ok'; }
+  if (!$('#tela-idioma').hidden) { $('#idioma-cancelar').click(); return 'ok'; }
+  if (!$('#painel-ajustes').hidden || !$('#ajuda').hidden) { fecharPaineis(); return 'ok'; }
+  if (!$('#cartao-palavra').hidden) { fecharCartao(); return 'ok'; }
+  if (!$('#menu-traducao').hidden) { fecharMenuTraducao(); return 'ok'; }
+  if (telaABAberta()) { cancelarTelaAB(); return 'ok'; }
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return 'ok'; }
+  if (!$('#tela-assistir').hidden) { voltarParaBiblioteca(); return 'ok'; }
+  return 'nao';
 };
 
 function ligarBusca() {
@@ -2181,6 +2452,18 @@ function ligarEventos() {
     if (S.registro) escolherLegendaYoutube(true);
   });
   window.addEventListener('message', aoReceberLegenda);
+  window.addEventListener('message', aoReceberAnuncio);
+  $('#btn-pular').addEventListener('click', pularAnuncio);
+  $('#carregando-pular').addEventListener('click', pularAnuncio);
+  $('#carregando-voltar').addEventListener('click', cancelarCarregando);
+  $('#carregando-tentar').addEventListener('click', () => escolherLegendaYoutube(S.yt.trocando));
+  $('#carregando-sem').addEventListener('click', () => {
+    // Sem legenda: assiste mesmo assim, do começo e com som.
+    S.yt.estado = 'ocioso';
+    atualizarAviso();
+    finalizarPreparo(true);
+  });
+  $('#btn-ir-youtube').addEventListener('click', () => abrirYoutube(''));
 
   // barra de progresso
   const barra = $('#barra-progresso');
@@ -2259,6 +2542,7 @@ function ligarEventos() {
 
 async function iniciar() {
   document.body.classList.toggle('android', ANDROID);
+  document.body.classList.toggle('app-novo', APP_NOVO);
   aplicarAparencia();
   ligarEventos();
   lerCompartilhamento();

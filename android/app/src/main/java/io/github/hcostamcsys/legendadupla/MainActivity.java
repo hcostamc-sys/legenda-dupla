@@ -6,10 +6,17 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.WindowInsets;
-import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.view.View;
@@ -48,19 +55,22 @@ import java.util.concurrent.Executors;
  * 2) recebe o Compartilhar do app do YouTube;
  * 3) oferece à página o objeto LDNativo: tela ligada e, no teste, baixar de novo uma legenda;
  * 4) tela cheia (deitado) quando a página pede;
- * 5) o YouTube dentro do app (busca): tocar num vídeo abre o vídeo no Legenda Dupla.
+ * 5) o YouTube como tela inicial (com botão Entrar e Meus vídeos): tocar num vídeo abre o vídeo no Legenda Dupla;
+ * 6) toque de verdade no botão "Pular anúncio" do player, quando a página pede.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 3; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 4; // a página usa para saber o que o app sabe fazer
+    private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
     private WebView web;
     private FrameLayout raiz;
     private LinearLayout painelYt;
     private WebView ytWeb;
     private String ultimoUrlYt = "";
+    private TextView botaoEntrar;
     private String ultimoVideo = "";
     private long ultimoVideoEm = 0;
     private View telaCheia;
@@ -175,12 +185,15 @@ public class MainActivity extends Activity {
         PackageInfo pacote = WebViewCompat.getCurrentWebViewPackage(this);
         if (pacote != null) versaoWebView = pacote.versionName;
 
+        String link = linkCompartilhado(getIntent());
         String url = PAGINA + "?app=android&apk=" + VERSAO_APK
                 + "&gancho=" + gancho
                 + "&ponte=" + ponte
                 + "&wv=" + Uri.encode(versaoWebView)
-                + linkCompartilhado(getIntent());
+                + link;
         web.loadUrl(url);
+        // A tela inicial é o YouTube; vindo do Compartilhar, o vídeo abre direto no Legenda Dupla.
+        if (link.isEmpty()) mostrarYoutube(null);
     }
 
     @Override
@@ -225,7 +238,36 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ------------------------------------------------------------------ YouTube dentro do app
+    // ------------------------------------------------------------------ YouTube (tela inicial)
+
+    private int dp(float v) {
+        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
+    }
+
+    /** Botão de texto com cantos redondos (os botões padrão do Android ficam com cara antiga). */
+    private TextView criarBotao(String texto, boolean principal) {
+        TextView b = new TextView(this);
+        b.setText(texto);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(14), 0, dp(14), 0);
+        b.setMinHeight(dp(38));
+        b.setClickable(true);
+        b.setFocusable(true);
+        GradientDrawable fundo = new GradientDrawable();
+        fundo.setCornerRadius(dp(19));
+        if (principal) {
+            fundo.setColor(Color.parseColor("#ffd54f"));
+            b.setTextColor(Color.parseColor("#111111"));
+        } else {
+            fundo.setColor(Color.parseColor("#262626"));
+            fundo.setStroke(dp(1), Color.parseColor("#3a3a3a"));
+            b.setTextColor(Color.WHITE);
+        }
+        b.setBackground(fundo);
+        return b;
+    }
 
     private void criarPainelYoutube() {
         painelYt = new LinearLayout(this);
@@ -234,22 +276,36 @@ public class MainActivity extends Activity {
 
         LinearLayout barra = new LinearLayout(this);
         barra.setOrientation(LinearLayout.HORIZONTAL);
-        barra.setBackgroundColor(Color.parseColor("#1c1c1c"));
-        barra.setPadding(8, 4, 16, 4);
-        Button voltar = new Button(this);
-        voltar.setText("← Legenda Dupla");
-        voltar.setAllCaps(false);
-        voltar.setTextColor(Color.parseColor("#111111"));
-        voltar.setBackgroundColor(Color.parseColor("#ffd54f"));
-        voltar.setOnClickListener(v -> fecharYoutube());
-        TextView dica = new TextView(this);
-        dica.setText("Toque num vídeo para estudar com ele");
-        dica.setTextColor(Color.parseColor("#b8b8b8"));
-        dica.setPadding(24, 0, 0, 0);
-        dica.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        barra.addView(voltar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        barra.addView(dica, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        barra.setGravity(Gravity.CENTER_VERTICAL);
+        barra.setBackgroundColor(Color.parseColor("#111111"));
+        barra.setPadding(dp(12), dp(6), dp(10), dp(6));
+
+        ImageView icone = new ImageView(this);
+        icone.setImageResource(R.mipmap.ic_launcher);
+        TextView nome = new TextView(this);
+        nome.setText("Legenda Dupla");
+        nome.setTextColor(Color.WHITE);
+        nome.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        nome.setTypeface(Typeface.DEFAULT_BOLD);
+        nome.setSingleLine(true);
+        nome.setPadding(dp(8), 0, dp(8), 0);
+
+        TextView meus = criarBotao("Meus vídeos", false);
+        meus.setContentDescription("Meus vídeos: os vídeos que você já estudou");
+        meus.setOnClickListener(v -> abrirMeusVideos());
+        botaoEntrar = criarBotao("Entrar", true);
+        botaoEntrar.setContentDescription("Entrar na sua conta do YouTube");
+        botaoEntrar.setOnClickListener(v -> entrarNaConta());
+
+        barra.addView(icone, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        barra.addView(nome, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        barra.addView(meus, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
+        LinearLayout.LayoutParams pe = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        pe.leftMargin = dp(8);
+        barra.addView(botaoEntrar, pe);
+
+        View linha = new View(this);
+        linha.setBackgroundColor(Color.parseColor("#2a2a2a"));
 
         ytWeb = new WebView(this);
         WebSettings s = ytWeb.getSettings();
@@ -282,15 +338,54 @@ public class MainActivity extends Activity {
             public void doUpdateVisitedHistory(WebView view, String url, boolean recarregou) {
                 // O site do YouTube troca de página sem recarregar: a abertura de um vídeo aparece aqui.
                 if (url != null && ehVideo(Uri.parse(url))) escolherVideo(url, true);
+                atualizarBotaoEntrar();
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                atualizarBotaoEntrar();
             }
         });
 
         painelYt.addView(barra, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        painelYt.addView(linha, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
         painelYt.addView(ytWeb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         painelYt.setVisibility(View.GONE);
         raiz.addView(painelYt, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        atualizarBotaoEntrar();
+    }
+
+    /** Conectado ao YouTube: o cookie LOGIN_INFO só existe com a conta conectada. */
+    private boolean conectadoAoYoutube() {
+        String c = CookieManager.getInstance().getCookie("https://www.youtube.com");
+        if (c == null) c = "";
+        String m = CookieManager.getInstance().getCookie("https://m.youtube.com");
+        if (m != null) c = c + "; " + m;
+        return c.contains("LOGIN_INFO=");
+    }
+
+    private void atualizarBotaoEntrar() {
+        if (botaoEntrar == null) return;
+        botaoEntrar.setVisibility(conectadoAoYoutube() ? View.GONE : View.VISIBLE);
+    }
+
+    /** Tela de login do Google para o YouTube, dentro do próprio YouTube do app (os cookies valem para o player). */
+    private void entrarNaConta() {
+        if (ytWeb == null) return;
+        String volta = "https://m.youtube.com/signin?action_handle_signin=true&app=m&hl=pt-BR&next="
+                + Uri.encode(INICIO_YOUTUBE);
+        String url = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&hl=pt-BR&continue="
+                + Uri.encode(volta);
+        ultimoUrlYt = url;
+        ytWeb.loadUrl(url);
+    }
+
+    /** "Meus vídeos": esconde o YouTube e mostra a lista de vídeos do Legenda Dupla. */
+    private void abrirMeusVideos() {
+        fecharYoutube();
+        chamarPagina("ldMostrarBiblioteca", "");
     }
 
     private static boolean ehVideo(Uri u) {
@@ -303,16 +398,21 @@ public class MainActivity extends Activity {
         return caminho.startsWith("/shorts/") || caminho.startsWith("/live/");
     }
 
-    private void abrirYoutube(String url) {
-        Uri u = Uri.parse(url);
-        String host = u.getHost() == null ? "" : u.getHost();
-        if (!"https".equals(u.getScheme()) || !host.endsWith("youtube.com")) return;
+    /** Mostra o YouTube. Sem endereço: continua onde estava (ou abre a página inicial na primeira vez). */
+    private void mostrarYoutube(String url) {
+        if (url != null && !url.isEmpty()) {
+            Uri u = Uri.parse(url);
+            String host = u.getHost() == null ? "" : u.getHost();
+            if (!"https".equals(u.getScheme()) || !host.endsWith("youtube.com")) return;
+        }
         if (painelYt == null) criarPainelYoutube();
         painelYt.setVisibility(View.VISIBLE);
         ytWeb.onResume();
-        if (!url.equals(ultimoUrlYt)) {
-            ultimoUrlYt = url;
-            ytWeb.loadUrl(url);
+        atualizarBotaoEntrar();
+        String alvo = (url == null || url.isEmpty()) ? (ultimoUrlYt.isEmpty() ? INICIO_YOUTUBE : null) : url;
+        if (alvo != null && !alvo.equals(ultimoUrlYt)) {
+            ultimoUrlYt = alvo;
+            ytWeb.loadUrl(alvo);
         }
     }
 
@@ -343,16 +443,40 @@ public class MainActivity extends Activity {
         chamarPagina("ldAbrirDoYoutube", url);
     }
 
+    /** Toque de verdade (como o do dedo) num ponto da página, em pixels CSS. Usado no "Pular anúncio". */
+    private void tocarNaPagina(double x, double y, double larguraCss) {
+        if (web == null || larguraCss <= 0 || web.getWidth() <= 0) return;
+        float f = (float) (web.getWidth() / larguraCss);
+        final float px = (float) (x * f);
+        final float py = (float) (y * f);
+        if (px < 0 || py < 0 || px > web.getWidth() || py > web.getHeight()) return;
+        final long inicio = SystemClock.uptimeMillis();
+        MotionEvent baixo = MotionEvent.obtain(inicio, inicio, MotionEvent.ACTION_DOWN, px, py, 0);
+        baixo.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+        web.dispatchTouchEvent(baixo);
+        baixo.recycle();
+        web.postDelayed(() -> {
+            MotionEvent cima = MotionEvent.obtain(inicio, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, px, py, 0);
+            cima.setSource(InputDevice.SOURCE_TOUCHSCREEN);
+            web.dispatchTouchEvent(cima);
+            cima.recycle();
+        }, 70);
+    }
+
     @Override
     public void onBackPressed() {
         if (telaCheia != null) { sairTelaCheia(); return; }
         if (painelYt != null && painelYt.getVisibility() == View.VISIBLE) {
             if (ytWeb.canGoBack()) ytWeb.goBack();
-            else fecharYoutube();
+            else super.onBackPressed(); // o YouTube é a tela inicial: voltar daqui sai do app
             return;
         }
-        if (web != null && web.canGoBack()) web.goBack();
-        else super.onBackPressed();
+        if (web == null) { super.onBackPressed(); return; }
+        // A página decide (fecha janelas, sai do vídeo); se não houver o que fazer, volta ao YouTube.
+        web.evaluateJavascript("window.ldVoltar ? window.ldVoltar() : 'nao'", r -> {
+            if (r != null && r.contains("ok")) return;
+            mostrarYoutube(null);
+        });
     }
 
     @Override
@@ -371,13 +495,23 @@ public class MainActivity extends Activity {
         web.evaluateJavascript(js, null);
     }
 
-    /** Mensagens da página: {"acao":"telaLigada","ligada":true} ou {"acao":"baixar","url":"...","id":"..."} */
+    /**
+     * Mensagens da página: {"acao":"telaLigada","ligada":true}, {"acao":"youtube","url":"..."} (url vazia: volta
+     * ao YouTube onde estava), {"acao":"tocar","x":..,"y":..,"largura":..} ou {"acao":"baixar","url":"...","id":"..."}
+     */
     private void aoMensagem(String dados, JavaScriptReplyProxy resposta) {
         try {
             JSONObject o = new JSONObject(dados == null ? "{}" : dados);
             if ("youtube".equals(o.optString("acao"))) {
-                final String url = o.optString("url");
-                runOnUiThread(() -> abrirYoutube(url));
+                final String url = o.optString("url", "");
+                runOnUiThread(() -> mostrarYoutube(url));
+                return;
+            }
+            if ("tocar".equals(o.optString("acao"))) {
+                final double x = o.optDouble("x", -1);
+                final double y = o.optDouble("y", -1);
+                final double largura = o.optDouble("largura", 0);
+                runOnUiThread(() -> tocarNaPagina(x, y, largura));
                 return;
             }
             if ("telaLigada".equals(o.optString("acao"))) {

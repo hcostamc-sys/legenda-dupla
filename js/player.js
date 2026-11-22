@@ -8,6 +8,7 @@
 //
 // Legendas do próprio YouTube (só no app Android, PLANO.md 15.10):
 // manterLegendas(sim) faixasLegenda() pedirLegenda(faixa) esconderLegendas()
+// silenciar(sim) pularAnuncio() retangulo()
 
 class Emissor {
   constructor() { this._ouvintes = {}; }
@@ -92,6 +93,22 @@ export class PlayerYouTube extends Emissor {
     try { this.yt?.setOption('captions', 'track', {}); } catch { /* nada */ }
     this._aplicarSemLegendas();
   }
+
+  /** Tira ou devolve o som (o vídeo toca sem som enquanto a legenda carrega). */
+  silenciar(sim) {
+    try { if (sim) this.yt?.mute(); else this.yt?.unMute(); } catch { /* nada */ }
+  }
+
+  /** Pede ao gancho do app Android (dentro do player) que toque em "Pular anúncio". */
+  pularAnuncio() {
+    try { this.iframe?.contentWindow?.postMessage({ ldPular: true }, 'https://www.youtube.com'); } catch { /* nada */ }
+  }
+
+  /** Posição do player na tela (para o toque de verdade do app Android). */
+  retangulo() { return this.iframe ? this.iframe.getBoundingClientRect() : null; }
+
+  /** A janela do player (para conferir de onde vêm os avisos do gancho). */
+  janela() { return this.iframe?.contentWindow || null; }
 
   async carregar(videoId, inicioSeg = 0) {
     this.destruir();
@@ -267,6 +284,10 @@ export class PlayerFalso extends Emissor {
     this._marca = performance.now();
     this._el = null;
     this._timer = null;
+    this.mudo = false;
+    this._jaTocou = false; // como no YouTube: as faixas de legenda só aparecem depois que o vídeo começa
+    this._anuncio = null; // { fim, pulavelEm } durante o anúncio de teste (?mockAnuncio=1)
+    this.pedidosPular = 0;
   }
 
   carregar(videoId, inicioSeg = 0) {
@@ -294,6 +315,10 @@ export class PlayerFalso extends Emissor {
   }
 
   _tique() {
+    if (this._anuncio) {
+      if (performance.now() >= this._anuncio.fim) this._fimAnuncio();
+      else this._avisarAnuncio();
+    }
     const t = this.tempo();
     if (this._estado === 1 && t >= this._dur) {
       this._base = this._dur;
@@ -313,7 +338,7 @@ export class PlayerFalso extends Emissor {
   }
 
   tempo() {
-    if (this._estado === 1) {
+    if (this._estado === 1 && !this._anuncio) {
       return Math.min(this._dur, this._base + ((performance.now() - this._marca) / 1000) * this._vel);
     }
     return this._base;
@@ -323,8 +348,46 @@ export class PlayerFalso extends Emissor {
     if (this._estado === 1) return;
     if (this._base >= this._dur) this._base = 0;
     this._marca = performance.now();
+    // Anúncio de teste antes do vídeo: 4 s, com "Pular" depois de 1 s.
+    if (this.opcoes.anuncio && !this._jaTocou && !this._anuncioVisto) {
+      this._anuncioVisto = true;
+      const agora = performance.now();
+      this._anuncio = { fim: agora + 4000, pulavelEm: agora + 1000 };
+      this._avisarAnuncio();
+    } else if (!this._anuncio) {
+      this._jaTocou = true;
+    }
     this._mudar(1);
   }
+
+  _avisarAnuncio() {
+    const a = this._anuncio;
+    const pulavel = !!a && performance.now() >= a.pulavelEm;
+    const msg = { ldAnuncio: true, ativo: !!a, pulavel, x: pulavel ? 200 : 0, y: pulavel ? 150 : 0, w: pulavel ? 90 : 0, h: pulavel ? 30 : 0 };
+    const chave = JSON.stringify(msg);
+    if (chave === this._ultimoAviso) return;
+    this._ultimoAviso = chave;
+    window.postMessage(msg, '*');
+  }
+
+  _fimAnuncio() {
+    this._anuncio = null;
+    this._jaTocou = true;
+    this._marca = performance.now();
+    this._avisarAnuncio();
+  }
+
+  silenciar(sim) { this.mudo = !!sim; }
+
+  /** ?mockAnuncio=1 pula; ?mockAnuncio=teimoso ignora o clique por código (precisa do toque do app). */
+  pularAnuncio() {
+    this.pedidosPular += 1;
+    const a = this._anuncio;
+    if (a && performance.now() >= a.pulavelEm && this.opcoes.anuncio !== 'teimoso') this._fimAnuncio();
+  }
+
+  retangulo() { return this._el ? this._el.getBoundingClientRect() : null; }
+  janela() { return window; }
 
   pausar() {
     if (this._estado !== 1) return;
@@ -347,7 +410,7 @@ export class PlayerFalso extends Emissor {
 
   /** Faixas de teste: inglês automática, inglês feita por pessoa e português. ?mockSemLegenda=1: nenhuma. */
   faixasLegenda() {
-    if (this.opcoes.semLegenda) return { faixas: [], traducoes: [] };
+    if (this.opcoes.semLegenda || !this._jaTocou) return { faixas: [], traducoes: [] };
     return {
       faixas: [
         { languageCode: 'en', languageName: 'Inglês', kind: 'asr', vss_id: 'a.en' },
@@ -393,12 +456,19 @@ export class PlayerFalso extends Emissor {
     try { this._el?.remove(); } catch { /* nada */ }
     this._el = null;
     this._estado = -1;
+    this._anuncio = null;
   }
 }
 
 /** Cria o player certo conforme o endereço (?mock=1 usa o falso). */
 export function criarPlayer(container) {
   const p = new URLSearchParams(location.search);
-  if (p.get('mock') === '1') return new PlayerFalso(container, { erro: p.get('mockErro'), semLegenda: p.get('mockSemLegenda') === '1' });
+  if (p.get('mock') === '1') {
+    return new PlayerFalso(container, {
+      erro: p.get('mockErro'),
+      semLegenda: p.get('mockSemLegenda') === '1',
+      anuncio: p.get('mockAnuncio') === 'teimoso' ? 'teimoso' : p.get('mockAnuncio') === '1',
+    });
+  }
   return new PlayerYouTube(container);
 }
