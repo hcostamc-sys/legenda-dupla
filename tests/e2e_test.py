@@ -177,7 +177,10 @@ def t_tocar(page):
     expect(page.locator('#btn-tocar-grande')).to_be_hidden()
     expect(page.locator('#caixa-l1')).to_have_text('Line 1 of the test, with words.', timeout=4000)
     expect(page.locator('#caixa-l2')).to_have_text('Linha 1 do teste, com ação.')
-    expect(page.locator('.item-fala.atual .a')).to_have_text('Line 1 of the test, with words.')
+    # só o botão de play/pausa e a barra do tempo; nada de lista lateral nem chips
+    for sel in ['#painel-lista', '#btn-anterior', '#btn-proxima', '#btn-mais5', '#btn-pausa-auto', '#btn-velocidade']:
+        assert page.locator(sel).count() == 0, sel
+    expect(page.locator('#btn-play')).to_have_attribute('aria-label', 'Pausar')
 
 
 @caso('3. Arrastar sobre o vídeo e sobre a caixa de legenda')
@@ -227,11 +230,16 @@ def t_toque(page):
     assert estado(page) == 1
 
 
-@caso('5. Teclas Espaço, ←, →, R, P, L, 1, 2, [ e ]')
+@caso('5. Teclas Espaço, ←, →, R, [ e ]; botão play/pausa; velocidade no menu')
 def t_teclas(page):
     page.locator('#titulo-video').click()  # tira o foco de campos
     page.keyboard.press('Space')
     esperar(lambda: estado(page) == 2, msg='Espaço pausa')
+    expect(page.locator('#btn-play')).to_have_attribute('aria-label', 'Tocar')
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='botão toca')
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='botão pausa')
     page.keyboard.press('Space')
     esperar(lambda: estado(page) == 1, msg='Espaço toca')
     i = exibida(page)
@@ -241,117 +249,31 @@ def t_teclas(page):
     page.keyboard.press('ArrowLeft')
     esperar(lambda: exibida(page) == i, msg='← volta')
     time.sleep(0.9)
-    t_antes = tempo(page)
-    page.keyboard.press('Shift+ArrowRight')
-    esperar(lambda: tempo(page) >= t_antes + 4.5, msg='Shift+→ pula 5 s')
     page.keyboard.press('r')
     expect(page.locator('#retorno-gesto')).to_have_text('↻ Repetindo')
-    page.keyboard.press('p')
-    expect(page.locator('#btn-pausa-auto')).to_have_attribute('aria-pressed', 'true')
-    page.keyboard.press('p')
-    expect(page.locator('#btn-pausa-auto')).to_have_attribute('aria-pressed', 'false')
-    page.keyboard.press('l')
-    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'true')
-    page.keyboard.press('l')
-    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'false')
-    page.keyboard.press('1')
-    expect(page.locator('#btn-linha1')).to_have_text('Linha 1: borrada')
-    expect(page.locator('#caixa-l1')).to_have_class('linha l1 borrada')
-    page.keyboard.press('1')
-    expect(page.locator('#btn-linha1')).to_have_text('Linha 1: oculta')
-    page.keyboard.press('1')
-    expect(page.locator('#btn-linha1')).to_have_text('Linha 1: visível')
-    page.keyboard.press('2')
-    expect(page.locator('#btn-linha2')).to_have_text('Linha 2: borrada')
-    page.keyboard.press('2')
-    page.keyboard.press('2')
-    expect(page.locator('#btn-linha2')).to_have_text('Linha 2: visível')
     page.keyboard.press(']')
-    expect(page.locator('#btn-velocidade')).to_have_text('1,25×')
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1.25, msg='] acelera')
     page.keyboard.press('[')
-    expect(page.locator('#btn-velocidade')).to_have_text('1×')
-
-
-@caso('6. Pausa automática pausa no fim da fala')
-def t_pausa_auto(page):
-    page.locator('#titulo-video').click()
-    page.keyboard.press('p')
-    i = exibida(page)
-    page.keyboard.press('ArrowRight')
-    esperar(lambda: estado(page) == 1, msg='tocando')
-    alvo = i + 1
-    fim = page.evaluate(f'window.__ld.S.unidades[{alvo}].e')
-    esperar(lambda: estado(page) == 2, limite=5, msg='pausa automática')
-    t = tempo(page)
-    assert fim - 0.25 <= t <= fim + 0.1, (t, fim)
-    assert exibida(page) == alvo
-    # depois da pausa automática, R repete a fala que acabou de tocar (não a próxima)
-    page.evaluate(f'window.__ld.S.player.irPara(window.__ld.S.unidades[{alvo}].e - 0.02)')
-    time.sleep(0.2)
-    assert exibida(page) == alvo, exibida(page)
-    page.evaluate("window.__ld.S.ajustes.tocarAoNavegar = false")
-    page.keyboard.press('r')
-    time.sleep(0.2)
-    ini = page.evaluate(f'window.__ld.S.unidades[{alvo}].s')
-    assert abs(tempo(page) - (ini - 0.15)) < 0.05, (tempo(page), ini)
-    page.evaluate("window.__ld.S.ajustes.tocarAoNavegar = true")
-    page.evaluate(f'window.__ld.S.player.irPara(window.__ld.S.unidades[{alvo}].e - 0.12)')
-    page.evaluate(f'window.__ld.S.pausadaEm = {alvo}')
-    # tocar de novo segue para a próxima fala sem pausar logo em seguida
-    page.keyboard.press('Space')
-    esperar(lambda: exibida(page) == alvo + 1, limite=3, msg='seguiu para a próxima')
-    esperar(lambda: estado(page) == 2, limite=4, msg='pausou no fim da próxima')
-    page.keyboard.press('p')  # desliga
-    # os atalhos continuam valendo depois de mexer na barra de progresso
-    page.locator('#barra-progresso').click()
-    st = estado(page)
-    page.keyboard.press('Space')
-    esperar(lambda: estado(page) != st, msg='Espaço depois da barra')
-    if estado(page) != 1:
-        page.keyboard.press('Space')
-    page.evaluate('window.__ld.S.player.irPara(5)')  # o clique na barra levou para o meio do vídeo
-    time.sleep(0.3)
-
-
-@caso('7. Loop com contador 2: a fala toca duas vezes e segue')
-def t_loop(page):
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1, msg='[ volta')
+    # velocidade pelo painel de ajustes
     page.click('#btn-ajustes')
-    page.select_option('select[data-ajuste="loopVezes"]', '2')
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1×')
+    page.locator('#linha-velocidade .chip', has_text='1,5×').click()
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1,5×')
+    page.locator('#linha-velocidade .chip', has_text='1×').first.click()
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1×')
+    # menu enxuto: nada de pausa automática, loop, pré-rolagem, opacidade...
+    for k in ['pausaAuto', 'loopVezes', 'preRolagem', 'opacidadeFundo', 'modoFrases', 'linha1']:
+        assert page.locator(f'[data-ajuste="{k}"]').count() == 0, k
+    # tamanho das letras muda as duas linhas
+    page.locator('[data-ajuste="fonteL1"]').fill('24')
+    assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l1')).fontSize") == '24px'
+    assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l2')).fontSize") == '20px'
+    page.locator('[data-ajuste="fonteL1"]').fill('19')
     page.click('#btn-fechar-ajustes')
-    page.locator('#titulo-video').click()
-    page.keyboard.press(']')
-    page.keyboard.press(']')
-    page.keyboard.press(']')  # 1,75×
-    expect(page.locator('#btn-velocidade')).to_have_text('1,75×')
-    i = exibida(page)
-    page.keyboard.press('ArrowRight')
-    alvo = i + 1
-    esperar(lambda: estado(page) == 1, msg='tocando')
-    page.keyboard.press('l')
-    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'true')
-    inicio = page.evaluate(f'window.__ld.S.unidades[{alvo}].s')
-    voltas = 0
-    ultimo = tempo(page)
-    fim_t = time.time() + 6
-    while time.time() < fim_t:
-        t = tempo(page)
-        if t < ultimo - 0.5:
-            voltas += 1
-            assert abs(t - inicio) < 0.6, (t, inicio)
-        ultimo = t
-        if exibida(page) == alvo + 1:
-            break
-        time.sleep(0.03)
-    assert voltas == 1, f'voltou {voltas} vezes (esperado 1: tocou 2 vezes)'
-    esperar(lambda: exibida(page) == alvo + 1, msg='seguiu para a próxima')
-    expect(page.locator('#btn-loop')).to_have_attribute('aria-pressed', 'false')
-    page.keyboard.press('[')
-    page.keyboard.press('[')
-    page.keyboard.press('[')
-    expect(page.locator('#btn-velocidade')).to_have_text('1×')
 
 
-@caso('7b. Cartão da palavra, linha borrada, busca e trecho A–B')
+@caso('6. Cartão da palavra')
 def t_extras(page):
     page.locator('#titulo-video').click()
     if estado(page) == 1:
@@ -361,62 +283,25 @@ def t_extras(page):
     expect(page.locator('#cartao-palavra')).to_be_visible()
     expect(page.locator('#cp-palavra')).to_have_text(page.locator('#caixa-l1 .palavra').nth(1).inner_text().strip(',.'))
     href = page.get_attribute('#cp-traduzir-palavra', 'href')
-    assert href.startswith('https://translate.google.com/?sl=en&tl=pt&text=') and href.endswith('&op=translate'), href
+    assert href.startswith('https://translate.google.com/?sl=auto&tl=pt&text=') and href.endswith('&op=translate'), href
     page.click('#cp-fechar')
     expect(page.locator('#cartao-palavra')).to_be_hidden()
-    # linha borrada: o primeiro toque só revela
-    page.keyboard.press('1')
-    expect(page.locator('#caixa-l1')).to_have_class('linha l1 borrada')
-    page.locator('#caixa-l1 .palavra').first.click()
-    expect(page.locator('#caixa-l1')).to_have_class('linha l1')
-    expect(page.locator('#cartao-palavra')).to_be_hidden()
-    page.keyboard.press('1')
-    page.keyboard.press('1')
-    # busca sem acento acha texto com acento
-    page.fill('#busca-falas', 'ACAO')
-    expect(page.locator('.item-fala')).to_have_count(40)
-    page.fill('#busca-falas', 'Linha 12 ')
-    expect(page.locator('.item-fala')).to_have_count(1)
-    page.fill('#busca-falas', '')
-    expect(page.locator('.item-fala')).to_have_count(40)
-    # A–B
-    page.locator('.item-fala').nth(4).click()
-    esperar(lambda: exibida(page) == 4, msg='foi para a fala 5')
-    page.click('#btn-a')
-    page.locator('.item-fala').nth(5).click()
-    esperar(lambda: exibida(page) == 5, msg='foi para a fala 6')
-    page.click('#btn-b')
-    expect(page.locator('#info-ab')).to_contain_text('A em')
-    page.keyboard.press(']')
-    page.keyboard.press(']')
-    page.keyboard.press(']')
-    page.keyboard.press(']')  # 2×
+    # os atalhos continuam valendo depois de mexer na barra de progresso
+    page.locator('#barra-progresso').click()
+    st = estado(page)
+    page.keyboard.press('Space')
+    esperar(lambda: estado(page) != st, msg='Espaço depois da barra')
     if estado(page) != 1:
-        page.locator('#titulo-video').click()
         page.keyboard.press('Space')
-    voltou = False
-    fim_t = time.time() + 5
-    ultimo = tempo(page)
-    while time.time() < fim_t:
-        t = tempo(page)
-        if t < ultimo - 1:
-            voltou = True
-            break
-        ultimo = t
-        time.sleep(0.03)
-    assert voltou, 'o trecho A–B não repetiu'
-    assert exibida(page) in (3, 4), exibida(page)  # pode mostrar a anterior durante a pré-rolagem
-    page.click('#btn-limpar-ab')
-    for _ in range(4):
-        page.keyboard.press('[')
-    expect(page.locator('#btn-velocidade')).to_have_text('1×')
+    page.evaluate('window.__ld.S.player.irPara(5)')
+    time.sleep(0.3)
 
 
 @caso('8. Recarregar: vídeo na biblioteca, posição e ajustes mantidos')
 def t_recarregar(page, url):
     page.locator('#titulo-video').click()
     page.keyboard.press(']')  # 1,25× para conferir que fica salvo
-    expect(page.locator('#btn-velocidade')).to_have_text('1,25×')
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1.25, msg='1,25×')
     page.keyboard.press('Space') if estado(page) == 1 else None
     esperar(lambda: estado(page) == 2, msg='pausado para salvar')
     pos = tempo(page)
@@ -432,7 +317,7 @@ def t_recarregar(page, url):
     esperar(lambda: page.evaluate('window.__ld.S.pronto'), msg='pronto')
     t = tempo(page)
     assert abs(t - max(0, pos - 2)) < 0.6, (t, pos)
-    expect(page.locator('#btn-velocidade')).to_have_text('1,25×')
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1.25, msg='velocidade salva')
     # botão voltar do navegador volta para a biblioteca
     page.go_back()
     expect(page.locator('#tela-biblioteca')).to_be_visible()
@@ -528,34 +413,97 @@ def t_link_automatico(page, base, en, pt):
     page.click('#btn-voltar')
 
 
-@caso('9c. Lista virtual com 1.200 falas segue a fala atual')
-def t_lista_grande(page, base, pasta):
-    linhas = []
-    for i in range(1200):
-        s = i * 0.5
-        linhas.append(f'{i + 1}\n{ts(s)} --> {ts(s + 0.45)}\nfala {i + 1}\n')
-    caminho = os.path.join(pasta, 'grande.srt')
-    with open(caminho, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(linhas))
+def falso_tradutor(page, falhar=None):
+    """Troca o tradutor do Google por um falso: devolve "PT: texto" para cada q."""
+    from urllib.parse import parse_qs
+    chamadas = []
+
+    def responder(route):
+        req = route.request
+        q = parse_qs(req.post_data or '').get('q', [])
+        chamadas.append(q)
+        if falhar and falhar():
+            route.fulfill(status=503, body='erro')
+            return
+        route.fulfill(status=200, content_type='application/json', body=json.dumps([f'PT: {t}' for t in q]),
+                      headers={'Access-Control-Allow-Origin': '*'})
+    page.route('https://translate.googleapis.com/**', responder)
+    return chamadas
+
+
+@caso('9c. Só a legenda estudada: tradução automática fala por fala, com cache')
+def t_traducao_auto(page, base, en):
+    estado_falha = {'falhar': True}
+    chamadas = falso_tradutor(page, lambda: estado_falha['falhar'])
     page.goto(base + '?mock=1')
-    page.fill('#campo-link', 'https://youtu.be/AAAAAAAAAAA')
-    page.set_input_files('#arq-estudo', [caminho])
+    page.fill('#campo-link', 'https://youtu.be/CCCCCCCCCCC')
+    page.set_input_files('#arq-estudo', [en])
+    expect(page.locator('#info-traducao')).to_have_text('Sem arquivo: o app traduz sozinho para o português.')
+    page.click('#btn-abrir')
+    # 1) o tradutor falha: aviso e botão para tentar de novo
+    expect(page.locator('#aviso-legenda')).to_contain_text('Não consegui traduzir', timeout=15000)
+    expect(page.locator('#btn-tentar-traducao')).to_be_visible()
+    estado_falha['falhar'] = False
+    page.click('#btn-tentar-traducao')
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)', timeout=8000)
+    page.click('#btn-tocar-grande')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    page.evaluate('window.__ld.S.player.irPara(22.6)')  # fala 11
+    expect(page.locator('#caixa-l1')).to_have_text('Line 11 of the test, with words.')
+    expect(page.locator('#caixa-l2')).to_have_text('PT: Line 11 of the test, with words.')
+    # cada fala tem a tradução dela, no mesmo tempo
+    pares = page.evaluate('window.__ld.S.unidades.map(u => [u.texto, u.trad])')
+    assert len(pares) == 40 and all(b == 'PT: ' + a for a, b in pares), pares[:3]
+    # o ajuste de sincronia da tradução some (ela anda junto com a legenda)
+    page.click('#btn-ajustes')
+    expect(page.locator('.ajuste-sinc[data-alvo="ajusteTraducao"]')).to_be_hidden()
+    page.click('#btn-fechar-ajustes')
+    # 2) reabrir: usa o que já foi traduzido, sem pedir de novo
+    n = len(chamadas)
+    page.click('#btn-voltar')
+    page.locator('.item-bib .abrir-item').first.click()
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)')
+    time.sleep(0.5)
+    assert len(chamadas) == n, (len(chamadas), n)
+    # 3) "Não traduzir" tira a segunda linha
+    page.click('#btn-ajustes')
+    page.select_option('[data-ajuste="destino"]', 'nao')
+    page.click('#btn-fechar-ajustes')
+    page.evaluate('window.__ld.S.player.irPara(22.6)')
+    expect(page.locator('#caixa-l2')).to_be_hidden()
+    page.click('#btn-ajustes')
+    page.select_option('[data-ajuste="destino"]', 'pt')
+    page.click('#btn-fechar-ajustes')
+    expect(page.locator('#aviso-legenda')).to_contain_text('Tradução automática (português)', timeout=8000)
+    page.click('#btn-voltar')
+    page.unroute('https://translate.googleapis.com/**')
+
+
+@caso('9e. Botão de legenda dupla: um arquivo com os dois idiomas')
+def t_dupla(page, base, pasta):
+    blocos = []
+    for i in range(12):
+        s = 0.5 + i * 2.2
+        blocos.append(f'{i + 1}\n{ts(s)} --> {ts(s + 2)}\nNúmero {i + 1}, não é?\nNumber {i + 1}, is it not?\n')
+    caminho = os.path.join(pasta, '[Bilingual] Vídeo duplo.srt')
+    with open(caminho, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(blocos))
+    page.goto(base + '?mock=1')
+    page.fill('#campo-link', 'https://youtu.be/DDDDDDDDDDD')
+    page.set_input_files('#arq-dupla', [caminho])
+    expect(page.locator('#info-estudo')).to_contain_text('(idioma estudado) — 12 falas lidas')
+    expect(page.locator('#info-traducao')).to_contain_text('(tradução) — 12 falas lidas')
     page.click('#btn-abrir')
     page.click('#btn-tocar-grande')
     esperar(lambda: estado(page) == 1, msg='tocando')
-    assert page.evaluate('window.__ld.S.unidades.length') == 1200
-    n_dom = page.locator('.item-fala').count()
-    assert n_dom < 1200, n_dom
-    page.evaluate('window.__ld.S.player.irPara(500.1)')
-    esperar(lambda: page.evaluate("document.querySelector('.item-fala.atual')?.dataset.i") is not None, msg='destaque')
-    i_atual = int(page.evaluate("document.querySelector('.item-fala.atual').dataset.i"))
-    assert i_atual == exibida(page), (i_atual, exibida(page))
-    time.sleep(1.0)
-    visivel = page.evaluate("""(() => { const c = document.querySelector('#lista-falas').getBoundingClientRect();
-        const r = document.querySelector('.item-fala.atual').getBoundingClientRect();
-        return r.top >= c.top && r.bottom <= c.bottom; })()""")
-    assert visivel, 'fala atual fora da área visível da lista'
+    page.evaluate('window.__ld.S.player.irPara(3)')
+    expect(page.locator('#caixa-l1')).to_have_text('Number 2, is it not?')
+    expect(page.locator('#caixa-l2')).to_have_text('Número 2, não é?')
     page.click('#btn-voltar')
+    # arquivo com um idioma só: erro claro
+    page.set_input_files('#arq-dupla', [os.path.join(pasta, '[English] Vídeo de teste [DownSub.com].srt')])
+    expect(page.locator('#info-estudo')).to_contain_text('não tem dois idiomas')
+    expect(page.locator('#btn-abrir')).to_be_disabled()
 
 
 @caso('10. Capturas de tela nos quatro tamanhos')
@@ -584,10 +532,6 @@ def t_capturas(browser, url, en, pt):
             time.sleep(0.3)
             page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-ajustes.png'))
             page.click('#btn-fechar-ajustes')
-        if nome == 'celular-deitado-915':
-            page.click('#btn-lista')
-            time.sleep(0.3)
-            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista.png'))
         if nome != 'celular-deitado-915':  # deitado: a caixa de legenda fica escondida
             page.locator('#caixa-l1 .palavra').first.click()
             time.sleep(0.2)
@@ -619,14 +563,13 @@ def main():
         t_arrastar(page)
         t_toque(page)
         t_teclas(page)
-        t_pausa_auto(page)
-        t_loop(page)
         t_extras(page)
         t_recarregar(page, url)
         t_backup(page, url, pasta)
         t_compartilhar(page, base)
-        t_lista_grande(page, base, pasta)
         t_link_automatico(page, base, en, pt)
+        t_traducao_auto(page, base, en)
+        t_dupla(page, base, pasta)
         ctx.close()
         t_capturas(browser, url, en, pt)
         browser.close()

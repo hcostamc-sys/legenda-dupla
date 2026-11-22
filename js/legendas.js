@@ -289,6 +289,113 @@ export function lerArquivoLegenda(buffer) {
 }
 
 // ---------------------------------------------------------------------------
+// Legenda dupla: um arquivo só, com os dois idiomas em cada fala (um em cima, outro embaixo)
+// ---------------------------------------------------------------------------
+
+export const MSG_NAO_DUPLA = 'Esse arquivo não tem dois idiomas em cada fala. Use o botão “Legenda do idioma que estou estudando”.';
+
+const PALAVRAS_PT = new Set([
+  'que', 'nao', 'de', 'do', 'da', 'dos', 'das', 'um', 'uma', 'para', 'pra', 'com', 'voce', 'voces', 'e', 'o', 'os', 'as',
+  'em', 'no', 'na', 'nos', 'nas', 'por', 'mais', 'mas', 'eu', 'ele', 'ela', 'eles', 'elas', 'isso', 'isto', 'esta',
+  'estao', 'sao', 'foi', 'como', 'muito', 'muita', 'tambem', 'entao', 'porque', 'quando', 'se', 'seu', 'sua', 'meu',
+  'minha', 'ao', 'aos', 'pelo', 'pela', 'ja', 'so', 'ser', 'ter', 'tem', 'vai', 'aqui', 'agora', 'sobre', 'ate', 'ha',
+  'fazer', 'coisa', 'bem', 'sim', 'obrigado', 'ola', 'nosso', 'nossa', 'era', 'estava', 'ainda', 'onde', 'todos',
+]);
+
+/** Quanto o texto parece português (0 a ~1). Serve para decidir qual lado é a tradução. */
+export function pontuacaoPortugues(texto) {
+  const bruto = String(texto || '').toLowerCase();
+  const palavras = normalizar(bruto).match(/\p{L}+/gu) || [];
+  if (!palavras.length) return 0;
+  let n = 0;
+  for (const w of palavras) if (PALAVRAS_PT.has(w)) n++;
+  n += 2 * (bruto.match(/[ãõ]|ç[ãõo]/g) || []).length;
+  return n / palavras.length;
+}
+
+const palavrasDe = (t) => normalizar(t).match(/\p{L}+/gu) || [];
+
+/**
+ * Lê um arquivo com os dois idiomas na mesma fala.
+ * Devolve { estudo: falas, traducao: falas } ou { erro }. Nunca lança exceção.
+ * Quando a fala tem mais de duas linhas, o ponto de corte é escolhido pelas palavras
+ * típicas de cada lado (aprendidas nas falas que têm exatamente duas linhas).
+ */
+export function lerLegendaDupla(texto) {
+  try {
+    if (typeof texto !== 'string') return { erro: MSG_SEM_LEGENDA };
+    let t = texto;
+    if (t.charCodeAt(0) === 0xfeff) t = t.slice(1);
+    t = t.replace(/\r\n?/g, '\n');
+    const ehVtt = /^\s*WEBVTT/.test(t);
+    const blocos = [];
+    for (const b of lerBlocos(t, ehVtt)) {
+      const linhas = b.linhas.map((l) => limparTexto([l])).filter(Boolean);
+      if (linhas.length && Number.isFinite(b.s) && Number.isFinite(b.e)) blocos.push({ s: b.s, e: b.e, linhas });
+    }
+    if (!blocos.length) return { erro: MSG_SEM_LEGENDA };
+    const comDuasOuMais = blocos.filter((b) => b.linhas.length >= 2).length;
+    if (comDuasOuMais < blocos.length * 0.5) return { erro: MSG_NAO_DUPLA };
+
+    // Perfil de palavras de cada lado, a partir das falas com exatamente duas linhas.
+    const perfil = () => ({ mapa: new Map(), total: 0 });
+    const cima = perfil();
+    const baixo = perfil();
+    const somar = (p, linha) => { for (const w of palavrasDe(linha)) { p.mapa.set(w, (p.mapa.get(w) || 0) + 1); p.total++; } };
+    const duas = blocos.filter((b) => b.linhas.length === 2);
+    for (const b of duas) { somar(cima, b.linhas[0]); somar(baixo, b.linhas[1]); }
+    const vocab = new Set([...cima.mapa.keys(), ...baixo.mapa.keys()]).size + 1;
+    const lp = (p, w) => Math.log(((p.mapa.get(w) || 0) + 1) / (p.total + vocab));
+    // > 0: a linha parece do lado de cima; < 0: do lado de baixo.
+    const lado = (linha) => palavrasDe(linha).reduce((soma, w) => soma + lp(cima, w) - lp(baixo, w), 0);
+    const temPerfil = duas.length >= 3;
+
+    const falasCima = [];
+    const falasBaixo = [];
+    for (const b of blocos) {
+      const n = b.linhas.length;
+      let k;
+      if (n === 1) k = !temPerfil || lado(b.linhas[0]) >= 0 ? 1 : 0;
+      else if (n === 2 || !temPerfil) k = Math.ceil(n / 2);
+      else {
+        const notas = b.linhas.map(lado);
+        let melhor = -Infinity;
+        for (let c = 1; c < n; c++) {
+          let soma = 0;
+          for (let i = 0; i < n; i++) soma += i < c ? notas[i] : -notas[i];
+          if (soma > melhor) { melhor = soma; k = c; }
+        }
+      }
+      const de = b.linhas.slice(0, k).join(' ');
+      const ate = b.linhas.slice(k).join(' ');
+      if (de) falasCima.push({ s: b.s, e: b.e, t: de });
+      if (ate) falasBaixo.push({ s: b.s, e: b.e, t: ate });
+    }
+    if (!falasCima.length || !falasBaixo.length) return { erro: MSG_NAO_DUPLA };
+    const A = corrigirSequencia(falasCima);
+    const B = corrigirSequencia(falasBaixo);
+    // O lado que parece mais português vira a tradução.
+    const media = (falas) => falas.reduce((s, f) => s + pontuacaoPortugues(f.t), 0) / falas.length;
+    if (media(A) > media(B)) return { estudo: B, traducao: A };
+    return { estudo: A, traducao: B };
+  } catch {
+    return { erro: MSG_SEM_LEGENDA };
+  }
+}
+
+/** Mesmo que lerLegendaDupla, a partir dos bytes do arquivo. */
+export function lerArquivoLegendaDupla(buffer) {
+  try {
+    const tamanho = buffer?.byteLength ?? 0;
+    if (tamanho > LIMITE_BYTES) return { erro: 'Arquivo grande demais (limite de 5 MB).' };
+    if (!tamanho) return { erro: MSG_SEM_LEGENDA };
+    return lerLegendaDupla(decodificar(buffer));
+  } catch {
+    return { erro: MSG_SEM_LEGENDA };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 5.3 item 5 — Marcações de som
 // ---------------------------------------------------------------------------
 

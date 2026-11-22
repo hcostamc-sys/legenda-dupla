@@ -6,34 +6,35 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 
 ## Como usar
 
-1. No app do YouTube, copie o link do vídeo e baixe as legendas no DownSub (veja abaixo).
-2. Abra o Legenda Dupla e toque em **Legenda do idioma que estou estudando**. Escolha os dois arquivos `.srt` de uma vez (ou um de cada vez, usando também **Tradução (opcional)**). O app descobre qual é o português; se ficaram trocados, toque em **⇅ Trocar**.
+1. No app do YouTube, copie o link do vídeo e baixe a legenda no DownSub (veja abaixo).
+2. Abra o Legenda Dupla e escolha as legendas de um destes jeitos:
+   - **Só a legenda do idioma que você estuda**: toque em **Legenda do idioma que estou estudando**. O app traduz sozinho cada fala para o português (ajustável em ⚙). Cada fala recebe a tradução dela, no mesmo tempo, por isso a tradução nunca sai de sincronia. A tradução fica guardada: na próxima vez, abre na hora.
+   - **Dois arquivos** (idioma estudado + português): escolha os dois de uma vez, ou um em cada botão. O app descobre qual é o português; se ficaram trocados, toque em **⇅ Trocar**.
+   - **Um arquivo com os dois idiomas juntos** (legenda bilíngue, um idioma em cima e outro embaixo em cada fala): toque em **Legenda dupla**. O app separa os dois idiomas e descobre qual é o português.
 3. O link entra sozinho no campo: se o vídeo já está na biblioteca, o app reconhece pelo título; se não, usa o link que você copiou no passo 1. Na primeira vez, o Chrome pergunta se o site pode ver o que foi copiado: toque em **Permitir**. Se o campo ficar vazio, toque em **Colar**.
-4. Toque em **Abrir vídeo** e depois em **▶ Tocar**. Se o título do vídeo não bater com o título no nome do arquivo de legenda, aparece um aviso para conferir o link.
+4. Toque em **Abrir vídeo** e depois em **▶ Tocar**.
 
-### Gestos e botões
+### Tela do vídeo
+
+De cima para baixo: o vídeo, o botão **tocar/pausar** com a barra do tempo, e uma caixa só com as duas linhas da legenda. A navegação é por gestos:
 
 | Ação | Celular | Notebook |
 |---|---|---|
-| Voltar uma fala | Arrastar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda, ou botão ⏮ | Seta ← |
-| Avançar uma fala | Arrastar para a **direita**, ou botão ⏭ | Seta → |
-| Repetir a fala | Segurar o dedo no vídeo, ou botão ↻ | R ou ↓ |
-| Tocar / pausar | Toque no vídeo, ou botão ▶ | Espaço |
-| Pular 5 s | Botões − 5 s e + 5 s | Shift + ← / → |
-| Pausa automática no fim de cada fala | Botão **Pausa automática** | P |
-| Repetir a fala em loop | Botão **Loop da fala** | L |
-| Borrar ou esconder linha 1 / linha 2 | Botões **Linha 1** e **Linha 2** | 1 / 2 |
-| Velocidade | Botão **1×** | [ e ] |
-| Tela cheia (gira para deitado) | Botão ⛶ | F |
+| Voltar uma fala | Arrastar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda | Seta ← |
+| Avançar uma fala | Arrastar para a **direita** | Seta → |
+| Repetir a fala | Segurar o dedo no vídeo | R ou ↓ |
+| Tocar / pausar | Toque no vídeo, ou o botão amarelo | Espaço |
+| Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
+| Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
+| Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar) | Igual |
-| Repetir um trecho | Na lista de falas: vá à primeira fala e toque **A**, vá à última e toque **B** | Igual |
 
-A direção do arraste pode ser invertida em **⚙ Ajustes**. Lá também ficam a sincronia de cada legenda (se ela aparecer adiantada ou atrasada), o modo frases, o tamanho das letras e as outras opções.
+Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela aparecer adiantada ou atrasada), tradução automática (para qual idioma, ou não traduzir), tamanho das letras e inverter a direção do arraste.
 
-### Modo frases
+### Frases montadas
 
-Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. No modo **Automático** (padrão), o app percebe isso e junta os pedaços em frases completas. Aparece o aviso “Legenda automática: frases montadas pelo app”. Legendas feitas por pessoas ficam como vieram.
+Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). Legendas feitas por pessoas ficam como vieram.
 
 ### Passar a biblioteca para outro aparelho
 
@@ -59,6 +60,7 @@ A mesma ajuda existe dentro do app (link no rodapé da biblioteca). Pode mudar s
 - A legenda do próprio YouTube pode aparecer junto. Se acontecer, desligue as legendas uma vez no app do YouTube.
 - O som para com a tela desligada ou com o app em segundo plano.
 - O app depende de partes não documentadas do player do YouTube; se o YouTube mudar, pode precisar de ajuste.
+- A tradução automática usa o tradutor público do Google (o mesmo do Chrome), sem chave e sem custo, mas ele não é documentado oficialmente: se o Google mudar ou limitar, aparece “Não consegui traduzir” com o botão **Tentar de novo**. Nesse caso, baixe também a legenda em português no DownSub. O texto da legenda é enviado ao Google para ser traduzido.
 
 ## Como atualizar o site
 
@@ -76,7 +78,7 @@ Ao mudar qualquer arquivo, troque o nome do cache em `sw.js` (`ld-v1` → `ld-v2
 ### Testes
 
 ```bash
-node --test                      # lógica das legendas (tests/legendas.test.mjs)
+node --test                      # lógica das legendas, legenda dupla e tradução (tests/*.test.mjs)
 python3 tests/e2e_test.py        # interface com Playwright e o player de teste
 ```
 

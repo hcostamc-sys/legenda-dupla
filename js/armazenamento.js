@@ -5,49 +5,22 @@ const BANCO = 'legenda-dupla';
 const STORE = 'videos';
 const CHAVE_AJUSTES = 'ld.ajustes';
 
+// Versão 2 (22/11/2026): interface enxuta. Os ajustes antigos que saíram são ignorados.
 export const AJUSTES_PADRAO = Object.freeze({
-  versao: 1,
-  idioma: 'en',
-  tocarAoNavegar: true,
-  preRolagem: 0.15,
-  preRolagemFrases: 0.3,
-  antecedencia: 0.1,
-  pausaAuto: false,
-  loop: false,
-  loopVezes: 0, // 0 = ∞
-  pausaEntreRepeticoes: 0,
-  linha1: 'visivel', // visivel | borrada | oculta
-  linha2: 'visivel',
-  traducaoSoPausado: false,
-  inverterOrdem: false,
-  manterUltima: true,
-  modoFrases: 'auto', // auto | ligado | desligado
-  esconderMarcacoes: false,
+  versao: 2,
+  idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
+  destino: 'pt', // idioma da tradução automática; 'nao' = não traduzir
   inverterArraste: false,
-  legendaSobreEmPe: false,
-  posicaoSobre: 'baixo', // baixo | cima
-  opacidadeFundo: 60,
-  fonteL1: 22,
-  fonteL2: 18,
+  fonteL1: 19, // a linha 2 usa 85% deste tamanho
   velocidade: 1,
 });
 
 const OPCOES = {
-  idioma: ['en', 'fr', 'es', 'it', 'de', 'auto'],
-  linha1: ['visivel', 'borrada', 'oculta'],
-  linha2: ['visivel', 'borrada', 'oculta'],
-  modoFrases: ['auto', 'ligado', 'desligado'],
-  posicaoSobre: ['baixo', 'cima'],
-  loopVezes: [0, 1, 2, 3, 5],
-  pausaEntreRepeticoes: [0, 0.5, 1, 2],
+  idioma: ['auto', 'en', 'fr', 'es', 'it', 'de'],
+  destino: ['pt', 'en', 'es', 'fr', 'nao'],
 };
 const FAIXAS = {
-  preRolagem: [0, 0.5],
-  preRolagemFrases: [0, 0.5],
-  antecedencia: [0, 0.3],
-  opacidadeFundo: [0, 100],
-  fonteL1: [14, 40],
-  fonteL2: [14, 40],
+  fonteL1: [14, 32],
   velocidade: [0.25, 2],
 };
 
@@ -57,6 +30,8 @@ export function misturarAjustes(salvos) {
   if (salvos && typeof salvos === 'object') {
     for (const k of Object.keys(AJUSTES_PADRAO)) {
       if (k === 'versao' || !(k in salvos)) continue;
+      // O tamanho de letra da versão 1 (22 px) ficava grande demais no celular: volta ao novo padrão.
+      if (k === 'fonteL1' && salvos.versao !== 2) continue;
       const v = salvos[k];
       if (typeof v !== typeof AJUSTES_PADRAO[k]) continue;
       if (typeof v === 'number' && !Number.isFinite(v)) continue;
@@ -79,7 +54,7 @@ export function carregarAjustes() {
 
 export function salvarAjustes(ajustes) {
   try {
-    localStorage.setItem(CHAVE_AJUSTES, JSON.stringify({ ...ajustes, versao: 1 }));
+    localStorage.setItem(CHAVE_AJUSTES, JSON.stringify({ ...ajustes, versao: 2 }));
     return true;
   } catch {
     return false;
@@ -209,14 +184,23 @@ function limparRegistro(v) {
     traducao: v.traducao ? { arquivo: String(v.traducao.arquivo || ''), falas: v.traducao.falas.map(({ s, e, t }) => ({ s, e, t })) } : null,
     ajusteEstudo: Number.isFinite(v.ajusteEstudo) ? v.ajusteEstudo : 0,
     ajusteTraducao: Number.isFinite(v.ajusteTraducao) ? v.ajusteTraducao : 0,
+    traducaoAuto: traducaoAutoValida(v.traducaoAuto),
   };
+}
+
+/** Cache da tradução automática: { para, mapa: { texto: tradução } }. Devolve null se inválido. */
+function traducaoAutoValida(t) {
+  if (!t || typeof t !== 'object' || typeof t.para !== 'string' || !t.mapa || typeof t.mapa !== 'object') return null;
+  const mapa = {};
+  for (const [k, v] of Object.entries(t.mapa)) if (typeof v === 'string') mapa[k] = v;
+  return { para: t.para, mapa };
 }
 
 export async function montarBackup(ajustes) {
   return {
     versao: 1,
     exportadoEm: new Date().toISOString(),
-    ajustes: { ...ajustes, versao: 1 },
+    ajustes: { ...ajustes, versao: 2 },
     videos: await listarVideos(),
   };
 }

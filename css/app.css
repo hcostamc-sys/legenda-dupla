@@ -9,9 +9,8 @@
   --texto-2: #b8b8b8;
   --ambar: #ffd54f;
   --erro: #ff8a80;
-  --fonte-l1: 22px;
-  --fonte-l2: 18px;
-  --opac-fundo: 0.6;
+  --fonte-l1: 19px;
+  --fonte-l2: 16px;
   --toque: 48px;
   color-scheme: dark;
 }
@@ -149,6 +148,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .info-arquivo.ok { color: #a5d6a7; }
 .info-arquivo.erro { color: var(--erro); }
 .btn-trocar { align-self: center; }
+.separador { display: flex; align-items: center; gap: 10px; color: var(--texto-2); font-size: 14px; margin: 2px 0; }
+.separador::before, .separador::after { content: ""; flex: 1; border-top: 1px solid var(--borda); }
 .btn-principal#btn-abrir { width: 100%; font-size: 18px; min-height: 56px; }
 
 .lista-biblioteca { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -211,7 +212,8 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 
 .rodape { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
 
-/* ============================== ASSISTIR (em pé) ============================== */
+/* ============================== ASSISTIR (em pé) ==============================
+   De cima para baixo: barra do topo, vídeo, play + barra do tempo, caixa da legenda (ocupa o resto). */
 
 #tela-assistir {
   height: 100vh;
@@ -227,26 +229,23 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .barra-topo {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: var(--toque);
-  padding-top: env(safe-area-inset-top);
+  gap: 0;
+  min-height: 48px;
+  padding: env(safe-area-inset-top) 2px 0;
   flex: none;
 }
-#btn-voltar { font-size: 15px; white-space: nowrap; }
+.barra-topo .btn-topo { min-width: 44px; min-height: 44px; font-size: 20px; padding: 0 8px; }
+#btn-voltar { font-size: 22px; }
 .titulo-video {
   flex: 1;
   min-width: 0;
   font-size: 15px;
   font-weight: 600;
-  margin: 0;
+  margin: 0 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.so-imersivo { display: none; }
-
-.assistir-corpo { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.coluna-principal { flex: none; display: flex; flex-direction: column; }
 
 .area-video {
   position: relative;
@@ -286,8 +285,9 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .gestos-ativos .camada-gestos { pointer-events: auto; }
 .toque-livre .camada-gestos { pointer-events: none; }
 .toque-livre .area-video { outline: 3px solid var(--ambar); outline-offset: -3px; }
-.btn-liberar { font-variant-numeric: tabular-nums; padding: 0 6px; }
+.btn-liberar { font-variant-numeric: tabular-nums; }
 
+/* Legendas sobre o vídeo: só deitado ou em tela cheia */
 .legenda-sobre {
   position: absolute;
   left: 4%;
@@ -301,19 +301,17 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   align-items: center;
   gap: 2px;
 }
-.legenda-sobre.cima { bottom: auto; top: 4%; }
-.sobre-em-pe .legenda-sobre { display: flex; }
 .legenda-sobre .l1, .legenda-sobre .l2 {
-  background: rgba(0, 0, 0, var(--opac-fundo));
-  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 2px 10px;
   border-radius: 6px;
   max-width: 100%;
   overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 .legenda-sobre .l1 { font-size: var(--fonte-l1); color: var(--texto); }
 .legenda-sobre .l2 { font-size: var(--fonte-l2); color: var(--ambar); }
 .legenda-sobre .l1:empty, .legenda-sobre .l2:empty { display: none; }
-.invertida.legenda-sobre, .caixa-legenda.invertida { flex-direction: column-reverse; }
 
 .btn-tocar-grande {
   position: absolute;
@@ -321,9 +319,9 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  min-height: 64px;
-  padding: 0 28px;
-  font-size: 22px;
+  min-height: 52px;
+  padding: 0 24px;
+  font-size: 18px;
   font-weight: 700;
   border-radius: 999px;
   border: 0;
@@ -351,10 +349,10 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   top: 50%;
   transform: translate(-50%, -50%);
   background: rgba(0, 0, 0, 0.55);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
-  padding: 10px 18px;
-  border-radius: 14px;
+  padding: 8px 16px;
+  border-radius: 12px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s;
@@ -376,164 +374,75 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   text-align: center;
 }
 
-/* Em pé e no notebook: vídeo, barra de progresso, caixa de legenda, controles (ordem da seção 8.2).
-   A faixa só vira um bloco único em tela cheia ou deitado. */
-.faixa { display: contents; }
-.area-video { order: 1; }
-.progresso { order: 2; }
-.caixa-legenda { order: 3; }
-.controles-principais { order: 4; }
-.controles-estudo { order: 5; }
-.aviso-frases { order: 6; }
-.imersivo .faixa { display: block; }
-.progresso {
+/* Play/pausa + barra do tempo */
+.faixa {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  min-height: 40px;
-}
-.tempo { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--texto-2); min-width: 3.2em; text-align: center; }
-#barra-progresso { flex: 1; min-width: 0; accent-color: var(--ambar); height: 32px; }
-
-.controles-principais {
-  display: flex;
-  justify-content: center;
   gap: 10px;
-  padding: 4px 8px;
+  padding: 8px 14px 6px 12px;
+  flex: none;
 }
-.btn-ctrl {
-  font-size: 24px;
-  min-width: 64px;
-  min-height: 52px;
-  border-radius: 14px;
+.btn-play {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  border: 0;
+  background: var(--ambar);
+  color: #111;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
 }
-.btn-play { background: var(--ambar); color: #111; border-color: var(--ambar); min-width: 76px; }
+.btn-play svg { width: 24px; height: 24px; fill: currentColor; }
+.btn-play .ico-pausa, .btn-play.tocando .ico-play { display: none; }
+.btn-play.tocando .ico-pausa { display: block; }
+.btn-play:active { filter: brightness(1.2); }
+.btn-play:focus-visible { outline: 2px solid var(--texto); outline-offset: 2px; }
+.tempo { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--texto-2); flex: none; min-width: 2.8em; text-align: center; }
+#barra-progresso { flex: 1; min-width: 0; accent-color: var(--ambar); height: 28px; margin: 0; }
 
+/* A única caixa de legenda: ocupa o espaço que sobra e centraliza o texto */
 .caixa-legenda {
-  margin: 6px 10px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  flex: 1;
+  min-height: 90px;
+  margin: 4px 12px 0;
+  padding: 12px 16px;
+  border-radius: 14px;
   background: var(--fundo-2);
   border: 1px solid var(--borda);
-  min-height: calc(var(--fonte-l1) * 1.3 * 2 + var(--fonte-l2) * 1.3 * 2 + 22px);
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
   text-align: center;
 }
-.caixa-legenda .linha { overflow-wrap: anywhere; line-height: 1.3; }
-.caixa-legenda .l1 { font-size: var(--fonte-l1); color: var(--texto); }
+.legenda-meio { margin: auto 0; display: flex; flex-direction: column; gap: 10px; }
+.caixa-legenda .linha { overflow-wrap: anywhere; line-height: 1.35; }
+.caixa-legenda .l1 { font-size: var(--fonte-l1); color: var(--texto); font-weight: 500; }
 .caixa-legenda .l2 { font-size: var(--fonte-l2); color: var(--ambar); }
 .palavra { border-radius: 4px; cursor: pointer; }
 .palavra:hover { background: rgba(255, 255, 255, 0.12); }
 .palavra.tocada { background: rgba(255, 213, 79, 0.35); }
 
-.borrada { filter: blur(6px); }
-.oculta { visibility: hidden; }
-
-.controles-estudo {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 4px 10px 8px;
-  scrollbar-width: thin;
+.rodape-legenda {
   flex: none;
-}
-
-.aviso-frases {
-  margin: 0 10px 6px;
-  font-size: 13px;
-  color: var(--texto-2);
-}
-
-/* Lista de falas */
-.painel-lista {
-  flex: 1;
-  min-height: 0;
   display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--borda);
-  position: relative;
-  background: var(--fundo);
-}
-.lista-topo { display: flex; gap: 6px; padding: 6px 10px; align-items: center; }
-.lista-topo input {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--borda);
-  background: var(--fundo-2);
-  padding: 0 12px;
-}
-.ab-barra { display: flex; gap: 6px; align-items: center; flex: none; }
-.ab-barra .chip { padding: 0 12px; }
-.info-ab { font-size: 13px; color: var(--texto-2); padding: 0 10px 4px; }
-.info-ab:empty { display: none; }
-
-.lista-falas {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  position: relative;
-  overscroll-behavior: contain;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
-}
-.item-fala {
-  display: grid;
-  grid-template-columns: 3.6em 1fr;
-  gap: 8px;
-  padding: 8px 10px;
-  min-height: var(--toque);
-  border-bottom: 1px solid #1f1f1f;
-  cursor: pointer;
-  border-left: 4px solid transparent;
-}
-.item-fala .t { font-size: 13px; color: var(--texto-2); font-variant-numeric: tabular-nums; padding-top: 2px; }
-.item-fala .a { color: var(--texto); overflow-wrap: anywhere; }
-.item-fala .b { color: var(--ambar); font-size: 14px; overflow-wrap: anywhere; }
-.item-fala.atual { background: var(--fundo-3); border-left-color: var(--ambar); }
-.item-fala.marca-a .t::after { content: " A"; color: var(--ambar); font-weight: 700; }
-.item-fala.marca-b .t::after { content: " B"; color: var(--ambar); font-weight: 700; }
-.item-fala.marca-a.marca-b .t::after { content: " A B"; }
-.item-fala.no-ab { box-shadow: inset 2px 0 0 #7a6a2a; }
-.lista-sem-resultado { padding: 16px; color: var(--texto-2); }
-
-.btn-fala-atual {
-  position: absolute;
-  right: 12px;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  z-index: 3;
-  background: var(--ambar);
-  color: #111;
-  border-color: var(--ambar);
-  font-weight: 600;
-}
-
-/* Menu de velocidade */
-.menu-velocidade {
-  position: fixed;
-  z-index: 25;
-  left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  background: var(--fundo-3);
-  border: 1px solid var(--borda);
-  border-radius: 14px;
-  padding: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-width: calc(100vw - 24px);
+  align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 12px calc(6px + env(safe-area-inset-bottom));
+  font-size: 12px;
+  color: var(--texto-2);
+  text-align: center;
 }
-.menu-velocidade .chip.confirmada { background: var(--ambar); color: #111; border-color: var(--ambar); }
+.rodape-legenda .btn-link { min-height: 32px; font-size: 13px; }
 
 /* Cartão da palavra */
 .cartao-palavra {
@@ -549,23 +458,27 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 .cp-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cp-topo strong { font-size: 22px; overflow-wrap: anywhere; }
+.cp-topo strong { font-size: 20px; overflow-wrap: anywhere; }
 .cp-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.cp-botoes .btn { padding: 0 8px; font-size: 15px; }
+.cp-botoes .btn { padding: 0 8px; font-size: 15px; min-height: 44px; }
 
 /* ============================== NOTEBOOK (900 px ou mais) ============================== */
 
 @media (min-width: 900px) {
-  body:not(.imersivo) .assistir-corpo { flex-direction: row; }
-  body:not(.imersivo) .coluna-principal { width: 65%; overflow-y: auto; min-height: 0; }
-  /* o vídeo encolhe para caberem caixa de legenda e controles na altura da tela */
-  body:not(.imersivo) .area-video {
-    width: min(100%, calc((100vh - 400px) * 16 / 9));
-    width: min(100%, calc((100dvh - 400px) * 16 / 9));
+  body:not(.imersivo) #tela-assistir > .area-video {
+    /* o vídeo encolhe para sobrar altura para a legenda */
+    width: min(100%, 1100px, calc((100vh - 300px) * 16 / 9));
+    width: min(100%, 1100px, calc((100dvh - 300px) * 16 / 9));
     min-width: 356px;
     margin: 0 auto;
   }
-  body:not(.imersivo) .painel-lista { width: 35%; border-top: 0; border-left: 1px solid var(--borda); }
+  body:not(.imersivo) #tela-assistir > .faixa,
+  body:not(.imersivo) #tela-assistir > .caixa-legenda,
+  body:not(.imersivo) #tela-assistir > .rodape-legenda {
+    width: min(100% - 24px, 1100px);
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 /* ============================== DEITADO E TELA CHEIA ============================== */
@@ -591,9 +504,7 @@ body.imersivo { overflow: hidden; }
   height: auto;
 }
 .imersivo .legenda-sobre { display: flex; bottom: calc(14px + env(safe-area-inset-bottom)); transition: bottom 0.15s; }
-.imersivo .legenda-sobre.cima { bottom: auto; top: 14px; }
-.imersivo.faixa-visivel .legenda-sobre:not(.cima) { bottom: calc(126px + env(safe-area-inset-bottom)); }
-.imersivo.faixa-visivel .legenda-sobre.cima { top: 64px; }
+.imersivo.faixa-visivel .legenda-sobre { bottom: calc(72px + env(safe-area-inset-bottom)); }
 
 .imersivo .barra-topo, .imersivo .faixa {
   position: fixed;
@@ -601,30 +512,14 @@ body.imersivo { overflow: hidden; }
   right: 0;
   z-index: 10;
   padding-left: calc(8px + env(safe-area-inset-left));
-  padding-right: calc(8px + env(safe-area-inset-right));
+  padding-right: calc(14px + env(safe-area-inset-right));
   transition: opacity 0.2s;
 }
 .imersivo .barra-topo { top: 0; background: linear-gradient(rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0)); padding-top: env(safe-area-inset-top); }
-.imersivo .faixa { bottom: 0; background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.85) 30%); padding-bottom: calc(6px + env(safe-area-inset-bottom)); padding-top: 14px; }
+.imersivo .faixa { bottom: 0; background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.85) 40%); padding-bottom: calc(8px + env(safe-area-inset-bottom)); padding-top: 16px; }
 body.imersivo:not(.faixa-visivel) .barra-topo,
 body.imersivo:not(.faixa-visivel) .faixa { opacity: 0; pointer-events: none; }
-.imersivo .so-imersivo { display: inline-flex; }
-.imersivo .caixa-legenda, .imersivo .controles-estudo, .imersivo .aviso-frases { display: none; }
-
-.imersivo .painel-lista { display: none; }
-.imersivo.lista-aberta .painel-lista {
-  display: flex;
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(400px, 86vw);
-  z-index: 20;
-  border-left: 1px solid var(--borda);
-  padding-top: env(safe-area-inset-top);
-  padding-right: env(safe-area-inset-right);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.6);
-}
+.imersivo .caixa-legenda, .imersivo .rodape-legenda { display: none; }
 
 /* ============================== AJUSTES, AJUDA, DIÁLOGO ============================== */
 
@@ -680,7 +575,11 @@ body.imersivo:not(.faixa-visivel) .faixa { opacity: 0; pointer-events: none; }
 .ajuste-check { flex-direction: row; align-items: center; gap: 12px; min-height: var(--toque); margin: 2px 0; }
 .ajuste-check input { width: 24px; height: 24px; accent-color: var(--ambar); flex: none; }
 .ajuste-sinc { margin: 8px 0; }
-.botoes-sinc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.linha-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.linha-chips .chip { min-height: 40px; min-width: 52px; padding: 0 12px; }
+.linha-chips .chip.confirmada { background: var(--ambar); color: #111; border-color: var(--ambar); }
+.lista-gestos { margin: 4px 0; padding-left: 20px; color: var(--texto-2); font-size: 14px; }
+.lista-gestos li { margin: 4px 0; }
 
 .ajuda-texto ol { padding-left: 22px; }
 .ajuda-texto li { margin: 10px 0; }

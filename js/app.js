@@ -1,21 +1,27 @@
-// app.js — estado, telas, eventos. Liga legendas, player, gestos e armazenamento.
-// PLANO.md seções 7 a 11.
+// app.js — estado, telas, eventos. Liga legendas, tradução, player, gestos e armazenamento.
+// PLANO.md seções 7 a 11 e 15 (interface enxuta e tradução automática, 22/11/2026).
 
 import {
-  tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, sugerirPapeis, processar, falaNoTempo, indiceLogico, navegar,
-  tempoDestino, normalizar, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
+  tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, lerArquivoLegendaDupla, sugerirPapeis,
+  processar, falaNoTempo, navegar, tempoDestino, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
   MSG_LINK_INVALIDO,
 } from './legendas.js';
+import { textosPendentes, aplicarMapa, traduzirTodos, NOMES_IDIOMA } from './traducao.js';
 import { criarPlayer, MSG_API } from './player.js';
 import { ligarGestos } from './gestos.js';
 import {
-  AJUSTES_PADRAO, carregarAjustes, salvarAjustes, salvarVideo, obterVideo, listarVideos,
+  carregarAjustes, salvarAjustes, salvarVideo, obterVideo, listarVideos,
   apagarVideo, montarBackup, importarBackup, estaSoNaMemoria,
 } from './armazenamento.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const MOCK = new URLSearchParams(location.search).get('mock') === '1';
+
+// Valores fixos (antes eram ajustes; saíram do menu para deixá-lo simples).
+const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
+const PRE_ROLAGEM_FRASES = 0.3;
+const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: false };
 
 // ============================================================ estado
 
@@ -29,28 +35,26 @@ const S = {
   player: null,
   pronto: false,
   primeiroPlay: false,
+  inicio: 0,
   exibida: -2, // índice mostrado na caixa
-  exibidaDentro: false,
-  destacada: -2,
+  exibidaTrad: null,
   memoriaNav: null,
   alvoNav: null,
-  falaAtiva: -1,
-  pausadaEm: -1,
-  loop: { alvo: null, contador: 0, espera: null },
-  ab: { a: null, b: null },
-  revelada: { l1: false, l2: false },
+  saltoEm: 0,
   velConfirmada: 1,
   velPedida: null,
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
   ajustouVelInicio: false,
+  tituloConferido: false,
   raf: 0,
   ultimoProgresso: 0,
   ultimoSalvamento: 0,
-  saltoEm: 0,
   arrastandoBarra: false,
   telaLigada: null,
   timerFaixa: null,
   vindoDaBiblioteca: false,
+  // tradução automática
+  trad: { estado: 'ocioso', feitos: 0, total: 0, controle: null },
   // formulário
   escolha: { estudo: null, traducao: null },
 };
@@ -78,8 +82,6 @@ function mostrarRetorno(texto) {
 function vibrar() {
   try { navigator.vibrate?.(15); } catch { /* nada */ }
 }
-
-const seg = (x) => `${formatarNumero(x)} s`;
 
 /** Diálogo da própria página (sem alert/confirm/prompt). */
 function dialogo({ texto, ok = 'OK', cancelar = 'Cancelar', campo = null, caixa = null }) {
@@ -130,20 +132,10 @@ function dialogo({ texto, ok = 'OK', cancelar = 'Cancelar', campo = null, caixa 
 // ============================================================ aparência
 
 function aplicarAparencia() {
-  const a = S.ajustes;
   const raiz = document.documentElement.style;
-  raiz.setProperty('--fonte-l1', `${a.fonteL1}px`);
-  raiz.setProperty('--fonte-l2', `${a.fonteL2}px`);
-  raiz.setProperty('--opac-fundo', String(a.opacidadeFundo / 100));
-  document.body.classList.toggle('sobre-em-pe', a.legendaSobreEmPe);
-  $('#legenda-sobre').classList.toggle('cima', a.posicaoSobre === 'cima');
-  $('#legenda-sobre').classList.toggle('invertida', a.inverterOrdem);
-  $('#caixa-legenda').classList.toggle('invertida', a.inverterOrdem);
-  $('#btn-pausa-auto').setAttribute('aria-pressed', String(a.pausaAuto));
-  $('#btn-loop').setAttribute('aria-pressed', String(a.loop));
-  const nomes = { visivel: 'visível', borrada: 'borrada', oculta: 'oculta' };
-  $('#btn-linha1').textContent = `Linha 1: ${nomes[a.linha1]}`;
-  $('#btn-linha2').textContent = `Linha 2: ${nomes[a.linha2]}`;
+  const f = S.ajustes.fonteL1;
+  raiz.setProperty('--fonte-l1', `${f}px`);
+  raiz.setProperty('--fonte-l2', `${Math.round(f * 0.85)}px`);
 }
 
 function salvar() {
@@ -151,6 +143,11 @@ function salvar() {
 }
 
 // ============================================================ biblioteca: formulário
+
+function textoSemTraducao() {
+  const d = S.ajustes.destino;
+  return d === 'nao' ? 'Nenhum arquivo escolhido.' : `Sem arquivo: o app traduz sozinho para o ${NOMES_IDIOMA[d]}.`;
+}
 
 function validarFormulario() {
   const texto = $('#campo-link').value;
@@ -169,23 +166,33 @@ function validarFormulario() {
 function mostrarEscolha(papel) {
   const el = $(papel === 'estudo' ? '#info-estudo' : '#info-traducao');
   const e = S.escolha[papel];
-  if (e?.erro) {
-    el.textContent = `${e.arquivo}: ${e.erro}`;
-    el.className = 'info-arquivo erro';
-  } else if (e) {
+  if (e) {
     const n = e.falas.length;
-    el.textContent = `${e.arquivo} — ${n.toLocaleString('pt-BR')} ${n === 1 ? 'fala lida' : 'falas lidas'}`;
+    const parte = e.dupla ? (papel === 'estudo' ? ' (idioma estudado)' : ' (tradução)') : '';
+    el.textContent = `${e.arquivo}${parte} — ${n.toLocaleString('pt-BR')} ${n === 1 ? 'fala lida' : 'falas lidas'}`;
     el.className = 'info-arquivo ok';
   } else {
-    el.textContent = 'Nenhum arquivo escolhido.';
+    el.textContent = papel === 'traducao' && S.escolha.estudo ? textoSemTraducao() : 'Nenhum arquivo escolhido.';
     el.className = 'info-arquivo';
   }
 }
 
-async function lerArquivo(file) {
+function mostrarErroArquivo(papel, arquivo, erro) {
+  const el = $(papel === 'estudo' ? '#info-estudo' : '#info-traducao');
+  el.textContent = `${arquivo}: ${erro}`;
+  el.className = 'info-arquivo erro';
+}
+
+async function lerArquivo(file, dupla = false) {
   if (file.size > LIMITE_BYTES) return { arquivo: file.name, erro: 'Arquivo grande demais (limite de 5 MB).' };
   try {
-    const r = lerArquivoLegenda(await file.arrayBuffer());
+    const buf = await file.arrayBuffer();
+    if (dupla) {
+      const r = lerArquivoLegendaDupla(buf);
+      if (r.erro) return { arquivo: file.name, erro: r.erro };
+      return { arquivo: file.name, estudo: r.estudo, traducao: r.traducao };
+    }
+    const r = lerArquivoLegenda(buf);
     if (r.erro) return { arquivo: file.name, erro: r.erro };
     return { arquivo: file.name, falas: r.falas };
   } catch {
@@ -196,11 +203,12 @@ async function lerArquivo(file) {
 function definirEscolha(papel, r) {
   S.escolha[papel] = r && !r.erro ? { arquivo: r.arquivo, falas: r.falas } : null;
   mostrarEscolha(papel);
-  if (r?.erro) {
-    const el = $(papel === 'estudo' ? '#info-estudo' : '#info-traducao');
-    el.textContent = `${r.arquivo}: ${r.erro}`;
-    el.className = 'info-arquivo erro';
-  }
+  if (r?.erro) mostrarErroArquivo(papel, r.arquivo, r.erro);
+}
+
+function mostrarAmbas() {
+  mostrarEscolha('estudo');
+  mostrarEscolha('traducao');
 }
 
 async function receberArquivos(lista, papel) {
@@ -210,15 +218,36 @@ async function receberArquivos(lista, papel) {
   if (arquivos.length >= 2) {
     const dois = arquivos.slice(0, 2);
     const papeis = sugerirPapeis(dois.map((f) => f.name));
-    const [r0, r1] = await Promise.all(dois.map(lerArquivo));
-    const lidos = [r0, r1];
+    const lidos = await Promise.all(dois.map((f) => lerArquivo(f)));
     definirEscolha('estudo', lidos[papeis.estudo]);
     definirEscolha('traducao', lidos[papeis.traducao]);
     toast('Confira os dois arquivos. Se estiverem trocados, toque em ⇅ Trocar.');
   } else {
     const alvo = papel || (S.escolha.estudo ? 'traducao' : 'estudo');
+    // Um arquivo da legenda dupla estava escolhido: trocar uma parte desfaz o par.
+    for (const k of ['estudo', 'traducao']) if (S.escolha[k]?.dupla) S.escolha[k].dupla = false;
     definirEscolha(alvo, await lerArquivo(arquivos[0]));
+    if (alvo === 'estudo' && !S.escolha.traducao) mostrarEscolha('traducao');
   }
+  validarFormulario();
+  await preencherLinkAutomatico();
+}
+
+async function receberDupla(lista) {
+  const file = Array.from(lista || [])[0];
+  if (!file) return;
+  const r = await lerArquivo(file, true);
+  if (r.erro) {
+    S.escolha = { estudo: null, traducao: null };
+    mostrarAmbas();
+    mostrarErroArquivo('estudo', r.arquivo, r.erro);
+    validarFormulario();
+    return;
+  }
+  S.escolha.estudo = { arquivo: r.arquivo, falas: r.estudo, dupla: true };
+  S.escolha.traducao = { arquivo: r.arquivo, falas: r.traducao, dupla: true };
+  mostrarAmbas();
+  toast('Legenda dupla separada nos dois idiomas. Se ficaram trocados, toque em ⇅ Trocar.', 3500);
   validarFormulario();
   await preencherLinkAutomatico();
 }
@@ -273,16 +302,14 @@ function trocarPapeis() {
   const { estudo, traducao } = S.escolha;
   S.escolha.estudo = traducao;
   S.escolha.traducao = estudo;
-  mostrarEscolha('estudo');
-  mostrarEscolha('traducao');
+  mostrarAmbas();
   validarFormulario();
 }
 
 function limparFormulario() {
   $('#campo-link').value = '';
   S.escolha = { estudo: null, traducao: null };
-  mostrarEscolha('estudo');
-  mostrarEscolha('traducao');
+  mostrarAmbas();
   $('#msg-link').textContent = '';
   $('#msg-link').className = 'msg';
   validarFormulario();
@@ -293,16 +320,20 @@ async function abrirDoFormulario() {
   if (!link || !S.escolha.estudo) return;
   const existente = await obterVideo(link.videoId);
   const agora = new Date().toISOString();
+  const so = (e) => (e ? { arquivo: e.arquivo, falas: e.falas } : null);
+  const estudo = so(S.escolha.estudo);
   const reg = {
     id: link.videoId,
     titulo: existente?.titulo || '',
     criadoEm: existente?.criadoEm || agora,
     abertoEm: agora,
     posicao: existente?.posicao || 0,
-    estudo: S.escolha.estudo,
-    traducao: S.escolha.traducao || null,
+    estudo,
+    traducao: so(S.escolha.traducao),
     ajusteEstudo: 0,
     ajusteTraducao: 0,
+    // A tradução automática já feita continua valendo se a legenda estudada for a mesma.
+    traducaoAuto: existente?.traducaoAuto && existente.estudo?.arquivo === estudo.arquivo ? existente.traducaoAuto : null,
   };
   const inicio = link.inicioSeg > 0 ? link.inicioSeg : existente ? Math.max(0, reg.posicao - 2) : 0;
   await salvarVideo(reg);
@@ -492,7 +523,7 @@ async function aoEscolherBackup(file) {
 function mostrarBiblioteca() {
   $('#tela-assistir').hidden = true;
   $('#tela-biblioteca').hidden = false;
-  document.body.classList.remove('imersivo', 'faixa-visivel', 'lista-aberta');
+  document.body.classList.remove('imersivo', 'faixa-visivel');
   fecharPaineis();
 }
 
@@ -537,28 +568,22 @@ function reprocessar() {
   if (!reg) return;
   const r = processar(
     { estudo: reg.estudo, traducao: reg.traducao, ajusteEstudo: reg.ajusteEstudo, ajusteTraducao: reg.ajusteTraducao },
-    { modoFrases: S.ajustes.modoFrases, esconderMarcacoes: S.ajustes.esconderMarcacoes },
+    OPCOES_PROCESSAR,
   );
   S.unidades = r.unidades;
   S.frases = r.frases;
   S.automatica = r.automatica;
-  $('#aviso-frases').hidden = !(r.frases && S.ajustes.modoFrases === 'auto');
   S.memoriaNav = null;
   S.alvoNav = null;
-  S.falaAtiva = -1;
-  S.pausadaEm = -1;
-  S.loop.alvo = null;
-  S.loop.contador = 0;
-  if (S.ab.a !== null || S.ab.b !== null) {
-    S.ab = { a: null, b: null };
-    atualizarAB();
+  if (traducaoAutomaticaAtiva()) {
+    aplicarMapa(S.unidades, mapaDaTraducao());
+    iniciarTraducaoAuto();
+  } else {
+    cancelarTraducaoAuto();
   }
-  lista.definir(S.unidades);
-  const busca = $('#busca-falas').value;
-  if (busca) lista.filtrar(busca);
   S.exibida = -2;
-  S.destacada = -2;
   renderLegenda(true);
+  atualizarAviso();
 }
 
 async function abrirVideo(reg, inicio) {
@@ -566,15 +591,13 @@ async function abrirVideo(reg, inicio) {
   clearTimeout(timerToast);
   $('#toast').hidden = true;
   S.registro = reg;
+  S.inicio = inicio;
   S.pronto = false;
   S.primeiroPlay = false;
   S.tocandoLogico = false;
   S.ajustouVelInicio = false;
   S.tituloConferido = false;
   cancelarToqueLivre();
-  S.ab = { a: null, b: null };
-  atualizarAB();
-  $('#busca-falas').value = '';
   reprocessar();
   $('#titulo-video').textContent = tituloAtual();
   $('#erro-player').hidden = true;
@@ -603,8 +626,7 @@ async function abrirVideo(reg, inicio) {
       salvar();
       S.velPedida = null;
     }
-    $('#btn-velocidade').textContent = `${formatarNumero(v)}×`;
-    if (!$('#menu-velocidade').hidden) montarMenuVelocidade();
+    if (!$('#painel-ajustes').hidden) montarVelocidades();
   });
   p.on('erro', (codigo) => mostrarErroPlayer(codigo));
   p.on('autoplayBloqueado', mostrarAvisoToque);
@@ -628,7 +650,6 @@ function encerrarPlayer() {
   salvarPosicao();
   cancelAnimationFrame(S.raf);
   S.raf = 0;
-  clearTimeout(S.loop.espera);
   try { S.player?.destruir(); } catch { /* nada */ }
   S.player = null;
   soltarTelaLigada();
@@ -637,13 +658,12 @@ function encerrarPlayer() {
 function fecharVideo() {
   encerrarPlayer();
   cancelarToqueLivre();
+  cancelarTraducaoAuto();
   try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch { /* nada */ }
   S.registro = null;
   S.unidades = [];
-  lista.definir([]);
   fecharCartao();
-  $('#menu-velocidade').hidden = true;
-  document.body.classList.remove('gestos-ativos', 'lista-aberta');
+  document.body.classList.remove('gestos-ativos');
   renderBiblioteca();
 }
 
@@ -653,7 +673,6 @@ function aplicarVelocidadeSalva() {
   const vels = p.velocidades();
   const alvo = vels.reduce((a, b) => (Math.abs(b - S.ajustes.velocidade) < Math.abs(a - S.ajustes.velocidade) ? b : a), vels[0] ?? 1);
   S.velConfirmada = p.velocidade() || 1;
-  $('#btn-velocidade').textContent = `${formatarNumero(S.velConfirmada)}×`;
   if (alvo !== S.velConfirmada) p.definirVelocidade(alvo);
 }
 
@@ -676,6 +695,100 @@ function mostrarErroPlayer(codigo, texto) {
   $('#erro-player').hidden = false;
   $('#btn-tocar-grande').hidden = true;
   $('#aviso-toque').hidden = true;
+}
+
+// ============================================================ tradução automática
+
+function traducaoAutomaticaAtiva() {
+  return !!S.registro && !S.registro.traducao && S.ajustes.destino !== 'nao';
+}
+
+/** Mapa { texto: tradução } do vídeo aberto, no idioma de destino atual. */
+function mapaDaTraducao() {
+  const reg = S.registro;
+  const para = S.ajustes.destino;
+  if (!reg.traducaoAuto || reg.traducaoAuto.para !== para || typeof reg.traducaoAuto.mapa !== 'object') {
+    reg.traducaoAuto = { para, mapa: {} };
+  }
+  return reg.traducaoAuto.mapa;
+}
+
+function cancelarTraducaoAuto() {
+  try { S.trad.controle?.abort(); } catch { /* nada */ }
+  S.trad = { estado: 'ocioso', feitos: 0, total: 0, controle: null };
+}
+
+async function iniciarTraducaoAuto() {
+  const reg = S.registro;
+  if (!traducaoAutomaticaAtiva()) return;
+  const mapa = mapaDaTraducao();
+  const para = reg.traducaoAuto.para;
+  const U = S.unidades;
+  const t0 = S.player ? S.player.tempo() : S.inicio;
+  const i0 = Math.max(0, falaNoTempo(U, t0).indice);
+  const pendentes = textosPendentes(U, mapa, i0);
+  const total = textosPendentes(U, {}, 0).length;
+  // Já está traduzindo exatamente isto: deixa continuar.
+  if (S.trad.estado === 'traduzindo' && S.trad.reg === reg && S.trad.para === para) {
+    S.trad.total = total;
+    return;
+  }
+  cancelarTraducaoAuto();
+  if (!pendentes.length) {
+    S.trad = { estado: total ? 'ok' : 'ocioso', feitos: total, total, controle: null };
+    atualizarAviso();
+    return;
+  }
+  const controle = new AbortController();
+  S.trad = { estado: 'traduzindo', feitos: total - pendentes.length, total, controle, reg, para };
+  atualizarAviso();
+  const atual = () => S.registro === reg && S.trad.controle === controle && !controle.signal.aborted;
+  try {
+    await traduzirTodos(pendentes, {
+      de: S.ajustes.idioma,
+      para,
+      sinal: controle.signal,
+      aoLote: (textos, traducoes) => {
+        if (!atual()) return;
+        textos.forEach((t, i) => { mapa[t] = traducoes[i] || ''; });
+        S.trad.feitos += textos.length;
+        aplicarMapa(S.unidades, mapa);
+        salvarVideo(reg);
+        renderLegenda(false);
+        atualizarAviso();
+      },
+    });
+    if (!atual()) return;
+    S.trad.estado = 'ok';
+    S.trad.controle = null;
+  } catch (e) {
+    if (!atual() || e?.name === 'AbortError') return;
+    S.trad.estado = 'erro';
+    S.trad.controle = null;
+  }
+  atualizarAviso();
+}
+
+/** Linha pequena embaixo da legenda: frases montadas e andamento da tradução automática. */
+function atualizarAviso() {
+  const partes = [];
+  let erro = false;
+  if (S.frases) partes.push('Frases montadas pelo app');
+  if (traducaoAutomaticaAtiva()) {
+    const nome = NOMES_IDIOMA[S.ajustes.destino] || S.ajustes.destino;
+    const t = S.trad;
+    if (t.estado === 'traduzindo') {
+      const pct = t.total ? Math.floor((100 * t.feitos) / t.total) : 0;
+      partes.push(`Traduzindo para o ${nome}… ${pct}%`);
+    } else if (t.estado === 'ok') {
+      partes.push(`Tradução automática (${nome})`);
+    } else if (t.estado === 'erro') {
+      partes.push('Não consegui traduzir. Confira a internet.');
+      erro = true;
+    }
+  }
+  $('#aviso-legenda').textContent = partes.join(' · ');
+  $('#btn-tentar-traducao').hidden = !erro;
 }
 
 // ============================================================ primeiro play (7.2)
@@ -707,12 +820,10 @@ function aoMudarEstado(st) {
     $('#aviso-toque').hidden = true;
     document.body.classList.add('gestos-ativos');
   }
-  if (st === 1) {
-    if (!S.ajustouVelInicio && S.pronto) {
-      S.ajustouVelInicio = true;
-      aplicarVelocidadeSalva(); // o player pode ter ignorado o pedido feito antes de tocar
-      lerTitulo();
-    }
+  if (st === 1 && !S.ajustouVelInicio && S.pronto) {
+    S.ajustouVelInicio = true;
+    aplicarVelocidadeSalva(); // o player pode ter ignorado o pedido feito antes de tocar
+    lerTitulo();
   }
   atualizarBotaoPlay();
   if (S.tocandoLogico) {
@@ -723,7 +834,6 @@ function aoMudarEstado(st) {
     if (st === 2 || st === 0) salvarPosicao();
     if (document.body.classList.contains('imersivo')) mostrarFaixa();
   }
-  if (S.ajustes.traducaoSoPausado && S.tocandoLogico !== antes) renderLegenda(true);
   if (!S.raf) iniciarLaco();
 }
 
@@ -753,7 +863,7 @@ function conferirTitulo(tituloVideo) {
 function atualizarBotaoPlay() {
   const tocando = S.tocandoLogico;
   const b = $('#btn-play');
-  b.textContent = tocando ? '⏸' : '▶';
+  b.classList.toggle('tocando', tocando);
   b.setAttribute('aria-label', tocando ? 'Pausar' : 'Tocar');
 }
 
@@ -799,7 +909,9 @@ function tique() {
   if (!p) return;
   const t = p.tempo();
   const st = p.estado();
-  if (st === 1) logicaEstudo(t);
+  // A fala de destino de um salto vale até o vídeo chegar nela (ou ir para longe).
+  const alvo = S.unidades[S.alvoNav];
+  if (S.alvoNav !== null && performance.now() - S.saltoEm > 600 && (!alvo || t >= alvo.s || t < alvo.s - 1.5)) S.alvoNav = null;
   renderLegenda(false);
   const agora = performance.now();
   if (agora - S.ultimoProgresso >= 250) {
@@ -813,155 +925,52 @@ function tique() {
 }
 
 function preRolagem() {
-  return S.frases ? S.ajustes.preRolagemFrases : S.ajustes.preRolagem;
+  return S.frases ? PRE_ROLAGEM_FRASES : PRE_ROLAGEM;
 }
 
 /** Vai para o início de uma unidade, com pré-rolagem. */
-function irParaIndice(i, interno = false) {
+function irParaIndice(i) {
   const p = S.player;
   const u = S.unidades[i];
   if (!p || !u) return;
   p.irPara(tempoDestino(u, preRolagem()));
   S.saltoEm = performance.now();
   S.alvoNav = i;
-  S.falaAtiva = i;
-  S.pausadaEm = -1;
-  if (!interno) {
-    clearTimeout(S.loop.espera);
-    S.loop.espera = null;
-    S.loop.alvo = S.ajustes.loop ? i : null;
-    S.loop.contador = 0;
-  }
   renderLegenda(true);
-}
-
-/** Pausa automática, loop da fala e trecho A–B (7.5). Só roda com o vídeo tocando. */
-function logicaEstudo(t) {
-  const U = S.unidades;
-  const p = S.player;
-  if (!U.length || S.loop.espera) return;
-  // Logo depois de um salto o player ainda pode informar o tempo antigo.
-  if (performance.now() - S.saltoEm < 300) return;
-
-  let k = indiceLogico(U, t);
-  if (S.alvoNav !== null) {
-    if (k < S.alvoNav && t >= U[S.alvoNav].s - 1) k = S.alvoNav;
-    else S.alvoNav = null;
-  }
-  const anterior = S.falaAtiva;
-  S.falaAtiva = k;
-
-  // Trecho A–B manda sobre o resto.
-  if (S.ab.a !== null && S.ab.b !== null) {
-    const ini = Math.min(S.ab.a, S.ab.b);
-    const fim = Math.max(S.ab.a, S.ab.b);
-    const uf = U[fim];
-    if (uf && t >= uf.e - 0.05 && t < uf.e + 1) irParaIndice(ini, true);
-    return;
-  }
-
-  if (S.ajustes.loop) {
-    if (k < 0) return;
-    if (S.loop.alvo === null || !U[S.loop.alvo]) { S.loop.alvo = k; S.loop.contador = 0; }
-    const u = U[S.loop.alvo];
-    if (t >= u.e - 0.05 && t < u.e + 1) {
-      S.loop.contador++;
-      const vezes = S.ajustes.loopVezes || Infinity;
-      if (S.loop.contador >= vezes) {
-        const alvo = S.loop.alvo;
-        S.ajustes.loop = false;
-        salvar();
-        aplicarAparencia();
-        S.loop.alvo = null;
-        S.loop.contador = 0;
-        if (S.ajustes.pausaAuto) p.pausar();
-        S.pausadaEm = alvo;
-        S.falaAtiva = alvo;
-        return;
-      }
-      const alvo = S.loop.alvo;
-      const pausa = S.ajustes.pausaEntreRepeticoes;
-      if (pausa > 0) {
-        p.pausar();
-        S.loop.espera = setTimeout(() => {
-          S.loop.espera = null;
-          if (S.player !== p) return;
-          irParaIndice(alvo, true);
-          p.tocar();
-        }, pausa * 1000);
-      } else {
-        irParaIndice(alvo, true);
-      }
-    } else if (t > u.e + 1 || t < u.s - 2) {
-      S.loop.alvo = null; // o usuário foi para outro ponto
-    }
-    return;
-  }
-
-  if (S.ajustes.pausaAuto) {
-    for (const c of [anterior, k]) {
-      if (c < 0 || c === S.pausadaEm || !U[c]) continue;
-      if (t >= U[c].e - S.ajustes.antecedencia && t < U[c].e + 0.6) {
-        p.pausar();
-        S.pausadaEm = c;
-        S.falaAtiva = c;
-        break;
-      }
-    }
-  }
-}
-
-/** true se o vídeo está parado logo no fim da fala em que a pausa automática agiu. */
-function pausadoNaFala(t) {
-  const u = S.unidades[S.pausadaEm];
-  return !!u && !S.tocandoLogico && S.player?.estado() !== 1 && t >= u.s && t < u.e + 0.6;
-}
-
-function linhaVisivel(qual) {
-  return S.ajustes[qual] !== 'oculta';
 }
 
 function renderLegenda(forcar) {
   const p = S.player;
   const U = S.unidades;
   let indice = -1;
-  let dentro = false;
   if (p && U.length) {
     const t = p.tempo();
-    ({ indice, dentro } = falaNoTempo(U, t));
-    if (S.alvoNav !== null && U[S.alvoNav] && t < U[S.alvoNav].s && t >= U[S.alvoNav].s - 1) {
-      indice = S.alvoNav;
-      dentro = true;
-    } else if (pausadoNaFala(t)) {
-      // Pausado pela pausa automática: continua mostrando a fala que acabou de tocar.
-      indice = S.pausadaEm;
-      dentro = true;
-    }
+    ({ indice } = falaNoTempo(U, t));
+    if (S.alvoNav !== null && U[S.alvoNav]) indice = S.alvoNav;
   }
-  const mostrar = dentro ? indice : (S.ajustes.manterUltima ? indice : -1);
-  if (indice !== S.destacada) {
-    S.destacada = indice;
-    lista.destacar(indice);
-  }
-  if (mostrar === S.exibida && !forcar) return;
-  if (mostrar !== S.exibida) {
-    S.revelada = { l1: false, l2: false };
-    fecharCartao();
-  }
-  S.exibida = mostrar;
-  const u = U[mostrar];
-  const a = S.ajustes;
+  // Entre duas falas, a última continua na tela.
+  const u = U[indice];
   const t1 = u ? u.texto : '';
-  const tocando = S.tocandoLogico;
-  const t2 = u && !(a.traducaoSoPausado && tocando) ? u.trad || '' : '';
+  const t2 = u ? u.trad || '' : '';
+  if (indice === S.exibida && t2 === S.exibidaTrad && !forcar) return;
+  const c2 = $('#caixa-l2');
+  if (indice === S.exibida && !forcar) {
+    // Só chegou a tradução desta fala: não mexe na linha 1 (o cartão da palavra pode estar aberto).
+    S.exibidaTrad = t2;
+    c2.textContent = t2;
+    c2.hidden = !t2;
+    $('#legenda-sobre .l2').textContent = t2;
+    return;
+  }
+  if (indice !== S.exibida) fecharCartao();
+  S.exibida = indice;
+  S.exibidaTrad = t2;
 
   // caixa: linha 1 com palavras tocáveis
   const c1 = $('#caixa-l1');
-  const c2 = $('#caixa-l2');
   c1.textContent = '';
   if (t1) {
-    const partes = t1.split(/(\s+)/);
-    for (const parte of partes) {
+    for (const parte of t1.split(/(\s+)/)) {
       if (!parte) continue;
       if (/^\s+$/.test(parte)) { c1.appendChild(document.createTextNode(' ')); continue; }
       const span = document.createElement('span');
@@ -972,22 +981,11 @@ function renderLegenda(forcar) {
   }
   c2.textContent = t2;
   c2.hidden = !t2;
-  const classe = (el, qual) => {
-    const modo = a[qual];
-    const revelada = S.revelada[qual === 'linha1' ? 'l1' : 'l2'];
-    el.classList.toggle('borrada', modo === 'borrada' && !revelada);
-    el.classList.toggle('oculta', modo === 'oculta');
-  };
-  classe(c1, 'linha1');
-  classe(c2, 'linha2');
+  $('#caixa-legenda').scrollTop = 0;
 
-  // legendas sobre o vídeo
-  const s1 = $('#legenda-sobre .l1');
-  const s2 = $('#legenda-sobre .l2');
-  s1.textContent = linhaVisivel('linha1') ? t1 : '';
-  s2.textContent = linhaVisivel('linha2') ? t2 : '';
-  classe(s1, 'linha1');
-  classe(s2, 'linha2');
+  // legendas sobre o vídeo (deitado ou tela cheia)
+  $('#legenda-sobre .l1').textContent = t1;
+  $('#legenda-sobre .l2').textContent = t2;
 }
 
 function atualizarProgresso(forcar = false) {
@@ -1014,7 +1012,7 @@ function salvarPosicao() {
   salvarVideo(reg);
 }
 
-// ============================================================ navegação (7.4)
+// ============================================================ navegação por gesto (7.4)
 
 function direcaoDoArraste(dir) {
   const esquerda = S.ajustes.inverterArraste ? 'avancar' : 'voltar';
@@ -1029,93 +1027,37 @@ function navegarAcao(acao) {
   const U = S.unidades;
   if (!p || !U.length) return;
   const agora = performance.now();
-  const t = p.tempo();
-  // Depois da pausa automática, a fala de referência é a que acabou de tocar.
-  const memoria = pausadoNaFala(t) ? { indice: S.pausadaEm, quando: agora } : S.memoriaNav;
-  const r = navegar(U, t, acao, memoria, agora);
+  const r = navegar(U, p.tempo(), acao, S.memoriaNav, agora);
   if (r.indice === null) {
     if (r.aviso) mostrarRetorno(r.aviso);
     return;
   }
   S.memoriaNav = { indice: r.indice, quando: agora };
   irParaIndice(r.indice);
-  if (S.ajustes.tocarAoNavegar && p.estado() !== 1) {
+  // Navegar sempre deixa o vídeo tocando.
+  if (p.estado() !== 1) {
     if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
   }
   mostrarRetorno(TEXTO_RETORNO[acao]);
   vibrar();
 }
 
-function pularSegundos(d) {
-  const p = S.player;
-  if (!p) return;
-  const dur = p.duracao() || Infinity;
-  p.irPara(Math.min(dur, Math.max(0, p.tempo() + d)));
-  S.saltoEm = performance.now();
-  S.memoriaNav = null;
-  S.alvoNav = null;
-  S.loop.alvo = null;
-  S.pausadaEm = -1;
-  renderLegenda(true);
-  atualizarProgresso();
-}
+// ============================================================ velocidade (no painel de ajustes)
 
-function irParaFalaDaLista(i) {
-  if (!S.player) return;
-  S.memoriaNav = { indice: i, quando: performance.now() };
-  irParaIndice(i);
-  if (S.ajustes.tocarAoNavegar && S.player.estado() !== 1) {
-    if (S.primeiroPlay) S.player.tocar(); else tocarPrimeiraVez();
-  }
-}
-
-// ============================================================ estudo: botões
-
-function alternarPausaAuto() {
-  S.ajustes.pausaAuto = !S.ajustes.pausaAuto;
-  S.pausadaEm = -1;
-  salvar();
-  aplicarAparencia();
-  toast(S.ajustes.pausaAuto ? 'Pausa automática ligada' : 'Pausa automática desligada', 1200);
-}
-
-function alternarLoop() {
-  S.ajustes.loop = !S.ajustes.loop;
-  clearTimeout(S.loop.espera);
-  S.loop.espera = null;
-  S.loop.alvo = null;
-  S.loop.contador = 0;
-  salvar();
-  aplicarAparencia();
-  toast(S.ajustes.loop ? 'Loop da fala ligado' : 'Loop da fala desligado', 1200);
-}
-
-function ciclarLinha(qual) {
-  const ordem = ['visivel', 'borrada', 'oculta'];
-  S.ajustes[qual] = ordem[(ordem.indexOf(S.ajustes[qual]) + 1) % 3];
-  S.revelada = { l1: false, l2: false };
-  salvar();
-  aplicarAparencia();
-  renderLegenda(true);
-}
-
-function montarMenuVelocidade() {
-  const menu = $('#menu-velocidade');
-  menu.textContent = '';
+function montarVelocidades() {
+  const linha = $('#linha-velocidade');
+  linha.textContent = '';
   const vels = S.player ? S.player.velocidades() : [1];
   for (const v of vels) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip' + (Math.abs(v - S.velConfirmada) < 1e-6 ? ' confirmada' : '');
     b.textContent = `${formatarNumero(v)}×`;
-    b.setAttribute('role', 'menuitem');
-    b.addEventListener('click', (ev) => {
-      ev.stopPropagation();
+    b.addEventListener('click', () => {
       S.velPedida = { v, quando: performance.now() };
       S.player?.definirVelocidade(v);
-      menu.hidden = true;
     });
-    menu.appendChild(b);
+    linha.appendChild(b);
   }
 }
 
@@ -1135,33 +1077,12 @@ function mudarVelocidadePasso(passo) {
   }
 }
 
-// ============================================================ A–B
-
-function atualizarAB() {
-  const { a, b } = S.ab;
-  const U = S.unidades;
-  const partes = [];
-  if (a !== null && U[a]) partes.push(`A em ${formatarTempo(U[a].s)}`);
-  if (b !== null && U[b]) partes.push(`B em ${formatarTempo(U[b].s)}`);
-  $('#info-ab').textContent = partes.join(' · ');
-  $('#btn-limpar-ab').hidden = a === null && b === null;
-  lista.marcarAB(a, b);
-}
-
-function marcarAB(qual) {
-  const i = S.exibida >= 0 ? S.exibida : S.destacada;
-  if (i < 0 || !S.unidades[i]) { toast('Toque numa fala da lista primeiro.'); return; }
-  S.ab[qual] = i;
-  if (S.ab.a !== null && S.ab.b !== null && S.ab.a > S.ab.b) S.ab = { a: S.ab.b, b: S.ab.a };
-  atualizarAB();
-  if (S.ab.a !== null && S.ab.b !== null) toast('Repetindo o trecho de A até B.');
-}
-
 // ============================================================ cartão da palavra (9.3)
 
 function urlTradutor(texto) {
   const sl = S.ajustes.idioma || 'auto';
-  return `https://translate.google.com/?sl=${sl}&tl=pt&text=${encodeURIComponent(texto)}&op=translate`;
+  const tl = S.ajustes.destino === 'nao' ? 'pt' : S.ajustes.destino;
+  return `https://translate.google.com/?sl=${sl}&tl=${tl}&text=${encodeURIComponent(texto)}&op=translate`;
 }
 
 let palavraAtual = '';
@@ -1185,8 +1106,9 @@ function abrirCartao(span) {
   const meiaLargura = cartao.offsetWidth / 2;
   const centro = Math.min(window.innerWidth - meiaLargura - 10, Math.max(meiaLargura + 10, caixa.left + caixa.width / 2));
   cartao.style.left = `${centro}px`;
-  let top = caixa.top - alt - 8;
-  if (top < 8) top = Math.min(window.innerHeight - alt - 8, caixa.bottom + 8);
+  const r = span.getBoundingClientRect();
+  let top = r.top - alt - 8;
+  if (top < 8) top = Math.min(window.innerHeight - alt - 8, r.bottom + 8);
   cartao.style.top = `${Math.max(8, top)}px`;
 }
 
@@ -1219,14 +1141,7 @@ function toqueNoVideo() {
 
 function toqueNaCaixa(alvo) {
   if (!(alvo instanceof Element)) return;
-  const linha = alvo.closest('.linha');
-  if (!linha) return;
-  if (linha.classList.contains('borrada')) {
-    S.revelada[linha.id === 'caixa-l1' ? 'l1' : 'l2'] = true;
-    renderLegenda(true);
-    return;
-  }
-  if (alvo.classList.contains('palavra') && linha.id === 'caixa-l1') abrirCartao(alvo);
+  if (alvo.classList.contains('palavra') && alvo.closest('#caixa-l1')) abrirCartao(alvo);
 }
 
 // ============================================================ liberar o toque no vídeo (anúncios)
@@ -1267,7 +1182,7 @@ function atualizarImersivo() {
   const im = assistindo && (!!document.fullscreenElement || mqDeitado.matches);
   const antes = document.body.classList.contains('imersivo');
   document.body.classList.toggle('imersivo', im);
-  if (!im) document.body.classList.remove('lista-aberta', 'faixa-visivel');
+  if (!im) document.body.classList.remove('faixa-visivel');
   if (im && !antes) mostrarFaixa();
 }
 
@@ -1295,214 +1210,11 @@ async function alternarTelaCheia() {
   }
 }
 
-// ============================================================ lista de falas (8.2)
-
-const TAMANHO_BLOCO = 50;
-const LIMITE_VIRTUAL = 500;
-
-class ListaFalas {
-  constructor(container, aoTocar) {
-    this.c = container;
-    this.aoTocar = aoTocar;
-    this.unidades = [];
-    this.norm = [];
-    this.indices = [];
-    this.posicao = new Map();
-    this.itens = new Map();
-    this.blocos = [];
-    this.atual = -1;
-    this.seguir = true;
-    this.timerSeguir = null;
-    this.programaticoAte = 0;
-    this.usuarioAte = 0;
-    this.ab = { a: null, b: null };
-    this.obs = null;
-    this.alturaItem = 60;
-
-    container.addEventListener('click', (ev) => {
-      const item = ev.target.closest('.item-fala');
-      if (item) this.aoTocar(Number(item.dataset.i));
-    });
-    const marcarUsuario = () => { this.usuarioAte = performance.now() + 1200; };
-    container.addEventListener('wheel', marcarUsuario, { passive: true });
-    container.addEventListener('touchmove', marcarUsuario, { passive: true });
-    container.addEventListener('keydown', marcarUsuario);
-    container.addEventListener('pointerdown', (ev) => { if (ev.pointerType === 'mouse') marcarUsuario(); });
-    container.addEventListener('scroll', () => {
-      const agora = performance.now();
-      if (agora < this.usuarioAte && agora > this.programaticoAte) this.pausarSeguir();
-    }, { passive: true });
-  }
-
-  definir(unidades) {
-    this.unidades = unidades;
-    this.norm = unidades.map((u) => normalizar(`${u.texto} ${u.trad || ''}`));
-    this.atual = -1;
-    this.mostrar(unidades.map((u) => u.i));
-  }
-
-  filtrar(termo) {
-    const t = normalizar(termo.trim());
-    if (!t) { this.mostrar(this.unidades.map((u) => u.i)); return; }
-    const r = [];
-    for (let i = 0; i < this.norm.length; i++) if (this.norm[i].includes(t)) r.push(i);
-    this.mostrar(r);
-  }
-
-  mostrar(indices) {
-    this.obs?.disconnect();
-    this.indices = indices;
-    this.posicao = new Map(indices.map((i, p) => [i, p]));
-    this.itens.clear();
-    this.blocos = [];
-    this.c.textContent = '';
-    if (!indices.length) {
-      if (this.unidades.length) {
-        const vazio = document.createElement('p');
-        vazio.className = 'lista-sem-resultado';
-        vazio.textContent = 'Nenhuma fala encontrada.';
-        this.c.appendChild(vazio);
-      }
-      return;
-    }
-    const virtual = indices.length > LIMITE_VIRTUAL;
-    if (virtual) {
-      this.obs = new IntersectionObserver((entradas) => {
-        for (const en of entradas) {
-          const b = this.blocos[Number(en.target.dataset.b)];
-          if (en.isIntersecting) this.desenharBloco(b); else this.esvaziarBloco(b);
-        }
-      }, { root: this.c, rootMargin: '900px 0px' });
-    }
-    for (let p = 0, n = 0; p < indices.length; p += TAMANHO_BLOCO, n++) {
-      const el = document.createElement('div');
-      el.className = 'bloco-falas';
-      el.dataset.b = String(n);
-      const bloco = { el, de: p, ate: Math.min(indices.length, p + TAMANHO_BLOCO), desenhado: false, altura: 0 };
-      this.blocos.push(bloco);
-      this.c.appendChild(el);
-      if (virtual) {
-        el.style.height = `${(bloco.ate - bloco.de) * this.alturaItem}px`;
-        this.obs.observe(el);
-      } else {
-        this.desenharBloco(bloco);
-      }
-    }
-  }
-
-  criarItem(i) {
-    const u = this.unidades[i];
-    const item = document.createElement('div');
-    item.className = 'item-fala';
-    item.setAttribute('role', 'listitem');
-    item.dataset.i = String(i);
-    const t = document.createElement('span');
-    t.className = 't';
-    t.textContent = formatarTempo(u.s);
-    const textos = document.createElement('div');
-    const a = document.createElement('div');
-    a.className = 'a';
-    a.textContent = u.texto;
-    textos.appendChild(a);
-    if (u.trad) {
-      const b = document.createElement('div');
-      b.className = 'b';
-      b.textContent = u.trad;
-      textos.appendChild(b);
-    }
-    item.append(t, textos);
-    this.classesItem(item, i);
-    return item;
-  }
-
-  classesItem(item, i) {
-    const { a, b } = this.ab;
-    item.classList.toggle('atual', i === this.atual);
-    item.classList.toggle('marca-a', i === a);
-    item.classList.toggle('marca-b', i === b);
-    item.classList.toggle('no-ab', a !== null && b !== null && i >= a && i <= b);
-  }
-
-  desenharBloco(b) {
-    if (!b || b.desenhado) return;
-    const frag = document.createDocumentFragment();
-    for (let p = b.de; p < b.ate; p++) {
-      const i = this.indices[p];
-      const item = this.criarItem(i);
-      this.itens.set(i, item);
-      frag.appendChild(item);
-    }
-    b.el.textContent = '';
-    b.el.style.height = '';
-    b.el.appendChild(frag);
-    b.desenhado = true;
-    b.altura = b.el.offsetHeight;
-    if (b.altura) this.alturaItem = Math.max(40, b.altura / (b.ate - b.de));
-  }
-
-  esvaziarBloco(b) {
-    if (!b || !b.desenhado) return;
-    b.altura = b.el.offsetHeight || b.altura;
-    for (let p = b.de; p < b.ate; p++) this.itens.delete(this.indices[p]);
-    b.el.textContent = '';
-    b.el.style.height = `${b.altura}px`;
-    b.desenhado = false;
-  }
-
-  destacar(i) {
-    const antes = this.itens.get(this.atual);
-    if (antes) antes.classList.remove('atual');
-    this.atual = i;
-    const el = this.itens.get(i);
-    if (el) el.classList.add('atual');
-    if (this.seguir && i >= 0) this.centralizar(i);
-  }
-
-  centralizar(i, suave = true) {
-    const p = this.posicao.get(i);
-    if (p === undefined) return;
-    this.desenharBloco(this.blocos[Math.floor(p / TAMANHO_BLOCO)]);
-    const el = this.itens.get(i);
-    if (!el) return;
-    const rc = this.c.getBoundingClientRect();
-    const re = el.getBoundingClientRect();
-    const alvo = this.c.scrollTop + (re.top - rc.top) - this.c.clientHeight / 2 + re.height / 2;
-    const distancia = Math.abs(this.c.scrollTop - alvo);
-    this.programaticoAte = performance.now() + 900;
-    this.c.scrollTo({ top: Math.max(0, alvo), behavior: suave && distancia < 1500 ? 'smooth' : 'auto' });
-  }
-
-  pausarSeguir() {
-    this.seguir = false;
-    $('#btn-fala-atual').hidden = false;
-    clearTimeout(this.timerSeguir);
-    this.timerSeguir = setTimeout(() => this.retomarSeguir(), 5000);
-  }
-
-  retomarSeguir() {
-    clearTimeout(this.timerSeguir);
-    this.seguir = true;
-    $('#btn-fala-atual').hidden = true;
-    if (this.atual >= 0) this.centralizar(this.atual);
-  }
-
-  marcarAB(a, b) {
-    this.ab = { a, b };
-    for (const [i, el] of this.itens) this.classesItem(el, i);
-  }
-}
-
-const lista = new ListaFalas($('#lista-falas'), irParaFalaDaLista);
-
 // ============================================================ painel de ajustes
 
 function mostrarValor(chave) {
   const el = document.querySelector(`[data-mostra="${chave}"]`);
-  if (!el) return;
-  const v = S.ajustes[chave];
-  if (chave.startsWith('fonte')) el.textContent = `${v} px`;
-  else if (chave === 'opacidadeFundo') el.textContent = `${v}%`;
-  else el.textContent = seg(v);
+  if (el && chave === 'fonteL1') el.textContent = `${S.ajustes.fonteL1} px`;
 }
 
 function sincronizarPainel() {
@@ -1513,6 +1225,7 @@ function sincronizarPainel() {
     else el.value = String(v);
     mostrarValor(k);
   }
+  montarVelocidades();
   const reg = S.registro;
   $('#grupo-sincronia').hidden = !reg;
   if (reg) {
@@ -1520,6 +1233,7 @@ function sincronizarPainel() {
       const alvo = bloco.dataset.alvo;
       const v = reg[alvo] || 0;
       bloco.querySelector('.valor-sinc').textContent = `${v > 0 ? '+' : v < 0 ? '−' : ''}${formatarNumero(Math.abs(v), 1)} s`;
+      // A tradução automática anda junto com a legenda estudada: não tem ajuste próprio.
       if (alvo === 'ajusteTraducao') bloco.hidden = !reg.traducao;
     }
   }
@@ -1542,29 +1256,24 @@ function aoMudarAjuste(el) {
   const k = el.dataset.ajuste;
   let v;
   if (el.type === 'checkbox') v = el.checked;
-  else if (el.type === 'range' || el.hasAttribute('data-numero')) v = Number(el.value);
+  else if (el.type === 'range') v = Number(el.value);
   else v = el.value;
   S.ajustes[k] = v;
   salvar();
   mostrarValor(k);
   aplicarAparencia();
-  if (k === 'modoFrases' || k === 'esconderMarcacoes') reprocessar();
-  else renderLegenda(true);
-}
-
-async function restaurarPadroes() {
-  const r = await dialogo({ texto: 'Voltar todos os ajustes para o padrão?', ok: 'Restaurar' });
-  if (!r.ok) return;
-  const modoAntes = S.ajustes.modoFrases;
-  const marcAntes = S.ajustes.esconderMarcacoes;
-  S.ajustes = { ...AJUSTES_PADRAO };
-  salvar();
-  aplicarAparencia();
-  sincronizarPainel();
-  if (S.ajustes.modoFrases !== modoAntes || S.ajustes.esconderMarcacoes !== marcAntes) reprocessar();
-  else renderLegenda(true);
-  aplicarVelocidadeSalva();
-  toast('Ajustes restaurados.');
+  if (k === 'destino') {
+    cancelarTraducaoAuto();
+    reprocessar();
+    mostrarAmbas();
+  } else if (k === 'idioma' && traducaoAutomaticaAtiva()) {
+    // Outro idioma de origem: refaz a tradução automática deste vídeo.
+    S.registro.traducaoAuto = null;
+    cancelarTraducaoAuto();
+    reprocessar();
+  } else {
+    renderLegenda(true);
+  }
 }
 
 function ajustarSincronia(alvo, d) {
@@ -1576,16 +1285,14 @@ function ajustarSincronia(alvo, d) {
   sincronizarPainel();
 }
 
-// ============================================================ teclado (10.3)
+// ============================================================ teclado (notebook)
 
 function aoTeclar(ev) {
   if ($('#tela-assistir').hidden || !S.player) return;
   if (!$('#dialogo').hidden) return;
   if (ev.key === 'Escape') {
     fecharCartao();
-    $('#menu-velocidade').hidden = true;
     fecharPaineis();
-    document.body.classList.remove('lista-aberta');
     return;
   }
   const alvo = ev.target;
@@ -1600,13 +1307,9 @@ function aoTeclar(ev) {
   if ((k === ' ' || ev.code === 'Space') && alvo instanceof HTMLElement && alvo.tagName === 'BUTTON') alvo.blur();
   let feito = true;
   if (k === ' ' || ev.code === 'Space') alternarPlay();
-  else if (k === 'ArrowLeft') ev.shiftKey ? pularSegundos(-5) : navegarAcao('voltar');
-  else if (k === 'ArrowRight') ev.shiftKey ? pularSegundos(5) : navegarAcao('avancar');
+  else if (k === 'ArrowLeft') navegarAcao('voltar');
+  else if (k === 'ArrowRight') navegarAcao('avancar');
   else if (k === 'r' || k === 'R' || k === 'ArrowDown') navegarAcao('repetir');
-  else if (k === 'p' || k === 'P') alternarPausaAuto();
-  else if (k === 'l' || k === 'L') alternarLoop();
-  else if (k === '1') ciclarLinha('linha1');
-  else if (k === '2') ciclarLinha('linha2');
   else if (k === '[') mudarVelocidadePasso(-1);
   else if (k === ']') mudarVelocidadePasso(1);
   else if (k === 'f' || k === 'F') alternarTelaCheia();
@@ -1645,6 +1348,7 @@ function ligarEventos() {
   $('#btn-colar').addEventListener('click', colar);
   $('#arq-estudo').addEventListener('change', (ev) => { receberArquivos(ev.target.files, 'estudo'); ev.target.value = ''; });
   $('#arq-traducao').addEventListener('change', (ev) => { receberArquivos(ev.target.files, 'traducao'); ev.target.value = ''; });
+  $('#arq-dupla').addEventListener('change', (ev) => { receberDupla(ev.target.files); ev.target.value = ''; });
   $('#btn-trocar-papeis').addEventListener('click', trocarPapeis);
   $('#btn-abrir').addEventListener('click', abrirDoFormulario);
   const zona = $('#zona-arquivos');
@@ -1662,7 +1366,6 @@ function ligarEventos() {
   $('#btn-fechar-ajuda').addEventListener('click', fecharPaineis);
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest?.('.menu-item')) fecharMenusItens();
-    if (!ev.target.closest?.('#menu-velocidade, #btn-velocidade')) $('#menu-velocidade').hidden = true;
   });
   document.addEventListener('pointerdown', (ev) => {
     const c = $('#cartao-palavra');
@@ -1672,38 +1375,19 @@ function ligarEventos() {
   // assistir
   $('#btn-voltar').addEventListener('click', voltarParaBiblioteca);
   $('#btn-tocar-grande').addEventListener('click', tocarPrimeiraVez);
-  $('#btn-play').addEventListener('click', alternarPlay);
-  $('#btn-anterior').addEventListener('click', () => navegarAcao('voltar'));
-  $('#btn-proxima').addEventListener('click', () => navegarAcao('avancar'));
-  $('#btn-repetir').addEventListener('click', () => navegarAcao('repetir'));
-  $('#btn-menos5').addEventListener('click', () => pularSegundos(-5));
-  $('#btn-mais5').addEventListener('click', () => pularSegundos(5));
-  $('#btn-pausa-auto').addEventListener('click', alternarPausaAuto);
-  $('#btn-loop').addEventListener('click', alternarLoop);
-  $('#btn-linha1').addEventListener('click', () => ciclarLinha('linha1'));
-  $('#btn-linha2').addEventListener('click', () => ciclarLinha('linha2'));
-  $('#btn-velocidade').addEventListener('click', () => {
-    const menu = $('#menu-velocidade');
-    if (menu.hidden) { montarMenuVelocidade(); menu.hidden = false; } else menu.hidden = true;
+  $('#btn-play').addEventListener('click', () => {
+    alternarPlay();
+    if (document.body.classList.contains('imersivo')) mostrarFaixa();
   });
   $('#btn-tela-cheia').addEventListener('click', alternarTelaCheia);
   $('#btn-liberar').addEventListener('click', liberarToque);
   $('#btn-ajustes').addEventListener('click', () => abrirPainel('#painel-ajustes'));
   $('#btn-fechar-ajustes').addEventListener('click', fecharPaineis);
   $('#fundo-painel').addEventListener('click', fecharPaineis);
-  $('#btn-lista').addEventListener('click', () => {
-    document.body.classList.toggle('lista-aberta');
-    if (lista.atual >= 0) lista.centralizar(lista.atual, false);
+  $('#btn-tentar-traducao').addEventListener('click', () => {
+    cancelarTraducaoAuto();
+    iniciarTraducaoAuto();
   });
-  $('#btn-fechar-lista').addEventListener('click', () => document.body.classList.remove('lista-aberta'));
-  $('#busca-falas').addEventListener('input', (ev) => {
-    lista.filtrar(ev.target.value);
-    if (!ev.target.value && lista.atual >= 0) lista.centralizar(lista.atual, false);
-  });
-  $('#btn-fala-atual').addEventListener('click', () => lista.retomarSeguir());
-  $('#btn-a').addEventListener('click', () => marcarAB('a'));
-  $('#btn-b').addEventListener('click', () => marcarAB('b'));
-  $('#btn-limpar-ab').addEventListener('click', () => { S.ab = { a: null, b: null }; atualizarAB(); });
 
   // barra de progresso
   const barra = $('#barra-progresso');
@@ -1720,8 +1404,6 @@ function ligarEventos() {
     barra.blur();
     S.memoriaNav = null;
     S.alvoNav = null;
-    S.loop.alvo = null;
-    S.pausadaEm = -1;
     renderLegenda(true);
   });
 
@@ -1758,7 +1440,6 @@ function ligarEventos() {
       if (b) ajustarSincronia(bloco.dataset.alvo, b.dataset.d);
     });
   }
-  $('#btn-restaurar').addEventListener('click', restaurarPadroes);
 
   // sistema
   document.addEventListener('keydown', aoTeclar);
@@ -1799,7 +1480,6 @@ async function iniciar() {
   if (MOCK) {
     window.__ld = {
       S,
-      lista,
       tempo: () => S.player?.tempo(),
       estado: () => S.player?.estado(),
     };
