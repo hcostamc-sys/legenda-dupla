@@ -163,6 +163,9 @@ export class PlayerYouTube extends Emissor {
             this.emitir('estado', e.data);
           },
           onPlaybackRateChange: (e) => {
+            // Com a velocidade exata (gancho v5) quem informa a velocidade real é o gancho:
+            // o YouTube não sabe das velocidades fora da lista dele.
+            if (this._velPeloGancho) return;
             this._rebase();
             this._vel = Number(e.data) || 1;
             this.emitir('velocidade', this._vel);
@@ -264,6 +267,27 @@ export class PlayerYouTube extends Emissor {
 
   velocidade() { return this._vel; }
   definirVelocidade(v) { try { this.yt?.setPlaybackRate(Number(v)); } catch { /* nada */ } }
+
+  /**
+   * Velocidade exata (0,95×, 0,85×...), pelo gancho do app Android (v5): ele muda a velocidade do
+   * próprio vídeo, que aceita qualquer valor. A API do iframe só aceita as velocidades da lista do YouTube.
+   */
+  definirVelocidadeExata(v) {
+    this._velPeloGancho = true;
+    this._paraGancho({ ldVelocidade: Number(v) });
+  }
+
+  /** Velocidade real do vídeo, informada pelo gancho. */
+  receberVelocidade(v) {
+    const n = Number(v);
+    if (!(n > 0)) return;
+    this._velPeloGancho = true;
+    if (Math.abs(n - this._vel) > 1e-6) {
+      this._rebase();
+      this._vel = n;
+    }
+    this.emitir('velocidade', n);
+  }
 
   destruir() {
     this._token++;
@@ -500,6 +524,15 @@ export class PlayerFalso extends Emissor {
 
   definirVelocidade(v) {
     const alvo = VELS_FALSAS.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 1);
+    this._base = this.tempo();
+    this._marca = performance.now();
+    this._vel = alvo;
+    setTimeout(() => this.emitir('velocidade', alvo), 0);
+  }
+
+  /** ?mockVelFina=1: simula o gancho v5 (qualquer velocidade). */
+  definirVelocidadeExata(v) {
+    const alvo = Math.round(Number(v) * 100) / 100;
     this._base = this.tempo();
     this._marca = performance.now();
     this._vel = alvo;

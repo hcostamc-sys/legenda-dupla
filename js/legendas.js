@@ -220,6 +220,11 @@ function tirarRolagem(falas) {
       if (resto !== null) {
         if (resto === '') continue; // descarta B
         const original = f.t;
+        if (f.ps) {
+          const tirar = f.t.length - resto.length;
+          const n = f.t.slice(0, tirar).split(/\s+/).filter(Boolean).length;
+          f.ps = f.ps.slice(n);
+        }
         f.t = resto;
         saida.push(f);
         anterior = { original, reduzido: resto };
@@ -249,7 +254,17 @@ export function corrigirSequencia(falas) {
       f.e = Math.min(proxInicio, f.s + 2);
     }
   }
-  return semRolagem.map(({ s, e, t }) => ({ s: arred(s), e: arred(e), t }));
+  return semRolagem.map(({ s, e, t, ps }) => {
+    const f = { s: arred(s), e: arred(e), t };
+    if (ps && ps.length) {
+      // Palavras com tempo (legenda automática em json3/srv3): dentro da fala, em ordem.
+      f.ps = ps.map((p) => {
+        const ps0 = Math.min(Math.max(p.s, s), e);
+        return { w: p.w, s: arred(ps0), e: arred(Math.min(Math.max(p.e, ps0), e)) };
+      });
+    }
+    return f;
+  });
 }
 
 /**
@@ -481,7 +496,13 @@ export function esconderMarcacoes(falas) {
   for (const f of falas) {
     if (ehMarcacao(f.t)) continue;
     const t = f.t.replace(RE_MARCA_MEIO, ' ').replace(/\s+/g, ' ').trim();
-    if (t) saida.push({ ...f, t });
+    if (!t) continue;
+    const g = { ...f, t };
+    if (f.ps && t !== f.t) {
+      const ps = f.ps.filter((p) => !RE_MARCA_INTEIRA.test(p.w));
+      if (ps.map((p) => p.w).join(' ') === t) g.ps = ps; else delete g.ps;
+    }
+    saida.push(g);
   }
   return saida;
 }
@@ -493,7 +514,11 @@ export function esconderMarcacoes(falas) {
 export function aplicarAjuste(falas, deslocamento) {
   const d = Number(deslocamento) || 0;
   if (!d) return falas;
-  return falas.map((f) => ({ ...f, s: arred(f.s + d), e: arred(f.e + d) }));
+  return falas.map((f) => {
+    const g = { ...f, s: arred(f.s + d), e: arred(f.e + d) };
+    if (f.ps) g.ps = f.ps.map((p) => ({ w: p.w, s: arred(p.s + d), e: arred(p.e + d) }));
+    return g;
+  });
 }
 
 /** 6.2: a legenda é automática? */
@@ -507,9 +532,15 @@ export function ehAutomatica(falas, nomeArquivo = '') {
   return contiguas / (falas.length - 1) >= 0.8;
 }
 
-/** Separa as palavras de uma fala com tempo proporcional à posição do caractere. */
+/**
+ * Separa as palavras de uma fala. Usa o tempo real de cada palavra quando a legenda traz
+ * (automática do YouTube); senão, tempo proporcional à posição do caractere.
+ */
 export function palavrasComTempo(fala) {
   const { s, e, t } = fala;
+  if (Array.isArray(fala.ps) && fala.ps.length && fala.ps.map((p) => p.w).join(' ') === t) {
+    return fala.ps.map((p) => ({ w: p.w, s: p.s, e: p.e }));
+  }
   const total = t.length || 1;
   const dur = e - s;
   const lista = [];
@@ -760,8 +791,160 @@ function dividirFrase(ps) {
   return [...dividirFrase(ps.slice(0, corte + 1)), ...dividirFrase(ps.slice(corte + 1))];
 }
 
-/** 6.2: junta as falas em frases completas (sem a quebra de filme). Devolve [{s, e, texto, ps, marca?}]. */
-export function montarFrasesInteiras(falas) {
+// ---------------------------------------------------------------------------
+// Pontuação aproximada da legenda automática do YouTube (vem sem pontos, vírgulas e maiúsculas).
+// Usa as pausas da fala (tempo real de cada palavra): pausa longa = ponto; pausa média = vírgula.
+// É uma aproximação: não entende o sentido das frases.
+// ---------------------------------------------------------------------------
+
+const PAUSA_PONTO = 0.6; // segundos de silêncio além do tempo normal da palavra
+const PAUSA_PONTO_CERTO = 1.2;
+const PAUSA_VIRGULA = 0.35;
+// Depois destas palavras a frase não termina nem leva vírgula (artigos, preposições, conjunções...).
+const NAO_TERMINA = lista('the a an of to with from by and or but my your his her our their its ' +
+  'o a os as um uma de do da dos das e ou mas com meu minha seu sua ' +
+  'el la los las un una y del al mi tu su le les une des du et mon ma ses ' +
+  'der die das ein eine und il lo gli i');
+// Antes destas a fala continua: sem vírgula (pausa de hesitação, como em "eu vi... o carro").
+const CONTINUA = new Set([...PREPOSICOES, ...lista('the a an my your his her our their o os as um uma umas uns el la los las un une les der die das ein eine')]);
+const APOIO_EN = lista('so and but okay ok well now oh yeah alright right');
+const AUX_EN = lista('do does did is are was were can could would will should shall have has had am may might');
+const PRONOMES_EN = lista('you i we they he she it there that this');
+const QU_EN = lista('what why how where when who which');
+
+const temPontuacao = (w) => /[.,!?;:…]["'”’»)\]]*$/.test(w);
+
+/** A legenda já tem pontuação (ponto, interrogação ou exclamação em pelo menos 1 de cada 40 palavras)? */
+export function legendaPontuada(falas) {
+  let palavras = 0;
+  let fins = 0;
+  for (const f of falas || []) {
+    for (const w of String(f.t || '').split(/\s+/)) {
+      if (!w) continue;
+      palavras++;
+      if (/[.?!…]["'”’»)\]]*$/.test(w)) fins++;
+    }
+  }
+  return palavras > 0 && fins * 40 >= palavras;
+}
+
+/** A legenda tem o tempo real de cada palavra (automática do YouTube em json3/srv3)? */
+export function temTempoDePalavra(falas) {
+  let com = 0;
+  for (const f of falas || []) if (f.ps?.length) com++;
+  return com > 0 && com * 2 >= (falas || []).length;
+}
+
+/** Pergunta em inglês: "do you…", "is it…", "what is…", "how did…" (depois de "so", "and", "okay"…). */
+function perguntaIngles(palavras) {
+  let k = 0;
+  while (k < palavras.length - 1 && APOIO_EN.has(limpa(palavras[k]))) k++;
+  const a = limpa(palavras[k] || '');
+  const b = limpa(palavras[k + 1] || '');
+  if (AUX_EN.has(a) && PRONOMES_EN.has(b)) return true;
+  if (QU_EN.has(a) && AUX_EN.has(b)) return true;
+  // "what's", "where're", "how'd" (com ou sem o ponto que o app acabou de pôr)
+  return /^(what|why|how|where|when|who)['’](s|re|d)[.,]?$/.test(String(palavras[k] || '').toLowerCase());
+}
+
+function maiuscula(w, idioma) {
+  const m = /\p{L}/u.exec(w);
+  if (!m) return w;
+  const i = m.index;
+  return w.slice(0, i) + w[i].toLocaleUpperCase(idioma || undefined) + w.slice(i + 1);
+}
+
+/**
+ * Pontua palavras com tempo real. itens: sequência de { p: {w,s,e} } e de limites ({ marca } ou
+ * { troca }: marcação de som ou troca de quem fala). Altera p.w.
+ */
+export function pontuarItens(itens, idioma = '') {
+  const ingles = String(idioma || '').toLowerCase().split('-')[0] === 'en';
+  // Ritmo da pessoa: tempo de uma palavra ≈ BASE + ritmo × letras. O ritmo é a mediana, então as
+  // poucas pausas não pesam. A pausa é o que sobra entre o começo de uma palavra e o da seguinte.
+  const BASE = 0.1;
+  const ritmos = [];
+  for (let k = 0; k + 1 < itens.length; k++) {
+    const a = itens[k].p;
+    const b = itens[k + 1].p;
+    if (!a || !b) continue;
+    const d = b.s - a.s;
+    if (d > 0 && d < 2) ritmos.push(Math.max(0, d - BASE) / Math.max(1, a.w.length));
+  }
+  ritmos.sort((x, y) => x - y);
+  const ritmo = ritmos.length ? ritmos[ritmos.length >> 1] : 0.06;
+  const tempoNormal = (w) => BASE + ritmo * Math.max(1, w.length);
+
+  // 1) pontos e vírgulas pelas pausas
+  let desdePonto = 0; // palavras desde o último ponto
+  for (let k = 0; k < itens.length; k++) {
+    const p = itens[k].p;
+    if (!p) { desdePonto = 0; continue; }
+    desdePonto++;
+    if (temPontuacao(p.w)) { if (/[.?!…]["'”’»)\]]*$/.test(p.w)) desdePonto = 0; continue; }
+    const prox = itens[k + 1];
+    const w = limpa(p.w);
+    if (!prox || !prox.p) {
+      // fim da legenda, troca de quem fala ou marcação de som: termina a frase
+      if (!NAO_TERMINA.has(w)) { p.w += '.'; desdePonto = 0; }
+      continue;
+    }
+    if (NAO_TERMINA.has(w)) continue;
+    const pausa = prox.p.s - p.s - tempoNormal(p.w);
+    if (pausa >= PAUSA_PONTO_CERTO || (pausa >= PAUSA_PONTO && desdePonto >= 3)) {
+      p.w += '.';
+      desdePonto = 0;
+    } else if (pausa >= PAUSA_VIRGULA && !CONTINUA.has(limpa(prox.p.w))) {
+      p.w += ',';
+    }
+  }
+
+  // 2) maiúscula no começo das frases, "I" em inglês e interrogação nas perguntas em inglês
+  let frase = [];
+  let comeco = true;
+  const fecharFrase = () => {
+    if (ingles && frase.length >= 2) {
+      const ult = frase[frase.length - 1];
+      if (/\.$/.test(ult.w) && !/\.\.$/.test(ult.w) && perguntaIngles(frase.map((p) => p.w))) ult.w = ult.w.slice(0, -1) + '?';
+    }
+    frase = [];
+  };
+  for (const it of itens) {
+    const p = it.p;
+    if (!p) { fecharFrase(); comeco = true; continue; }
+    if (ingles && /^i(['’](m|ll|ve|d))?[.,?!]?$/i.test(p.w)) p.w = 'I' + p.w.slice(1);
+    if (comeco) { p.w = maiuscula(p.w, idioma); comeco = false; }
+    frase.push(p);
+    if (/[.?!…]["'”’»)\]]*$/.test(p.w)) { fecharFrase(); comeco = true; }
+  }
+  fecharFrase();
+  return itens;
+}
+
+/**
+ * 6.2: junta as falas em frases completas (sem a quebra de filme). Devolve [{s, e, texto, ps, marca?}].
+ * opcoes.pontuar: pontua pelas pausas (legenda automática com tempo de cada palavra); opcoes.idioma.
+ */
+export function montarFrasesInteiras(falas, opcoes = {}) {
+  // 1) sequência de palavras e de limites (marcação de som, troca de quem fala: ">>")
+  const itens = [];
+  for (const f of falas) {
+    if (ehMarcacao(f.t)) {
+      itens.push({ marca: f });
+      continue;
+    }
+    for (const p of palavrasComTempo(f)) {
+      if (p.w.startsWith('>>')) {
+        itens.push({ troca: true });
+        p.w = p.w.replace(/^>+/, '');
+        if (!p.w) continue;
+      }
+      itens.push({ p });
+    }
+  }
+  if (opcoes.pontuar) pontuarItens(itens, opcoes.idioma);
+
+  // 2) frases
   const unidades = [];
   let atual = [];
   const fechar = () => {
@@ -769,23 +952,15 @@ export function montarFrasesInteiras(falas) {
     for (const parte of dividirFrase(atual)) unidades.push({ ...unidadeDePalavras(parte), ps: parte });
     atual = [];
   };
-  for (const f of falas) {
-    if (ehMarcacao(f.t)) {
+  for (const it of itens) {
+    if (it.marca) {
       fechar();
-      unidades.push({ s: f.s, e: f.e, texto: f.t, marca: true });
+      unidades.push({ s: it.marca.s, e: it.marca.e, texto: it.marca.t, marca: true });
       continue;
     }
-    for (const p of palavrasComTempo(f)) {
-      let w = p.w;
-      if (w.startsWith('>>')) {
-        fechar();
-        w = w.replace(/^>+/, '');
-        if (!w) continue;
-        p.w = w;
-      }
-      atual.push(p);
-      if (fechaFrase(w)) fechar();
-    }
+    if (it.troca) { fechar(); continue; }
+    atual.push(it.p);
+    if (fechaFrase(it.p.w)) fechar();
   }
   fechar();
   return unidades;
@@ -926,7 +1101,7 @@ export function parearPorPalavra(unidades, traducao) {
  * entrada: { estudo: {falas, arquivo}, traducao: {falas, arquivo} | null,
  *            ajusteEstudo, ajusteTraducao }
  * opcoes:  { modoFrases: 'auto'|'ligado'|'desligado', esconderMarcacoes: bool }
- * Devolve { unidades: [{i,s,e,texto,trad,marca?}], frases: bool, automatica: bool }
+ * Devolve { unidades: [{i,s,e,texto,trad,marca?}], frases: bool, automatica: bool, pontuada: bool }
  */
 export function processar(entrada, opcoes = {}) {
   const modo = opcoes.modoFrases || 'auto';
@@ -942,10 +1117,14 @@ export function processar(entrada, opcoes = {}) {
   }
 
   let unidades;
+  let pontuada = false;
   if (frases) {
     // Pareia a tradução com a frase inteira e só depois quebra as duas no padrão de filme:
     // assim cada pedaço da tradução corresponde ao pedaço da frase original.
-    const inteiras = montarFrasesInteiras(estudo);
+    // Legenda automática com o tempo de cada palavra e sem pontuação: o app pontua pelas pausas.
+    const pontuar = automatica && opcoes.pontuarAuto !== false && temTempoDePalavra(estudo) && !legendaPontuada(estudo);
+    const inteiras = montarFrasesInteiras(estudo, { pontuar, idioma: entrada.estudo?.idioma || '' });
+    pontuada = pontuar;
     if (trad.length) parearPorPalavra(inteiras, trad);
     unidades = quebrarFrases(inteiras);
   } else {
@@ -958,7 +1137,7 @@ export function processar(entrada, opcoes = {}) {
     if (trad.length) parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
   }
   unidades.forEach((u, i) => { u.i = i; if (typeof u.trad !== 'string') u.trad = ''; });
-  return { unidades, frases, automatica };
+  return { unidades, frases, automatica, pontuada };
 }
 
 // ---------------------------------------------------------------------------

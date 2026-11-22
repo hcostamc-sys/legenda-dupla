@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { lerTimedText, paraSrt, infoUrl, faixaSugerida } from '../js/timedtext.js';
 
+const semPs = (falas) => falas.map(({ s, e, t }) => ({ s, e, t }));
+
 test('json3: junta os pedaços de cada evento e ignora eventos sem texto', () => {
   const json = JSON.stringify({
     events: [
@@ -13,7 +15,10 @@ test('json3: junta os pedaços de cada evento e ignora eventos sem texto', () =>
   });
   const r = lerTimedText(json);
   assert.equal(r.formato, 'json3');
-  assert.deepEqual(r.falas, [{ s: 1.2, e: 3.5, t: 'Hello world' }, { s: 4, e: 5.5, t: 'ação' }]);
+  assert.deepEqual(semPs(r.falas), [{ s: 1.2, e: 3.5, t: 'Hello world' }, { s: 4, e: 5.5, t: 'ação' }]);
+  // tempo real de cada palavra (a última vai no máximo até a duração normal de uma palavra)
+  assert.deepEqual(r.falas[0].ps, [{ w: 'Hello', s: 1.2, e: 1.6 }, { w: 'world', s: 1.6, e: 2.3 }]);
+  assert.equal(r.falas[1].ps, undefined); // um pedaço só: sem tempo por palavra
 });
 
 test('srv3: <p t= d=> com <s> e entidades', () => {
@@ -22,7 +27,8 @@ test('srv3: <p t= d=> com <s> e entidades', () => {
     + '<p t="3500" d="1000">A &amp; B<br/>C</p><p t="5000" d="10"></p></body></timedtext>';
   const r = lerTimedText(xml);
   assert.equal(r.formato, 'srv3');
-  assert.deepEqual(r.falas, [{ s: 1, e: 3, t: "It's fine" }, { s: 3.5, e: 4.5, t: 'A & B C' }]);
+  assert.deepEqual(semPs(r.falas), [{ s: 1, e: 3, t: "It's fine" }, { s: 3.5, e: 4.5, t: 'A & B C' }]);
+  assert.deepEqual(r.falas[0].ps, [{ w: "It's", s: 1, e: 1.3 }, { w: 'fine', s: 1.3, e: 1.91 }]);
 });
 
 test('formato 1: <text start= dur=> com entidades escapadas duas vezes', () => {
@@ -60,7 +66,10 @@ test('json3 da legenda automática: janelas sobrepostas viram falas em sequênci
     ],
   });
   const r = lerTimedText(json);
-  assert.deepEqual(r.falas, [{ s: 0, e: 2.01, t: 'so today we talk' }, { s: 2.01, e: 6.01, t: 'about creativity' }]);
+  assert.deepEqual(semPs(r.falas), [{ s: 0, e: 2.01, t: 'so today we talk' }, { s: 2.01, e: 6.01, t: 'about creativity' }]);
+  // pedaço com duas palavras: o tempo é dividido pelo tamanho
+  assert.deepEqual(r.falas[0].ps.map((p) => p.w), ['so', 'today', 'we', 'talk']);
+  assert.ok(r.falas[0].ps.every((p, i, l) => p.s <= p.e && (i === 0 || l[i - 1].s <= p.s)));
 });
 
 test('faixaSugerida: idioma da legenda automática, preferindo a feita por pessoa', () => {

@@ -26,15 +26,53 @@ function atributo(attrs, nome) {
   return m ? m[1] : null;
 }
 
+// Duração máxima de uma palavra falada (o YouTube só informa onde cada palavra começa).
+const durMaxPalavra = (w) => Math.min(1.5, Math.max(0.5, 0.25 + 0.09 * w.length));
+
+/**
+ * Palavras com o tempo real (legenda automática): pedaços [{ texto, ms }] com o início de cada um.
+ * Cada pedaço pode ter mais de uma palavra (divide o tempo pelo tamanho). Devolve [{ w, s, e }]
+ * ou null quando não há tempo por palavra (legenda feita por pessoa) ou o texto não bate.
+ */
+function palavrasReais(pedacos, fimMs, textoFala) {
+  if (pedacos.length < 2 || !pedacos.slice(1).some((x) => Number.isFinite(x.ms))) return null;
+  const ps = [];
+  for (let i = 0; i < pedacos.length; i++) {
+    const ini = pedacos[i].ms;
+    if (!Number.isFinite(ini)) return null;
+    let prox = fimMs;
+    for (let j = i + 1; j < pedacos.length; j++) if (Number.isFinite(pedacos[j].ms)) { prox = pedacos[j].ms; break; }
+    const ws = limpar(pedacos[i].texto).split(' ').filter(Boolean);
+    if (!ws.length) continue;
+    const total = ws.join(' ').length || 1;
+    let pos = 0;
+    const span = Math.max(0, prox - ini);
+    ws.forEach((w, k) => {
+      const s = ini + (span * pos) / total;
+      pos += w.length + 1;
+      const fimProx = k + 1 < ws.length ? ini + (span * pos) / total : prox;
+      const e = Math.min(fimProx, s + durMaxPalavra(w) * 1000);
+      ps.push({ w, s: s / 1000, e: Math.max(s, e) / 1000 });
+    });
+  }
+  if (!ps.length || ps.map((p) => p.w).join(' ') !== textoFala) return null;
+  return ps;
+}
+
 function lerJson3(obj) {
   const falas = [];
   for (const ev of obj.events || []) {
     if (!Array.isArray(ev.segs)) continue;
     const t = limpar(ev.segs.map((s) => s.utf8 || '').join(''));
     if (!t) continue;
-    const s = (Number(ev.tStartMs) || 0) / 1000;
-    const e = s + (Number(ev.dDurationMs) || 0) / 1000;
-    falas.push({ s, e, t });
+    const t0 = Number(ev.tStartMs) || 0;
+    const fimMs = t0 + (Number(ev.dDurationMs) || 0);
+    const s = t0 / 1000;
+    const e = fimMs / 1000;
+    const fala = { s, e, t };
+    const ps = palavrasReais(ev.segs.map((sg) => ({ texto: sg.utf8 || '', ms: t0 + (sg.tOffsetMs === undefined ? (sg === ev.segs[0] ? 0 : NaN) : Number(sg.tOffsetMs)) })), fimMs, t);
+    if (ps) fala.ps = ps;
+    falas.push(fala);
   }
   return falas;
 }
@@ -48,7 +86,19 @@ function lerSrv3(xml) {
     const d = Number(atributo(m[1], 'd'));
     const t = limpar(decodificarEntidades(m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')));
     if (!t || !Number.isFinite(t0)) continue;
-    falas.push({ s: t0 / 1000, e: (t0 + (Number.isFinite(d) ? d : 0)) / 1000, t });
+    const fimMs = t0 + (Number.isFinite(d) ? d : 0);
+    const fala = { s: t0 / 1000, e: fimMs / 1000, t };
+    // Legenda automática: <s t="300">palavra</s> com o início de cada palavra.
+    const pedacos = [];
+    const reS = /<s\b([^>]*)>([\s\S]*?)<\/s>/g;
+    let n;
+    while ((n = reS.exec(m[2]))) {
+      const off = atributo(n[1], 't');
+      pedacos.push({ texto: decodificarEntidades(n[2].replace(/<[^>]+>/g, '')), ms: t0 + (off === null ? (pedacos.length ? NaN : 0) : Number(off)) });
+    }
+    const ps = palavrasReais(pedacos, fimMs, t);
+    if (ps) fala.ps = ps;
+    falas.push(fala);
   }
   return falas;
 }

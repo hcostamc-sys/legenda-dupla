@@ -1103,6 +1103,34 @@ def t_so_automatica(browser, base):
     ctx.close()
 
 
+@caso('12f. Velocidade de 0,05 em 0,05 abaixo de 1× (gancho v5); acima, as do YouTube')
+def t_velocidade_fina(browser, base):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android&apk=8&mockSoAsr=1&mockVelFina=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=KKKKKKKKKKK')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    page.click('#idioma-ok')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    page.click('#btn-ajustes')
+    chips = page.locator('#linha-velocidade .chip').all_text_contents()
+    lentas = [f'0,{k:02d}×' for k in range(25, 100, 5)]
+    assert chips == lentas + ['1×', '1,25×', '1,5×', '1,75×', '2×'], chips
+    page.locator('#linha-velocidade .chip', has_text='0,95×').click()
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('0,95×')
+    assert page.evaluate('window.__ld.S.ajustes.velocidade') == 0.95
+    page.locator('#linha-velocidade .chip', has_text='0,70×').click()
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('0,70×')
+    page.locator('#linha-velocidade .chip', has_text='1,5×').click()
+    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1,5×')
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('12e. Vídeo com dublagem automática: a legenda sugerida é a do áudio original; tradução no idioma do celular')
 def t_dublado(browser, base):
     ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
@@ -1256,6 +1284,20 @@ def t_gancho(browser, base):
     assert vis('.ytp-large-play-button')  # antes de tocar, o botão grande fica
     page.evaluate("window.__f.contentDocument.getElementById('v').dispatchEvent(new Event('playing'))")
     assert not vis('.ytp-large-play-button')
+    # velocidade exata (gancho v5): 0,85× direto no vídeo, e volta se o YouTube trocar (menos no anúncio)
+    assert faixas.get('velFina') is True and faixas['versao'] >= 5, faixas
+    taxa = lambda: page.evaluate("window.__f.contentDocument.getElementById('v').playbackRate")
+    page.evaluate("window.__f.contentWindow.postMessage({ ldVelocidade: 0.85 }, '*')")
+    esperar(lambda: abs(taxa() - 0.85) < 1e-6, limite=3, msg='velocidade 0,85 no vídeo')
+    esperar(lambda: page.evaluate("window.__vistas.some((d) => d && d.ldVel && Math.abs(d.v - 0.85) < 1e-6)"), limite=3, msg='aviso da velocidade')
+    page.evaluate("window.__f.contentDocument.getElementById('v').playbackRate = 1")  # o YouTube trocou sozinho
+    esperar(lambda: abs(taxa() - 0.85) < 1e-6, limite=3, msg='velocidade reaplicada')
+    page.evaluate("""() => { const d = window.__f.contentDocument; d.getElementById('movie_player').classList.add('ad-showing');
+      d.getElementById('v').playbackRate = 1; }""")
+    time.sleep(1.0)
+    assert abs(taxa() - 1) < 1e-6, 'durante o anúncio o gancho não força a velocidade'
+    page.evaluate("window.__f.contentDocument.getElementById('movie_player').classList.remove('ad-showing')")
+    esperar(lambda: abs(taxa() - 0.85) < 1e-6, limite=3, msg='velocidade volta depois do anúncio')
     ctx.close()
 
 
@@ -1416,6 +1458,7 @@ def main():
         t_android(browser, base)
         t_app_novo(browser, base)
         t_so_automatica(browser, base)
+        t_velocidade_fina(browser, base)
         t_dublado(browser, base)
         t_interface_idioma(browser, base)
         t_ao_vivo_shorts(browser, base)

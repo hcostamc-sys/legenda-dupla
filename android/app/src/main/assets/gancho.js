@@ -11,10 +11,12 @@
 //    escolheu uma dublagem, volta para o áudio original: a legenda sugerida é a do idioma falado.
 // 6) Esconde o que o player desenha por cima do vídeo: botão compartilhar, título, logotipo do YouTube,
 //    ícone de pausa no meio, sugestões de vídeos. O app tem os próprios botões, tempo e barra.
+// 7) Velocidade exata (0,95×, 0,90×...): a API do iframe só aceita a lista do YouTube (0,25× em 0,25×).
+//    Aqui a velocidade vai direto no vídeo, e volta se o YouTube a trocar (menos durante anúncio).
 (function () {
   if (window.__ldGancho) return;
   window.__ldGancho = true;
-  var VERSAO = 4; // 3: ao vivo; 4: idioma do áudio original e player sem os enfeites do YouTube
+  var VERSAO = 5; // 3: ao vivo; 4: idioma do áudio original e player sem os enfeites do YouTube; 5: velocidade exata
   var noPlayer = window.top !== window && /^\/embed\//.test(location.pathname);
   var contagemLegendas = 0; // legendas vistas (para saber se o player já baixou)
 
@@ -307,6 +309,7 @@
       semCaptions: semCaptions, temResposta: !!resp, aoVivo: aoVivo, agendado: agendado,
       audio: lerAudio(p, resp, video),
       getPlayerResponse: !!(p && typeof p.getPlayerResponse === 'function'), token: !!token,
+      velFina: true,
     };
   }
 
@@ -368,6 +371,47 @@
     }, 1500);
   }
 
+  // ---------------------------------------------------------------- velocidade exata
+
+  var velAlvo = 0; // 0 = a página ainda não pediu: o YouTube manda
+  var reaplicadas = [];
+
+  function videoPrincipal() {
+    return document.querySelector('video.html5-main-video') || document.querySelector('video');
+  }
+
+  function emAnuncio() {
+    var p = document.querySelector('.html5-video-player');
+    return !!p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'));
+  }
+
+  function aplicarVelocidade() {
+    var v = videoPrincipal();
+    if (!v || !velAlvo || emAnuncio()) return;
+    if (Math.abs(v.playbackRate - velAlvo) < 0.001) return;
+    // Limite: se o YouTube insistir (mais de 8 vezes em 3 s), desiste até o próximo pedido.
+    var agora = Date.now();
+    reaplicadas = reaplicadas.filter(function (t) { return agora - t < 3000; });
+    if (reaplicadas.length >= 8) return;
+    reaplicadas.push(agora);
+    try { v.playbackRate = velAlvo; } catch (e) { /* nada */ }
+  }
+
+  // ratechange e playing não sobem pela árvore, mas passam pela captura no documento.
+  document.addEventListener('ratechange', function (ev) {
+    var v = ev.target;
+    if (!v || v !== videoPrincipal()) return;
+    var anuncio = emAnuncio();
+    if (velAlvo && !anuncio && Math.abs(v.playbackRate - velAlvo) >= 0.001) {
+      setTimeout(aplicarVelocidade, 0);
+      return;
+    }
+    enviar({ ldVel: true, v: v.playbackRate, anuncio: anuncio });
+  }, true);
+  ['playing', 'loadedmetadata'].forEach(function (nome) {
+    document.addEventListener(nome, function () { setTimeout(aplicarVelocidade, 50); }, true);
+  });
+
   // ---------------------------------------------------------------- anúncios
 
   var PULAR = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, ' +
@@ -417,6 +461,7 @@
   var voltas = 0;
   setInterval(function () {
     conferirAnuncio();
+    aplicarVelocidade(); // depois de um anúncio o YouTube volta para a velocidade dele
     if (++voltas % 2 === 0) { try { avisarFaixas(false); } catch (e) { /* nada */ } } // a cada 0,8 s
   }, 400);
 
@@ -430,6 +475,13 @@
         try { b.click(); } catch (e) { /* nada */ }
       }
       setTimeout(conferirAnuncio, 300);
+    } else if (typeof d.ldVelocidade === 'number' && d.ldVelocidade >= 0.1 && d.ldVelocidade <= 4) {
+      velAlvo = Math.round(d.ldVelocidade * 100) / 100;
+      reaplicadas = [];
+      var vid = videoPrincipal();
+      aplicarVelocidade();
+      // Já estava nessa velocidade: confirma mesmo assim (a página espera a resposta).
+      if (vid && Math.abs(vid.playbackRate - velAlvo) < 0.001) enviar({ ldVel: true, v: vid.playbackRate, anuncio: emAnuncio() });
     } else if (d.ldFaixasAgora === true) {
       try { avisarFaixas(true); } catch (e) { /* nada */ }
     } else if (d.ldBaixar && typeof d.ldBaixar === 'object') {

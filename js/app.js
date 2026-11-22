@@ -8,7 +8,7 @@ import {
 } from './legendas.js';
 import { textosPendentes, aplicarMapa, traduzirTodos, detectarIdiomaTexto, significadoPalavra } from './traducao.js';
 import {
-  listaIdiomas, nomeIdioma, idiomaDoSistema, idiomaInterface, codigoTradutor, mesmoIdioma, urlDicionario,
+  listaIdiomas, nomeIdioma, nomeCodigoIdioma, idiomaDoSistema, idiomaInterface, codigoTradutor, mesmoIdioma, urlDicionario,
 } from './idiomas.js';
 import { iniciarI18n, t } from './i18n.js';
 import { criarPlayer, MSG_API } from './player.js';
@@ -93,6 +93,7 @@ const S = {
   abHistorico: false, // a tela do A–B pôs uma entrada no histórico (para o voltar do celular)
   velConfirmada: 1,
   velPedida: null,
+  velFina: false, // gancho v5 do app Android: velocidades de 0,05 em 0,05
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
   ajustouVelInicio: false,
   tituloConferido: false,
@@ -716,6 +717,7 @@ function reprocessar() {
   S.unidades = r.unidades;
   S.frases = r.frases;
   S.automatica = r.automatica;
+  S.pontuada = r.pontuada;
   S.memoriaNav = null;
   S.alvoNav = null;
   if (S.ab.a !== null || S.loop.alvo !== null) zerarRepeticao(); // os índices das falas mudaram
@@ -790,7 +792,7 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   p.on('velocidade', (v) => {
     S.velConfirmada = v;
     // Só grava quando a troca foi pedida pelo usuário (um anúncio pode forçar 1×).
-    if (S.velPedida && Math.abs(S.velPedida.v - v) < 1e-6 && performance.now() - S.velPedida.quando < 5000) {
+    if (S.velPedida && Math.abs(S.velPedida.v - v) < 1e-3 && performance.now() - S.velPedida.quando < 5000) {
       S.ajustes.velocidade = v;
       salvar();
       S.velPedida = null;
@@ -851,10 +853,17 @@ function fecharVideo() {
 function aplicarVelocidadeSalva() {
   const p = S.player;
   if (!p) return;
-  const vels = p.velocidades();
+  const vels = listaVelocidades();
   const alvo = vels.reduce((a, b) => (Math.abs(b - S.ajustes.velocidade) < Math.abs(a - S.ajustes.velocidade) ? b : a), vels[0] ?? 1);
   S.velConfirmada = p.velocidade() || 1;
-  if (alvo !== S.velConfirmada) p.definirVelocidade(alvo);
+  if (Math.abs(alvo - S.velConfirmada) > 1e-6) {
+    if (velocidadeFina()) {
+      S.velPedida = { v: alvo, quando: performance.now() };
+      p.definirVelocidadeExata(alvo);
+    } else {
+      p.definirVelocidade(alvo);
+    }
+  }
 }
 
 const MENSAGENS_ERRO = {
@@ -986,7 +995,7 @@ function atualizarAviso() {
   if (S.yt.estado === 'pegando') partes.push('Pegando a legenda do YouTube…');
   else if (S.yt.estado === 'erro') { partes.push('Não consegui pegar a legenda do YouTube.'); erro = true; }
   else if (S.yt.estado === 'sem') partes.push(APP_NOVO ? 'Este vídeo não tem legenda no YouTube.' : 'Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
-  if (S.frases) partes.push('Frases montadas pelo app');
+  if (S.frases) partes.push(S.pontuada ? 'Frases e pontuação montadas pelo app' : 'Frases montadas pelo app');
   if (traducaoAutomaticaAtiva()) {
     const nome = nomeIdioma(S.ajustes.destino);
     const tr = S.trad;
@@ -1014,17 +1023,12 @@ function chaveFaixa(languageCode, asr) {
 
 /** Nome do idioma de uma faixa (código do YouTube) no idioma do celular: 'en-US' → "Inglês (Estados Unidos)". */
 function nomeCodigo(codigo) {
-  const c = String(codigo || '');
-  try {
-    const n = new Intl.DisplayNames([IDIOMA_UI, 'en'], { type: 'language', fallback: 'none' }).of(c);
-    if (n && n !== c) return n.charAt(0).toLocaleUpperCase(IDIOMA_UI) + n.slice(1);
-  } catch { /* código que o Intl não conhece */ }
-  return nomeIdioma(codigoTradutor(c) || c);
+  return nomeCodigoIdioma(codigo, IDIOMA_UI);
 }
 
 function nomeFaixa(f) {
   // O YouTube chama de "English (auto-generated)": fica "Inglês (automática)".
-  if (f.kind === 'asr') return `${nomeCodigo(f.languageCode)} (${t('automática')})`;
+  if (f.kind === 'asr') return `${nomeCodigo(f.languageCode) || f.languageName || f.languageCode} (${t('automática')})`;
   return nomeCodigo(f.languageCode) || f.languageName || f.displayName || f.languageCode;
 }
 
@@ -1290,7 +1294,7 @@ function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
     sel.value = String(sugerida);
     const audio = idiomaAudio || (faixas[sugerida]?.kind === 'asr' ? faixas[sugerida].languageCode : '');
     const dica = $('#idioma-dica-audio');
-    dica.textContent = audio ? `Pré-selecionada pelo áudio do vídeo: ${nomeCodigo(audio)}.` : '';
+    dica.textContent = audio ? `Pré-selecionada pelo áudio do vídeo: ${nomeCodigo(audio) || audio}.` : '';
     dica.hidden = !audio;
     const trad = $('#sel-traducao-video');
     trad.value = S.ajustes.destino;
@@ -1390,6 +1394,12 @@ function aoReceberDoGancho(ev) {
     diag(`gancho: vídeo ${novo.video || '?'}, ${faixas.length} faixas (${faixas.map((f) => `${f.languageCode}${f.kind === 'asr' ? '/asr' : ''}`).join(', ') || '—'}), fontes ${novo.fontes || '—'}, resposta ${novo.temResposta ? novo.status || 'sim' : 'não'}${novo.semCaptions ? ', SEM legendas' : ''}${novo.audio ? `, áudio original ${novo.audio} (${novo.audioFonte || '?'})` : ''}`);
   }
   S.yt.gancho = novo;
+  // Gancho v5: velocidades de 0,05 em 0,05. Vale para a sessão toda (é o mesmo app).
+  if (d.velFina === true && !S.velFina) {
+    S.velFina = true;
+    aplicarVelocidadeSalva();
+    if (!$('#painel-ajustes').hidden) montarVelocidades();
+  }
   conferirAoVivo();
 }
 
@@ -2322,19 +2332,47 @@ function navegarAcao(acao) {
 
 // ============================================================ velocidade (no painel de ajustes)
 
+// Para mais devagar, de 0,05 em 0,05 (0,95× … 0,25×). Para mais rápido, as do YouTube (1,25× … 2×).
+// Só no app Android com o gancho v5: a API do iframe arredonda para a lista do YouTube.
+const VELS_LENTAS = Array.from({ length: 15 }, (_, i) => Math.round((0.25 + i * 0.05) * 100) / 100);
+const VEL_FINA_MOCK = MOCK && new URLSearchParams(location.search).get('mockVelFina') === '1';
+
+/** "0,95" e "0,90" (sempre duas casas abaixo de 1×); "1", "1,25" acima. */
+function rotuloVelocidade(v) {
+  return v < 1 - 1e-6 ? v.toFixed(2).replace('.', ',') : formatarNumero(v);
+}
+
+function velocidadeFina() {
+  return !!S.player && (S.velFina || VEL_FINA_MOCK) && typeof S.player.definirVelocidadeExata === 'function';
+}
+
+function listaVelocidades() {
+  const p = S.player;
+  if (!p) return [1];
+  const vels = p.velocidades();
+  if (!velocidadeFina()) return vels;
+  const rapidas = vels.filter((v) => v > 1 + 1e-6);
+  return [...VELS_LENTAS, 1, ...(rapidas.length ? rapidas : [1.25, 1.5, 1.75, 2])];
+}
+
+function pedirVelocidade(v) {
+  const p = S.player;
+  if (!p) return;
+  S.velPedida = { v, quando: performance.now() };
+  // Com o gancho, toda troca passa por ele (inclusive 1× e 1,5×): o YouTube não sabe das velocidades finas.
+  if (velocidadeFina()) p.definirVelocidadeExata(v);
+  else p.definirVelocidade(v);
+}
+
 function montarVelocidades() {
   const linha = $('#linha-velocidade');
   linha.textContent = '';
-  const vels = S.player ? S.player.velocidades() : [1];
-  for (const v of vels) {
+  for (const v of listaVelocidades()) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'chip' + (Math.abs(v - S.velConfirmada) < 1e-6 ? ' confirmada' : '');
-    b.textContent = `${formatarNumero(v)}×`;
-    b.addEventListener('click', () => {
-      S.velPedida = { v, quando: performance.now() };
-      S.player?.definirVelocidade(v);
-    });
+    b.className = 'chip' + (Math.abs(v - S.velConfirmada) < 1e-3 ? ' confirmada' : '');
+    b.textContent = `${rotuloVelocidade(v)}×`;
+    b.addEventListener('click', () => pedirVelocidade(v));
     linha.appendChild(b);
   }
 }
@@ -2342,17 +2380,24 @@ function montarVelocidades() {
 function mudarVelocidadePasso(passo) {
   const p = S.player;
   if (!p) return;
-  const vels = p.velocidades().slice().sort((a, b) => a - b);
+  const vels = listaVelocidades().slice().sort((a, b) => a - b);
   // Toques rápidos seguidos partem do último valor pedido (a confirmação do player chega depois).
   const base = S.velPedida && performance.now() - S.velPedida.quando < 1500 ? S.velPedida.v : S.velConfirmada;
-  let i = vels.findIndex((v) => Math.abs(v - base) < 1e-6);
+  let i = vels.findIndex((v) => Math.abs(v - base) < 1e-3);
   if (i < 0) i = vels.indexOf(1);
   const j = Math.min(vels.length - 1, Math.max(0, i + passo));
   if (j !== i) {
-    S.velPedida = { v: vels[j], quando: performance.now() };
-    p.definirVelocidade(vels[j]);
-    toast(`Velocidade ${formatarNumero(vels[j])}×`, 1000);
+    pedirVelocidade(vels[j]);
+    toast(`Velocidade ${rotuloVelocidade(vels[j])}×`, 1000);
   }
+}
+
+/** Velocidade real do vídeo, avisada pelo gancho v5 (muda também quando o YouTube a troca sozinho). */
+function aoReceberVelocidade(ev) {
+  const d = ev.data;
+  if (!ANDROID || !d || typeof d !== 'object' || d.ldVel !== true || d.anuncio === true) return;
+  if (!deQuadroDoPlayer(ev)) return;
+  S.player?.receberVelocidade?.(d.v);
 }
 
 // ============================================================ cartão da palavra (9.3)
@@ -2873,6 +2918,7 @@ function ligarEventos() {
   window.addEventListener('message', aoReceberLegenda);
   window.addEventListener('message', aoReceberAnuncio);
   window.addEventListener('message', aoReceberDoGancho);
+  window.addEventListener('message', aoReceberVelocidade);
   $('#carregando-diag').addEventListener('click', copiarDiagnostico);
   $('#btn-pular').addEventListener('click', pularAnuncio);
   $('#carregando-pular').addEventListener('click', pularAnuncio);

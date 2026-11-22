@@ -30,7 +30,7 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 | Repetir um trecho | Toque em **A–B**: o vídeo pausa e as falas aparecem numa lista na tela inteira, com a fala atual no meio (selo “agora”). Role e toque na fala onde o trecho começa (A) e depois na fala onde termina (B). O trecho tem no mínimo 2 falas: tocar no B a mesma fala do A, ou uma fala antes dele, mostra um aviso e deixa escolher de novo (as falas antes do A ficam apagadas). A tela volta para o vídeo, que repete o trecho; a legenda fica com borda âmbar cheia e o selo “Repetindo A–B”. **✕** ou o voltar do celular cancelam. Toque em **A–B** de novo para parar | B (abre a lista) |
 | Ver a fala anterior, a atual e a próxima | Botão **Lista** (três barras, ao lado do 文A). A atual fica no meio; a anterior e a próxima, mais apagadas. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez | V |
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
-| Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
+| Velocidade | ⚙ Ajustes → Velocidade (no app Android, versão 8: abaixo de 1×, de 0,05 em 0,05: 0,95×, 0,90×… até 0,25×) | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar). No app Android novo não há 👆: aparece o botão **Pular anúncio** | Igual |
 
@@ -44,7 +44,7 @@ Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela apar
 
 ### Frases montadas
 
-Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). Frase longa é quebrada no padrão de legenda de filme: no máximo 2 linhas de 42 caracteres (84) e 7 segundos na tela, cortando de preferência depois de ponto, vírgula, ou antes de palavras como “and”, “but”, “because”, e nunca depois de “the”, “a”, “of”. A tradução da frase é dividida nos mesmos pontos. Legendas feitas por pessoas ficam como vieram.
+Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). No app Android, a legenda automática vem com o tempo exato de cada palavra: cada legenda começa quando a primeira palavra é falada (antes o tempo era repartido pelo tamanho do texto, e a legenda podia adiantar ou atrasar quase 1 segundo). Com esse tempo o app também **pontua** a legenda automática, que o YouTube entrega sem pontos, vírgulas e maiúsculas: pausa longa na fala vira ponto, pausa média vira vírgula, a frase começa com maiúscula e, em inglês, “i” vira “I” e perguntas como “do you…”, “what is…” ganham “?” (aparece “Frases e pontuação montadas pelo app”). É uma aproximação pelas pausas, não entende o sentido: às vezes falta ou sobra uma vírgula. Vídeos que já estavam em Meus vídeos só ganham isso depois de ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo** (escolhendo o mesmo idioma). Frase longa é quebrada no padrão de legenda de filme: no máximo 2 linhas de 42 caracteres (84) e 7 segundos na tela, cortando de preferência depois de ponto, vírgula, ou antes de palavras como “and”, “but”, “because”, e nunca depois de “the”, “a”, “of”. A tradução da frase é dividida nos mesmos pontos. Legendas feitas por pessoas ficam como vieram.
 
 ### Passar a biblioteca para outro aparelho
 
@@ -87,6 +87,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Idiomas (versão 7):** a legenda já vem marcada pelo idioma do **áudio original** do vídeo (em vídeos com dublagem automática o app volta para o áudio original) e a tradução no **idioma do celular**; dá para trocar nas listas, que têm todos os idiomas do tradutor do Google. O app também aparece no idioma do celular (a página é traduzida na primeira abertura e guardada no aparelho).
 - **Palavra:** tocar numa palavra mostra o significado dela no próprio app, com **Copiar**, **Copiar frase** e **Dicionário** (Cambridge para palavras em inglês; Wikcionário para os outros idiomas).
 - **Player limpo (versão 7):** o player não mostra mais o botão compartilhar, o título, o logotipo do YouTube nem o ícone de pausa no meio; ficam só o tempo e a barra do próprio app. O **Pular anúncio** continua.
+- **Versão 8:** nomes de todos os idiomas nas listas (antes alguns apareciam só como “Ps”, “Qu”, “Rw”), velocidade de 0,05 em 0,05 abaixo de 1× e legenda automática com tempo exato por palavra e pontuação aproximada.
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
