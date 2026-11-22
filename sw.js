@@ -1,6 +1,6 @@
 // sw.js — rede primeiro, cache como reserva, só para arquivos do próprio site (PLANO.md seção 4).
 // Ao mudar qualquer arquivo do site, troque o nome do cache (ld-v2, ld-v4...).
-const CACHE = 'ld-v17';
+const CACHE = 'ld-v18';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -16,6 +16,10 @@ const ARQUIVOS = [
   './js/armazenamento.js',
   './js/idiomas.js',
   './js/i18n.js',
+  './js/modelos.js',
+  './js/pontuador.js',
+  './js/pontuador-worker.js',
+  './vendor/ort/ort.wasm.bundle.min.mjs',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
@@ -41,6 +45,8 @@ self.addEventListener('fetch', (ev) => {
   const url = new URL(req.url);
   // Nada do YouTube (youtube.com, ytimg.com, googlevideo.com) nem de outros sites passa por aqui.
   if (url.origin !== self.location.origin) return;
+  // O motor da pontuação melhorada (15 MB) fica no cache dos pacotes (js/modelos.js), não aqui.
+  if (url.pathname.endsWith('.wasm')) return;
   ev.respondWith(
     // no-cache: confere com o servidor, para nunca misturar arquivos novos com antigos do cache HTTP.
     fetch(req, { cache: 'no-cache' })

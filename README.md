@@ -44,7 +44,18 @@ Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela apar
 
 ### Frases montadas
 
-Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). No app Android, a legenda automática vem com o tempo exato de cada palavra: cada legenda começa quando a primeira palavra é falada (antes o tempo era repartido pelo tamanho do texto, e a legenda podia adiantar ou atrasar quase 1 segundo). Com esse tempo o app também **pontua** a legenda automática, que o YouTube entrega sem pontos, vírgulas e maiúsculas: pausa longa na fala vira ponto, pausa média vira vírgula, a frase começa com maiúscula e, em inglês, “i” vira “I” e perguntas como “do you…”, “what is…” ganham “?” (aparece “Frases e pontuação montadas pelo app”). É uma aproximação pelas pausas, não entende o sentido: às vezes falta ou sobra uma vírgula. Vídeos que já estavam em Meus vídeos só ganham isso depois de ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo** (escolhendo o mesmo idioma). Frase longa é quebrada no padrão de legenda de filme: no máximo 2 linhas de 42 caracteres (84) e 7 segundos na tela, cortando de preferência depois de ponto, vírgula, ou antes de palavras como “and”, “but”, “because”, e nunca depois de “the”, “a”, “of”. A tradução da frase é dividida nos mesmos pontos. Legendas feitas por pessoas ficam como vieram.
+Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). No app Android, a legenda automática vem com o tempo exato de cada palavra: cada legenda começa quando a primeira palavra é falada (antes o tempo era repartido pelo tamanho do texto, e a legenda podia adiantar ou atrasar quase 1 segundo). Com esse tempo o app também **pontua** a legenda automática, que o YouTube entrega sem pontos, vírgulas e maiúsculas: pausa longa na fala vira ponto, pausa média vira vírgula, a frase começa com maiúscula e, em inglês, “i” vira “I” e perguntas como “do you…”, “what is…” ganham “?” (aparece “Frases e pontuação montadas pelo app”). É uma aproximação pelas pausas, não entende o sentido: às vezes falta ou sobra uma vírgula. Vídeos que já estavam em Meus vídeos só ganham isso depois de ⚙ Ajustes → **Idioma do vídeo** (escolhendo outra legenda e depois a mesma de novo). Frase longa é quebrada no padrão de legenda de filme: no máximo 2 linhas de 42 caracteres (84) e 7 segundos na tela, cortando de preferência depois de ponto, vírgula, ou antes de palavras como “and”, “but”, “because”, e nunca depois de “the”, “a”, “of”. A tradução da frase é dividida nos mesmos pontos. Legendas feitas por pessoas ficam como vieram.
+
+### Pontuação melhorada (recurso extra, baixado à parte)
+
+A pontuação pelas pausas é uma aproximação. Para algo bem mais certo, o app oferece a **pontuação melhorada**: um modelo de IA que roda no próprio celular, lê a frase inteira e coloca pontos, vírgulas, interrogações e maiúsculas (inclusive em nomes, como “John”, “New York”, “NASA”). Os tempos de cada palavra não mudam, então a sincronia continua a mesma.
+
+- O APK continua do mesmo tamanho: os modelos são baixados só por quem quiser, uma vez, e depois funcionam sem internet.
+- Dois pacotes: **Inglês** (cerca de 225 MB no primeiro pacote, porque inclui o motor de 15 MB) e **Línguas latinas** (francês, espanhol, português, italiano, catalão e romeno, cerca de 145 MB). Use Wi‑Fi.
+- Onde baixar: na janela de escolher o idioma do vídeo (antes de **Começar**), quando a legenda escolhida é automática; ou em ⚙ Ajustes → **Pontuação melhorada**, onde também dá para apagar.
+- Com o pacote instalado, o vídeo novo mostra “Pontuando a legenda…” por alguns segundos antes de começar (há o botão **Usar a pontuação simples** para pular). Vídeos já salvos são pontuados ao abrir. Embaixo da legenda aparece “Pontuação melhorada (modelo no celular)”.
+- Modelos: “punctuation_fullstop_truecase” (english e romance), do autor 1-800-BAD-CODE no Hugging Face, licença Apache 2.0. Motor: onnxruntime-web (Microsoft, licença MIT), em `vendor/ort/`.
+- Também erra às vezes (principalmente vírgulas), mas entende o sentido da frase, o que as pausas não fazem.
 
 ### Passar a biblioteca para outro aparelho
 
@@ -111,4 +122,6 @@ node --test                      # lógica das legendas, legenda dupla e traduç
 python3 tests/e2e_test.py        # interface com Playwright e o player de teste
 ```
 
-O teste de interface salva capturas de tela em `tests/capturas/` (não vão para o repositório). Os arquivos de legenda em `tests/fixtures/` são sintéticos (texto inventado); `tests/fixtures/gerar.py` recria todos.
+O teste de interface salva capturas de tela em `tests/capturas/` (não vão para o repositório).
+
+A pontuação melhorada usa modelos do Hugging Face, que o ambiente do Claude não acessa. Por isso o teste com os modelos de verdade roda no GitHub Actions (`.github/workflows/pontuacao.yml`): baixa os modelos pelos mesmos endereços do app, compara o resultado do código do app com a biblioteca oficial (`punctuators`) e publica o relatório na release `ci-pontuacao`. Os testes locais usam um modelo falso com as mesmas entradas e saídas (`tests/fixtures/modelo/`). Os arquivos de legenda em `tests/fixtures/` são sintéticos (texto inventado); `tests/fixtures/gerar.py` recria todos.

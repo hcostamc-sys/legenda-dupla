@@ -482,7 +482,12 @@ export class PlayerFalso extends Emissor {
     if (!(this.opcoes.soAsr || this.opcoes.dublado) || f.kind !== 'asr') return;
     const events = [];
     for (let i = 0; i < 30; i++) {
-      events.push({ tStartMs: Math.round((0.5 + i * 2.2) * 1000), dDurationMs: 2000, segs: [{ utf8: `auto line ${i + 1} from YouTube` }] });
+      const t0 = Math.round((0.5 + i * 2.2) * 1000);
+      // ?mockPalavras=1: como a automática de verdade, com o tempo de cada palavra e sem pontuação
+      const segs = this.opcoes.palavras
+        ? `auto line ${i + 1} from youtube`.split(' ').map((w, k) => ({ utf8: (k ? ' ' : '') + w, ...(k ? { tOffsetMs: k * 350 } : {}) }))
+        : [{ utf8: `auto line ${i + 1} from YouTube` }];
+      events.push({ tStartMs: t0, dDurationMs: 2000, segs });
     }
     const url = `https://www.youtube.com/api/timedtext?v=${this._videoId}&lang=${f.languageCode}&kind=asr&fmt=json3`;
     setTimeout(() => window.postMessage({ ldLegenda: true, via: 'mock-gancho', status: 200, url, texto: JSON.stringify({ events }) }, '*'), 200);
@@ -560,6 +565,7 @@ export function criarPlayer(container) {
       soAsr: p.get('mockSoAsr') === '1',
       aoVivo: p.get('mockAoVivo') === '1',
       dublado: p.get('mockDublado') === '1',
+      palavras: p.get('mockPalavras') === '1',
     });
   }
   return new PlayerYouTube(container);

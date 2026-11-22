@@ -4,8 +4,11 @@
 import {
   tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, lerArquivoLegendaDupla, sugerirPapeis,
   processar, falaNoTempo, navegar, tempoDestino, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
-  MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS,
+  MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS, palavrasParaPontuar,
 } from './legendas.js';
+import {
+  PACOTES, pacoteDoIdioma, pontuacaoSuportada, estadoPacote, baixarPacote, apagarPacote, pontuarPalavras, tamanhoDownload,
+} from './modelos.js';
 import { textosPendentes, aplicarMapa, traduzirTodos, detectarIdiomaTexto, significadoPalavra } from './traducao.js';
 import {
   listaIdiomas, nomeIdioma, nomeCodigoIdioma, idiomaDoSistema, idiomaInterface, codigoTradutor, mesmoIdioma, urlDicionario,
@@ -56,6 +59,7 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
 const PRE_ROLAGEM_FRASES = 0.3;
 const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: false };
+const opcoesProcessar = () => ({ ...OPCOES_PROCESSAR, usarModelo: S.ajustes.pontuacaoModelo });
 
 // ============================================================ estado
 
@@ -76,6 +80,12 @@ const S = {
   unidades: [],
   frases: false,
   automatica: false,
+  pontuada: false,
+  pontuadaModelo: false, // a legenda na tela usa a pontuação melhorada (modelo)
+  // pontuação melhorada: { reg, ctrl, feitas, total } enquanto o modelo trabalha
+  modelo: null,
+  pacotes: {}, // estado de cada pacote: 'pronto' | 'ausente'
+  download: null, // { id, feitos, total, ctrl } | { id, erro }
   player: null,
   pronto: false,
   primeiroPlay: false,
@@ -758,12 +768,13 @@ function reprocessar() {
   if (!reg) return;
   const r = processar(
     { estudo: reg.estudo, traducao: reg.traducao, ajusteEstudo: reg.ajusteEstudo, ajusteTraducao: reg.ajusteTraducao },
-    OPCOES_PROCESSAR,
+    opcoesProcessar(),
   );
   S.unidades = r.unidades;
   S.frases = r.frases;
   S.automatica = r.automatica;
   S.pontuada = r.pontuada;
+  S.pontuadaModelo = r.pontuadaModelo;
   S.memoriaNav = null;
   S.alvoNav = null;
   if (S.ab.a !== null || S.loop.alvo !== null) zerarRepeticao(); // os índices das falas mudaram
@@ -815,7 +826,9 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   fecharMenuTraducao();
   atualizarBotaoTraducao();
   atualizarBotaoModoLegenda();
+  if (S.modelo) S.modelo.ctrl.abort(); // o modelo trabalhava para o vídeo anterior
   reprocessar();
+  pontuarAoFundo(); // vídeo salvo antes do pacote: ganha a pontuação melhorada agora
   $('#titulo-video').textContent = tituloAtual();
   $('#erro-player').hidden = true;
   $('#aviso-toque').hidden = true;
@@ -1041,7 +1054,12 @@ function atualizarAviso() {
   if (S.yt.estado === 'pegando') partes.push('Pegando a legenda do YouTube…');
   else if (S.yt.estado === 'erro') { partes.push('Não consegui pegar a legenda do YouTube.'); erro = true; }
   else if (S.yt.estado === 'sem') partes.push(APP_NOVO ? 'Este vídeo não tem legenda no YouTube.' : 'Este vídeo não tem legenda no YouTube. Use arquivos (DownSub).');
-  if (S.frases) partes.push(S.pontuada ? 'Frases e pontuação montadas pelo app' : 'Frases montadas pelo app');
+  if (S.modelo && S.modelo.reg === S.registro) {
+    const m = S.modelo;
+    partes.push(m.total ? `Pontuação melhorada… ${Math.floor((100 * m.feitas) / m.total)}%` : 'Pontuação melhorada: preparando…');
+  } else if (S.frases) {
+    partes.push(S.pontuadaModelo ? 'Pontuação melhorada (modelo no celular)' : S.pontuada ? 'Frases e pontuação montadas pelo app' : 'Frases montadas pelo app');
+  }
   if (traducaoAutomaticaAtiva()) {
     const nome = nomeIdioma(S.ajustes.destino);
     const tr = S.trad;
@@ -1295,8 +1313,14 @@ function mostrarCarregando() {
   } else if (f === 'parado') {
     titulo = 'O vídeo não começou';
     texto = 'O YouTube não começou o vídeo, por isso a legenda não carregou. Toque em Tentar de novo.';
+  } else if (f === 'pontuando') {
+    const m = S.modelo;
+    titulo = 'Pontuando a legenda…';
+    texto = m?.total
+      ? `Pontuação melhorada: ${Math.floor((100 * m.feitas) / m.total)}%. O modelo roda no celular; leva alguns segundos.`
+      : 'Pontuação melhorada: preparando o modelo no celular…';
   }
-  const esperando = f === 'procurando' || f === 'baixando';
+  const esperando = f === 'procurando' || f === 'baixando' || f === 'pontuando';
   $('#carregando-titulo').textContent = titulo;
   $('#carregando-texto').textContent = texto;
   $('#carregando-roda').hidden = !esperando;
@@ -1305,11 +1329,14 @@ function mostrarCarregando() {
   $('#carregando-tentar').hidden = !(f === 'erro' || f === 'parado' || (f === 'sem' && !S.yt.trocando));
   $('#carregando-diag').hidden = !(f === 'sem' || f === 'erro' || f === 'parado');
   $('#carregando-voltar').textContent = S.yt.trocando ? 'Cancelar' : APP_NOVO && S.origem === 'youtube' ? 'Voltar ao YouTube' : 'Voltar';
+  $('#carregando-voltar').hidden = f === 'pontuando';
+  $('#carregando-simples').hidden = f !== 'pontuando';
   tela.hidden = false;
 }
 
 /** Botão Voltar/Cancelar da janela de carregamento (e o voltar do celular). */
 function cancelarCarregando() {
+  if (S.yt.fase === 'pontuando') { pularPontuacao(); return; } // a legenda já chegou: segue com a simples
   const trocando = S.yt.trocando;
   clearTimeout(S.yt.timer);
   S.yt.geracao++;
@@ -1338,6 +1365,9 @@ function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
     });
     const sugerida = faixaSugerida(faixas, S.ajustes.idioma, idiomaAudio);
     sel.value = String(sugerida);
+    S.faixasEscolha = faixas;
+    sel.onchange = atualizarCartaoPontuacao;
+    atualizarCartaoPontuacao();
     const audio = idiomaAudio || (faixas[sugerida]?.kind === 'asr' ? faixas[sugerida].languageCode : '');
     const dica = $('#idioma-dica-audio');
     dica.textContent = audio ? `Pré-selecionada pelo áudio do vídeo: ${nomeCodigo(audio) || audio}.` : '';
@@ -1355,6 +1385,7 @@ function perguntarIdioma(faixas, trocando = false, idiomaAudio = '') {
       $('#idioma-ok').onclick = null;
       $('#idioma-cancelar').onclick = null;
       trad.onchange = null;
+      sel.onchange = null;
       resolve(r);
     };
     $('#idioma-ok').onclick = () => fim({ faixa: faixas[Number(sel.value)], destino: trad.value, mudouDestino });
@@ -1660,12 +1691,187 @@ function aplicarLegendaYoutube(cap) {
   S.yt.faixa = null;
   S.tituloConferido = true; // a legenda veio do próprio vídeo: não há o que conferir
   p?.esconderLegendas?.();
-  // Vídeo novo: começa do início, com som. Troca de idioma: volta como estava.
-  if (S.yt.preparando || S.yt.fase) finalizarPreparo(S.yt.trocando ? !!S.yt.retorno?.tocava : true);
-  salvarVideo(reg);
-  zerarRepeticao();
-  reprocessar();
+  const concluir = () => {
+    // Vídeo novo: começa do início, com som. Troca de idioma: volta como estava.
+    if (S.yt.preparando || S.yt.fase) finalizarPreparo(S.yt.trocando ? !!S.yt.retorno?.tocava : true);
+    salvarVideo(reg);
+    zerarRepeticao();
+    reprocessar();
+    atualizarAviso();
+  };
+  // Pontuação melhorada instalada: pontua antes de o vídeo começar (a janela mostra o andamento).
+  const info = infoPontuacao(reg);
+  if (info && (S.yt.preparando || S.yt.fase)) {
+    S.yt.fase = 'pontuando';
+    mostrarCarregando();
+    pontuarComModelo(reg, info).finally(() => {
+      if (S.registro === reg && S.yt.fase === 'pontuando') concluir();
+    });
+    return;
+  }
+  concluir();
+  pontuarAoFundo();
+}
+
+// ============================================================ pontuação melhorada (modelo no celular)
+
+/** O que mandar ao modelo para este vídeo, ou null (não se aplica, pacote ausente ou já pontuado). */
+function infoPontuacao(reg) {
+  if (!S.ajustes.pontuacaoModelo || !reg?.estudo?.falas) return null;
+  const pac = pacoteDoIdioma(reg.estudo.idioma || '');
+  if (!pac || S.pacotes[pac.id] !== 'pronto') return null;
+  const info = palavrasParaPontuar({ estudo: reg.estudo }, OPCOES_PROCESSAR);
+  if (!info) return null;
+  const feito = reg.estudo.pontuacaoModelo;
+  if (feito && feito.pacote === pac.id && feito.conferencia === info.conferencia) return null;
+  return { ...info, pacote: pac, estudo: reg.estudo };
+}
+
+/** Roda o modelo e guarda o resultado na legenda do vídeo. Devolve true se deu certo. */
+async function pontuarComModelo(reg, info) {
+  S.modelo?.ctrl.abort();
+  const ctrl = new AbortController();
+  const estado = { reg, ctrl, feitas: 0, total: 0 };
+  S.modelo = estado;
   atualizarAviso();
+  try {
+    const r = await pontuarPalavras(info.pacote.id, info.palavras, reg.estudo.idioma || '', {
+      sinal: ctrl.signal,
+      aoProgresso: (feitas, total) => {
+        estado.feitas = feitas;
+        estado.total = total;
+        if (S.yt.fase === 'pontuando') mostrarCarregando();
+        atualizarAviso();
+      },
+    });
+    if (reg.estudo !== info.estudo || r.length !== info.palavras.length) return false; // trocou de legenda
+    reg.estudo.pontuacaoModelo = { pacote: info.pacote.id, conferencia: info.conferencia, palavras: r.map((x) => x.w) };
+    salvarVideo(reg);
+    return true;
+  } catch (e) {
+    if (e?.name !== 'AbortError') {
+      diag(`pontuação melhorada falhou: ${e?.message || e}`);
+      toast(`A pontuação melhorada falhou (${e?.message || 'erro'}). Usei a pontuação simples.`, 6000);
+    }
+    return false;
+  } finally {
+    if (S.modelo === estado) S.modelo = null;
+    atualizarAviso();
+  }
+}
+
+/** Vídeo já aberto (reaberto, pacote recém-baixado ou ajuste ligado): pontua sem parar o vídeo. */
+function pontuarAoFundo() {
+  const reg = S.registro;
+  const info = infoPontuacao(reg);
+  if (!info || (S.modelo && S.modelo.reg === reg)) return;
+  pontuarComModelo(reg, info).then((ok) => {
+    if (ok && S.registro === reg) reprocessar();
+  });
+}
+
+/** Botão "Usar pontuação simples" da janela de carregamento: para o modelo e segue. */
+function pularPontuacao() {
+  S.modelo?.ctrl.abort();
+}
+
+async function atualizarEstadoPacotes() {
+  for (const id of Object.keys(PACOTES)) S.pacotes[id] = await estadoPacote(id);
+  renderPacotes();
+}
+
+const MB = (bytes) => formatarNumero(bytes / 1e6, 0); // MB como o Hugging Face e o Android mostram
+
+async function baixarPacoteUI(id) {
+  if (S.download?.ctrl) return;
+  const ctrl = new AbortController();
+  S.download = { id, feitos: 0, total: await tamanhoDownload(id), ctrl };
+  renderPacotes();
+  try {
+    await baixarPacote(id, {
+      sinal: ctrl.signal,
+      aoProgresso: (feitos, total) => {
+        if (S.download?.ctrl !== ctrl) return;
+        S.download.feitos = feitos;
+        S.download.total = total;
+        renderPacotes();
+      },
+    });
+    S.download = null;
+    S.pacotes[id] = 'pronto';
+    toast(`Pontuação melhorada (${PACOTES[id].nome}) instalada.`, 3000);
+    renderPacotes();
+    pontuarAoFundo(); // o vídeo aberto já ganha a pontuação nova
+  } catch (e) {
+    S.download = e?.name === 'AbortError' ? null : { id, erro: e?.message || 'Não consegui baixar.' };
+    renderPacotes();
+  }
+}
+
+async function apagarPacoteUI(id) {
+  const ok = await dialogo({
+    texto: `Apagar a pontuação melhorada (${PACOTES[id].nome})? Libera cerca de ${MB(PACOTES[id].bytesModelo)} MB. Dá para baixar de novo depois.`,
+    ok: 'Apagar',
+  });
+  if (!ok) return;
+  if (S.modelo) S.modelo.ctrl.abort();
+  await apagarPacote(id);
+  await atualizarEstadoPacotes();
+}
+
+/** Desenha o estado de um pacote num bloco (cartão da escolha do idioma ou linha dos Ajustes). */
+function desenharPacote(bloco, id) {
+  const p = PACOTES[id];
+  const d = S.download?.id === id ? S.download : null;
+  const pronto = S.pacotes[id] === 'pronto';
+  const est = bloco.querySelector('.pm-estado');
+  const txt = bloco.querySelector('.pm-texto');
+  const barra = bloco.querySelector('.pm-barra');
+  const baixar = bloco.querySelector('.pm-baixar');
+  const cancelar = bloco.querySelector('.pm-cancelar');
+  const apagar = bloco.querySelector('.pm-apagar');
+  bloco.dataset.estado = d?.ctrl ? 'baixando' : pronto ? 'pronto' : d?.erro ? 'erro' : 'ausente';
+  barra.hidden = !d?.ctrl;
+  cancelar.hidden = !d?.ctrl;
+  baixar.hidden = pronto || !!d?.ctrl || (!!S.download?.ctrl && !d);
+  if (apagar) apagar.hidden = !pronto;
+  if (d?.ctrl) {
+    const pct = d.total ? Math.floor((100 * d.feitos) / d.total) : 0;
+    barra.firstElementChild.style.width = `${pct}%`;
+    est.textContent = `${pct}%`;
+    txt.textContent = `Baixando… ${MB(d.feitos)} de ${MB(d.total)} MB. Pode começar o vídeo: a pontuação entra quando terminar.`;
+  } else if (pronto) {
+    est.textContent = 'Instalada';
+    txt.textContent = 'O modelo roda no celular, sem internet.';
+  } else if (d?.erro) {
+    est.textContent = 'Falhou';
+    txt.textContent = `${d.erro} Confira a internet e o espaço livre e toque em Baixar de novo.`;
+    baixar.textContent = 'Baixar de novo';
+  } else {
+    est.textContent = '';
+    const total = p.bytesModelo + p.bytesSp + (Object.values(S.pacotes).includes('pronto') ? 0 : 14848852);
+    txt.textContent = `${p.descricao}: pontos, vírgulas, interrogações e maiúsculas de nomes, colocados por um modelo de IA que roda no celular. Baixa uma vez só (${MB(total)} MB, use Wi‑Fi).`;
+    baixar.textContent = `Baixar (${MB(total)} MB)`;
+  }
+}
+
+function renderPacotes() {
+  for (const bloco of $$('[data-pacote]')) desenharPacote(bloco, bloco.dataset.pacote);
+  atualizarCartaoPontuacao();
+}
+
+/** Cartão da janela de escolha do idioma: aparece só para legenda automática de um idioma com pacote. */
+function atualizarCartaoPontuacao() {
+  const cartao = $('#cartao-pontuacao');
+  if (!cartao) return;
+  const faixa = S.faixasEscolha?.[Number($('#sel-legenda-video').value)];
+  const pac = faixa && faixa.kind === 'asr' && pontuacaoSuportada() ? pacoteDoIdioma(faixa.languageCode) : null;
+  cartao.hidden = !pac;
+  if (!pac) return;
+  cartao.dataset.pacote = pac.id;
+  desenharPacote(cartao, pac.id);
+  $('#pm-usar').hidden = S.pacotes[pac.id] !== 'pronto';
+  $('#pm-usar input').checked = !!S.ajustes.pontuacaoModelo;
 }
 
 // ============================================================ primeiro play (7.2)
@@ -2658,6 +2864,8 @@ function sincronizarPainel() {
   const reg = S.registro;
   $('#grupo-sincronia').hidden = !reg;
   montarLegendaAjustes();
+  $('#grupo-pontuacao').hidden = !pontuacaoSuportada();
+  renderPacotes();
   if (reg) {
     for (const bloco of $$('.ajuste-sinc')) {
       const alvo = bloco.dataset.alvo;
@@ -2766,7 +2974,12 @@ function aoMudarAjuste(el) {
   salvar();
   mostrarValor(k);
   aplicarAparencia();
-  if (k === 'destino') {
+  if (k === 'pontuacaoModelo') {
+    for (const c of $$('[data-ajuste="pontuacaoModelo"]')) c.checked = !!v;
+    if (!v) S.modelo?.ctrl.abort();
+    reprocessar();
+    pontuarAoFundo();
+  } else if (k === 'destino') {
     cancelarTraducaoAuto();
     reprocessar();
     mostrarAmbas();
@@ -3051,6 +3264,17 @@ function ligarEventos() {
     finalizarPreparo(true);
   });
   $('#btn-ir-youtube').addEventListener('click', () => abrirYoutube(''));
+  $('#carregando-simples').addEventListener('click', pularPontuacao);
+  // Pontuação melhorada: botões do cartão (escolha do idioma) e das linhas dos Ajustes
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.pm-baixar, .pm-cancelar, .pm-apagar');
+    const bloco = b?.closest('[data-pacote]');
+    if (!bloco) return;
+    const id = bloco.dataset.pacote;
+    if (b.classList.contains('pm-baixar')) baixarPacoteUI(id);
+    else if (b.classList.contains('pm-cancelar')) S.download?.ctrl?.abort();
+    else apagarPacoteUI(id);
+  });
 
   // barra de progresso
   const barra = $('#barra-progresso');
@@ -3139,6 +3363,7 @@ async function iniciar() {
     history.replaceState(null, '', location.pathname + location.search + '#biblioteca');
   }
   mostrarBiblioteca();
+  atualizarEstadoPacotes(); // sem esperar: só olha o cache do aparelho
   await renderBiblioteca();
   if (await estaSoNaMemoria()) $('#aviso-memoria').hidden = false;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
@@ -3150,6 +3375,7 @@ async function iniciar() {
       tempo: () => S.player?.tempo(),
       estado: () => S.player?.estado(),
       textoDiagnostico,
+      atualizarEstadoPacotes,
     };
   }
 }

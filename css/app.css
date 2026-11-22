@@ -751,6 +751,23 @@ body:not(.app-novo) .so-app { display: none !important; }
 .caixa-idioma .ajuste { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .caixa-idioma select { min-height: 44px; }
 
+/* Pontuação melhorada: cartão da escolha do idioma e linhas dos Ajustes */
+.pm-bloco { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; margin: 10px 0; background: var(--fundo-3); }
+.cartao-pontuacao { border-color: rgba(255, 213, 79, 0.45); margin: 4px 0 14px; }
+.pm-bloco[data-estado="pronto"] { border-color: rgba(255, 213, 79, 0.45); }
+.pm-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pm-topo strong { color: var(--ambar); font-size: 15px; }
+.pm-estado { font-size: 13px; font-weight: 700; color: var(--texto-2); font-variant-numeric: tabular-nums; }
+.pm-bloco[data-estado="pronto"] .pm-estado { color: var(--ambar); }
+.pm-bloco[data-estado="erro"] .pm-estado { color: var(--erro); }
+.pm-texto { margin: 6px 0 8px; font-size: 13px; line-height: 1.4; }
+.pm-barra { height: 8px; border-radius: 4px; background: #111; overflow: hidden; margin: 0 0 8px; }
+.pm-barra > div { height: 100%; width: 0; background: var(--ambar); transition: width 0.3s; }
+.pm-botoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.pm-botoes .btn { min-height: 40px; font-size: 14px; }
+.pm-bloco .pm-baixar { background: var(--ambar); color: #111; border-color: var(--ambar); font-weight: 700; }
+.pm-bloco .ajuste-check, .caixa-idioma .pm-bloco .ajuste-check { flex-direction: row; align-items: center; gap: 12px; margin: 6px 0 0; font-size: 14px; }
+
 /* Escolha do trecho A–B: lista de falas na tela inteira */
 .tela-ab {
   position: fixed;

@@ -23,6 +23,8 @@ export const AJUSTES_PADRAO = Object.freeze({
   modoLegenda: 'lista', // lista (anterior, atual e próxima) | uma (uma fala por vez)
   fonteL1: 19, // a linha 2 usa 85% deste tamanho
   velocidade: 1,
+  // Pontuação melhorada (modelo baixado à parte): usar quando o pacote do idioma estiver no aparelho.
+  pontuacaoModelo: true,
 });
 
 const OPCOES = {

@@ -1185,6 +1185,78 @@ def t_dublado(browser, base):
     ctx.close()
 
 
+@caso('12g. Pontuação melhorada: baixar o pacote na escolha do idioma, pontuar antes de começar, apagar nos Ajustes')
+def t_pontuacao_modelo(browser, base):
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    # O Hugging Face vira o modelo falso (mesmas entradas e saídas do de verdade; tests/fixtures/modelo)
+    pasta_modelo = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'modelo')
+    baixados = []
+
+    def hf(route):
+        url = route.request.url
+        if not baixados:  # a 1ª tentativa falha (internet caiu): o cartão avisa e oferece baixar de novo
+            baixados.append('falhou')
+            route.fulfill(status=503, body='')
+            return
+        baixados.append(url.rsplit('/', 1)[-1])
+        arq = 'falso.onnx' if url.endswith('.onnx') else 'falso.spmodel'
+        with open(os.path.join(pasta_modelo, arq), 'rb') as f:
+            route.fulfill(status=200, body=f.read(), headers={'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/octet-stream'})
+    page.route('https://huggingface.co/**', hf)
+    page.goto(base + '?mock=1&app=android&apk=8&mockSoAsr=1&mockPalavras=1')
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=PONTUA00000')")
+    expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
+    cartao = page.locator('#cartao-pontuacao')
+    expect(cartao).to_be_visible()
+    expect(cartao.locator('.pm-baixar')).to_contain_text('MB')
+    expect(cartao.locator('.pm-texto')).to_contain_text('Inglês')
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-pontuacao-oferta.png'))
+    cartao.locator('.pm-baixar').click()
+    expect(cartao).to_have_attribute('data-estado', 'erro', timeout=8000)
+    expect(cartao.locator('.pm-texto')).to_contain_text('503')
+    expect(cartao.locator('.pm-baixar')).to_have_text('Baixar de novo')
+    cartao.locator('.pm-baixar').click()
+    expect(cartao).to_have_attribute('data-estado', 'pronto', timeout=15000)
+    expect(page.locator('#pm-usar')).to_be_visible()
+    expect(page.locator('#pm-usar input')).to_be_checked()
+    assert sorted(baixados) == ['falhou', 'punct_cap_seg_en.onnx', 'spe_32k_lc_en.model'], baixados
+    page.wait_for_timeout(200)
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-pontuacao-instalada.png'))
+    page.click('#idioma-ok')
+    # Pontua antes de começar; depois a legenda usa o resultado do modelo
+    esperar(lambda: page.evaluate('window.__ld.S.pontuadaModelo') is True, msg='pontuação do modelo aplicada', limite=20)
+    n = page.evaluate('window.__ld.S.registro.estudo.pontuacaoModelo.palavras.length')
+    assert n == 150, n  # 30 falas de 5 palavras
+    expect(page.locator('#aviso-legenda')).to_contain_text('Pontuação melhorada')
+    expect(page.locator('#tela-carregando')).to_be_hidden()
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    # desligar nos Ajustes volta para a pontuação pelas pausas; ligar de novo usa o resultado guardado
+    page.click('#btn-ajustes')
+    expect(page.locator('#grupo-pontuacao')).to_be_visible()
+    linha = page.locator('#grupo-pontuacao [data-pacote="en"]')
+    expect(linha).to_have_attribute('data-estado', 'pronto')
+    expect(page.locator('#grupo-pontuacao [data-pacote="latinas"] .pm-baixar')).to_be_visible()
+    page.locator('#grupo-pontuacao [data-ajuste="pontuacaoModelo"]').uncheck()
+    esperar(lambda: page.evaluate('window.__ld.S.pontuadaModelo') is False, msg='desligou')
+    page.locator('#grupo-pontuacao [data-ajuste="pontuacaoModelo"]').check()
+    esperar(lambda: page.evaluate('window.__ld.S.pontuadaModelo') is True, msg='ligou de novo')
+    page.locator('#grupo-pontuacao').screenshot(path=os.path.join(CAPTURAS, 'android-pontuacao-ajustes.png'))
+    # apagar o pacote (com confirmação)
+    linha.locator('.pm-apagar').click()
+    expect(page.locator('#dialogo')).to_be_visible()
+    page.click('#dialogo-ok')
+    expect(linha).to_have_attribute('data-estado', 'ausente', timeout=5000)
+    restam = page.evaluate("caches.open('modelos-pontuacao-v1').then((c) => c.keys()).then((k) => k.length)")
+    assert restam == 0, restam  # sem pacote nenhum, o motor também sai
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('16. Celular em inglês: a interface é traduzida (e guardada); legendas e títulos ficam como estão')
 def t_interface_idioma(browser, base):
     from urllib.parse import parse_qs
@@ -1477,6 +1549,7 @@ def main():
         t_so_automatica(browser, base)
         t_velocidade_fina(browser, base)
         t_dublado(browser, base)
+        t_pontuacao_modelo(browser, base)
         t_interface_idioma(browser, base)
         t_ao_vivo_shorts(browser, base)
         t_gancho(browser, base)

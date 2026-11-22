@@ -43,30 +43,34 @@ export async function estadoPacote(id) {
   return a && b && c ? 'pronto' : 'ausente';
 }
 
-/** Baixa um arquivo inteiro, avisando o progresso, e guarda no cache. */
+/**
+ * Baixa um arquivo e grava direto no cache, sem juntar tudo na memória (o modelo tem até 210 MB):
+ * os pedaços passam por um contador (progresso) a caminho do disco.
+ */
 async function baixarArquivo(cache, url, aoBytes, sinal) {
   const r = await fetch(url, { signal: sinal, credentials: 'omit', cache: 'no-store' });
   if (!r.ok) throw new Error(`O servidor respondeu ${r.status}.`);
   const esperado = Number(r.headers.get('content-length')) || 0;
-  const partes = [];
   let recebidos = 0;
-  if (r.body?.getReader) {
-    const leitor = r.body.getReader();
-    for (;;) {
-      const { done, value } = await leitor.read();
-      if (done) break;
-      partes.push(value);
-      recebidos += value.byteLength;
-      aoBytes(value.byteLength);
-    }
+  let corpo;
+  if (r.body?.pipeThrough && typeof TransformStream === 'function') {
+    corpo = r.body.pipeThrough(new TransformStream({
+      transform(pedaco, ctrl) {
+        recebidos += pedaco.byteLength;
+        aoBytes(pedaco.byteLength);
+        ctrl.enqueue(pedaco);
+      },
+    }));
   } else {
-    const b = new Uint8Array(await r.arrayBuffer());
-    partes.push(b);
-    recebidos = b.byteLength;
+    corpo = await r.arrayBuffer();
+    recebidos = corpo.byteLength;
     aoBytes(recebidos);
   }
-  if (esperado && recebidos !== esperado) throw new Error('O download veio incompleto. Tente de novo.');
-  await cache.put(url, new Response(new Blob(partes), { headers: { 'Content-Type': 'application/octet-stream' } }));
+  await cache.put(url, new Response(corpo, { headers: { 'Content-Type': 'application/octet-stream' } }));
+  if (esperado && recebidos !== esperado) {
+    await cache.delete(url);
+    throw new Error('O download veio incompleto. Tente de novo.');
+  }
 }
 
 /**

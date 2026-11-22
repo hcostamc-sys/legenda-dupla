@@ -13,6 +13,7 @@ export const PACOTES = {
   en: {
     id: 'en',
     nome: 'Inglês',
+    descricao: 'Inglês',
     idiomas: ['en'],
     modelo: `${HF}/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/b26fd1c40e88678859048898218ea4edcc24c84a/punct_cap_seg_en.onnx`,
     sp: `${HF}/1-800-BAD-CODE/punctuation_fullstop_truecase_english/resolve/b26fd1c40e88678859048898218ea4edcc24c84a/spe_32k_lc_en.model`,
@@ -22,6 +23,7 @@ export const PACOTES = {
   latinas: {
     id: 'latinas',
     nome: 'Línguas latinas',
+    descricao: 'Francês, espanhol, português, italiano, catalão e romeno',
     idiomas: ['es', 'fr', 'pt', 'it', 'ca', 'ro'],
     modelo: `${HF}/1-800-BAD-CODE/punctuation_fullstop_truecase_romance/resolve/1e8d395731a9e19471cee4b636f034e0cff7b405/model.onnx`,
     sp: `${HF}/1-800-BAD-CODE/punctuation_fullstop_truecase_romance/resolve/1e8d395731a9e19471cee4b636f034e0cff7b405/sp.model`,

@@ -296,6 +296,32 @@
       </label>
     </div>
 
+    <div id="grupo-pontuacao" class="grupo so-android">
+      <h3>Pontuação melhorada</h3>
+      <p class="dica">Para a legenda automática do YouTube, que vem sem pontuação. Um modelo de IA roda no celular e coloca pontos, vírgulas, interrogações e maiúsculas. Cada pacote é baixado uma vez só.</p>
+      <div class="pm-linha pm-bloco" data-pacote="en">
+        <div class="pm-topo"><strong>Inglês</strong><span class="pm-estado"></span></div>
+        <p class="pm-texto dica"></p>
+        <div class="pm-barra" hidden><div></div></div>
+        <div class="pm-botoes">
+          <button type="button" class="btn pm-baixar">Baixar</button>
+          <button type="button" class="btn pm-cancelar" hidden>Cancelar download</button>
+          <button type="button" class="btn pm-apagar" hidden>Apagar</button>
+        </div>
+      </div>
+      <div class="pm-linha pm-bloco" data-pacote="latinas">
+        <div class="pm-topo"><strong>Línguas latinas</strong><span class="pm-estado"></span></div>
+        <p class="pm-texto dica"></p>
+        <div class="pm-barra" hidden><div></div></div>
+        <div class="pm-botoes">
+          <button type="button" class="btn pm-baixar">Baixar</button>
+          <button type="button" class="btn pm-cancelar" hidden>Cancelar download</button>
+          <button type="button" class="btn pm-apagar" hidden>Apagar</button>
+        </div>
+      </div>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="pontuacaoModelo"> Usar a pontuação melhorada</label>
+    </div>
+
     <div class="grupo">
       <h3>Tela</h3>
       <label class="ajuste">Tamanho das letras: <b data-mostra="fonteL1"></b>
@@ -358,6 +384,17 @@
       <select id="sel-traducao-video"></select>
       <span class="dica">Padrão: o idioma do seu celular.</span>
     </label>
+    <!-- Pontuação melhorada: só para legenda automática de idioma com pacote -->
+    <div id="cartao-pontuacao" class="cartao-pontuacao pm-bloco" hidden>
+      <div class="pm-topo"><strong>Pontuação melhorada</strong><span class="pm-estado"></span></div>
+      <p class="pm-texto dica"></p>
+      <div class="pm-barra" hidden><div></div></div>
+      <div class="pm-botoes">
+        <button type="button" class="btn pm-baixar">Baixar</button>
+        <button type="button" class="btn pm-cancelar" hidden>Cancelar download</button>
+      </div>
+      <label id="pm-usar" class="ajuste ajuste-check" hidden><input type="checkbox" data-ajuste="pontuacaoModelo"> Usar a pontuação melhorada</label>
+    </div>
     <div class="dialogo-botoes">
       <button id="idioma-cancelar" type="button" class="btn">Agora não</button>
       <button id="idioma-ok" type="button" class="btn btn-principal">Começar</button>
@@ -376,6 +413,7 @@
     </button>
     <div class="dialogo-botoes">
       <button id="carregando-voltar" type="button" class="btn">Voltar</button>
+      <button id="carregando-simples" type="button" class="btn" hidden>Usar a pontuação simples</button>
       <button id="carregando-sem" type="button" class="btn" hidden>Assistir sem legenda</button>
       <button id="carregando-tentar" type="button" class="btn btn-principal" hidden>Tentar de novo</button>
     </div>

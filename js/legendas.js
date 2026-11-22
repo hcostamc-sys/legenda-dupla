@@ -925,8 +925,8 @@ export function pontuarItens(itens, idioma = '') {
  * 6.2: junta as falas em frases completas (sem a quebra de filme). Devolve [{s, e, texto, ps, marca?}].
  * opcoes.pontuar: pontua pelas pausas (legenda automática com tempo de cada palavra); opcoes.idioma.
  */
-export function montarFrasesInteiras(falas, opcoes = {}) {
-  // 1) sequência de palavras e de limites (marcação de som, troca de quem fala: ">>")
+/** Sequência de palavras ({ p }) e de limites ({ marca } ou { troca }: ">>", troca de quem fala). */
+function itensDasFalas(falas) {
   const itens = [];
   for (const f of falas) {
     if (ehMarcacao(f.t)) {
@@ -942,7 +942,37 @@ export function montarFrasesInteiras(falas, opcoes = {}) {
       itens.push({ p });
     }
   }
-  if (opcoes.pontuar) pontuarItens(itens, opcoes.idioma);
+  return itens;
+}
+
+/** Soma de conferência de uma lista de palavras (para saber se a pontuação guardada ainda vale). */
+export function conferenciaPalavras(palavras) {
+  let h = 5381;
+  const t = palavras.join(' ');
+  for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+  return `${palavras.length}:${h.toString(36)}`;
+}
+
+/**
+ * Aplica a pontuação do modelo (pontuação melhorada) às palavras. modelo: { palavras: [w], conferencia }.
+ * Devolve false (e não mexe em nada) se a lista não for desta legenda.
+ */
+function aplicarPontuacaoModelo(itens, modelo) {
+  const ps = itens.filter((it) => it.p).map((it) => it.p);
+  if (!modelo || !Array.isArray(modelo.palavras) || modelo.palavras.length !== ps.length) return false;
+  if (modelo.conferencia !== conferenciaPalavras(ps.map((p) => p.w))) return false;
+  ps.forEach((p, k) => { if (typeof modelo.palavras[k] === 'string' && modelo.palavras[k]) p.w = modelo.palavras[k]; });
+  return true;
+}
+
+export function montarFrasesInteiras(falas, opcoes = {}) {
+  // 1) sequência de palavras e de limites (marcação de som, troca de quem fala: ">>")
+  const itens = itensDasFalas(falas);
+  opcoes.usouModelo = false;
+  if (opcoes.pontuar) {
+    if (opcoes.modelo && aplicarPontuacaoModelo(itens, opcoes.modelo)) opcoes.usouModelo = true;
+    else pontuarItens(itens, opcoes.idioma);
+  }
 
   // 2) frases
   const unidades = [];
@@ -1101,7 +1131,7 @@ export function parearPorPalavra(unidades, traducao) {
  * entrada: { estudo: {falas, arquivo}, traducao: {falas, arquivo} | null,
  *            ajusteEstudo, ajusteTraducao }
  * opcoes:  { modoFrases: 'auto'|'ligado'|'desligado', esconderMarcacoes: bool }
- * Devolve { unidades: [{i,s,e,texto,trad,marca?}], frases: bool, automatica: bool, pontuada: bool }
+ * Devolve { unidades: [{i,s,e,texto,trad,marca?}], frases: bool, automatica: bool, pontuada: bool, pontuadaModelo: bool }
  */
 export function processar(entrada, opcoes = {}) {
   const modo = opcoes.modoFrases || 'auto';
@@ -1118,13 +1148,16 @@ export function processar(entrada, opcoes = {}) {
 
   let unidades;
   let pontuada = false;
+  let pontuadaModelo = false;
   if (frases) {
     // Pareia a tradução com a frase inteira e só depois quebra as duas no padrão de filme:
     // assim cada pedaço da tradução corresponde ao pedaço da frase original.
     // Legenda automática com o tempo de cada palavra e sem pontuação: o app pontua pelas pausas.
     const pontuar = automatica && opcoes.pontuarAuto !== false && temTempoDePalavra(estudo) && !legendaPontuada(estudo);
-    const inteiras = montarFrasesInteiras(estudo, { pontuar, idioma: entrada.estudo?.idioma || '' });
+    const op = { pontuar, idioma: entrada.estudo?.idioma || '', modelo: opcoes.usarModelo === false ? null : entrada.estudo?.pontuacaoModelo };
+    const inteiras = montarFrasesInteiras(estudo, op);
     pontuada = pontuar;
+    pontuadaModelo = op.usouModelo;
     if (trad.length) parearPorPalavra(inteiras, trad);
     unidades = quebrarFrases(inteiras);
   } else {
@@ -1137,7 +1170,21 @@ export function processar(entrada, opcoes = {}) {
     if (trad.length) parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
   }
   unidades.forEach((u, i) => { u.i = i; if (typeof u.trad !== 'string') u.trad = ''; });
-  return { unidades, frases, automatica, pontuada };
+  return { unidades, frases, automatica, pontuada, pontuadaModelo };
+}
+
+/**
+ * Palavras que vão para o modelo de pontuação, na ordem em que processar() as usa.
+ * Devolve null quando o modelo não se aplica (legenda feita por pessoa, já pontuada ou sem tempo por palavra).
+ */
+export function palavrasParaPontuar(entrada, opcoes = {}) {
+  const brutas = entrada.estudo?.falas || [];
+  if (!ehAutomatica(brutas, entrada.estudo?.arquivo || '')) return null;
+  let estudo = brutas;
+  if (opcoes.esconderMarcacoes) estudo = esconderMarcacoes(estudo);
+  if (!temTempoDePalavra(estudo) || legendaPontuada(estudo)) return null;
+  const palavras = itensDasFalas(estudo).filter((it) => it.p).map((it) => it.p.w);
+  return palavras.length ? { palavras, conferencia: conferenciaPalavras(palavras) } : null;
 }
 
 // ---------------------------------------------------------------------------
