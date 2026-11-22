@@ -690,6 +690,32 @@ def t_dupla(page, base, pasta):
     expect(page.locator('#btn-abrir')).to_be_disabled()
 
 
+@caso('11. Protótipo Android: lista vazia, captura simulada do gancho e relatório')
+def t_prototipo(page, base):
+    page.goto(base + 'prototipo.html?teste=1&app=android&gancho=true&ponte=false&wv=130')
+    expect(page.locator('#info')).to_contain_text('Aberto pelo app Android')
+    expect(page.locator('#campo-link')).to_have_value(re.compile(r'youtube\.com/watch\?v='))
+    expect(page.locator('#btn-pegar')).to_be_disabled()
+    corpo = json.dumps({'events': [
+        {'tStartMs': 1200, 'dDurationMs': 2300, 'segs': [{'utf8': 'Olá'}, {'utf8': ' mundo'}]},
+        {'tStartMs': 4000, 'dDurationMs': 1500, 'segs': [{'utf8': 'ação'}]},
+    ]})
+    page.evaluate("""(corpo) => window.postMessage({ ldLegenda: true, via: 'xhr', status: 200, texto: corpo,
+        url: 'https://www.youtube.com/api/timedtext?v=abc&lang=en&kind=asr&tlang=pt&fmt=json3&pot=XYZ' }, '*')""", corpo)
+    expect(page.locator('.captura.boa')).to_have_count(1)
+    expect(page.locator('.captura.boa')).to_contain_text('2 falas')
+    expect(page.locator('.captura.boa')).to_contain_text('tradução pt')
+    expect(page.locator('.captura.boa .falas li').first).to_contain_text('Olá mundo')
+    # resposta vazia (sem token): aparece como problema
+    page.evaluate("""() => window.postMessage({ ldLegenda: true, via: 'xhr', status: 200, texto: '',
+        url: 'https://www.youtube.com/api/timedtext?v=abc&lang=en' }, '*')""")
+    expect(page.locator('.captura.vazia')).to_have_count(1)
+    page.evaluate("window.ldNativoViu('https://www.youtube.com/api/timedtext?v=abc&lang=fr&pot=1')")
+    expect(page.locator('#msg-vistos')).to_contain_text('1.')
+    rel = page.locator('#relatorio').input_value()
+    assert 'Capturas: 2' in rel and 'token sim' in rel and 'Pedidos de legenda vistos pelo Android: 1' in rel, rel
+
+
 @caso('10. Capturas de tela nos quatro tamanhos')
 def t_capturas(browser, url, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
@@ -782,6 +808,7 @@ def main():
         t_link_automatico(page, base, en, pt)
         t_traducao_auto(page, base, en)
         t_dupla(page, base, pasta)
+        t_prototipo(page, base)
         ctx.close()
         t_capturas(browser, url, en, pt)
         browser.close()

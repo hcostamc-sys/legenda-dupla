@@ -68,6 +68,15 @@ A mesma ajuda existe dentro do app (link no rodapé da biblioteca). Pode mudar s
 - O app depende de partes não documentadas do player do YouTube; se o YouTube mudar, pode precisar de ajuste.
 - A tradução automática usa o tradutor público do Google (o mesmo do Chrome), sem chave e sem custo, mas ele não é documentado oficialmente: se o Google mudar ou limitar, aparece “Não consegui traduzir” com o botão **Tentar de novo**. Nesse caso, baixe também a legenda em português no DownSub. O texto da legenda é enviado ao Google para ser traduzido.
 
+## App Android (protótipo, em teste)
+
+Teste para o app pegar a legenda sozinho: o próprio player do YouTube baixa a legenda (com o token que ele mesmo gera) e o app Android guarda uma cópia. Num site isso não é possível.
+
+- Baixar: https://github.com/hcostamc-sys/legenda-dupla/releases/download/android-prototipo/legenda-dupla-android.apk
+- O app abre a página de teste `prototipo.html`, que mostra as legendas do vídeo, pede uma (com ou sem a tradução do YouTube), mostra o que foi capturado e gera um relatório para copiar.
+- Código: pasta `android/` (Java, WebView). O GitHub Actions compila e publica o APK a cada mudança nessa pasta (`.github/workflows/android.yml`).
+- Áudio em outro idioma continua impossível: o player embutido não deixa escolher a faixa de áudio.
+
 ## Como atualizar o site
 
 O site é publicado pelo GitHub Pages a partir da branch `main`. Cada envio (push) para a `main` atualiza o site em 1 a 2 minutos.

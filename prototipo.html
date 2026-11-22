@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#111111">
+  <meta name="robots" content="noindex">
+  <title>Legenda Dupla — teste do app Android</title>
+  <link rel="icon" type="image/png" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/app.css">
+  <style>
+    body { padding: 12px 12px calc(24px + env(safe-area-inset-bottom)); max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 4px 0 10px; }
+    h2 { font-size: 16px; margin: 0 0 8px; }
+    .bloco { background: var(--fundo-2); border: 1px solid var(--borda); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+    .passo { color: var(--ambar); font-weight: 700; }
+    .linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .linha input, .linha select { flex: 1; min-width: 0; min-height: 44px; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo-3); color: var(--texto); padding: 0 10px; font-size: 15px; }
+    .player-teste { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+    .player-teste iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .info { font-size: 13px; color: var(--texto-2); }
+    .ok { color: #9be59b; }
+    .ruim { color: var(--erro); }
+    .captura { border: 1px solid var(--borda); border-radius: 12px; padding: 10px; margin-top: 8px; background: var(--fundo-3); }
+    .captura.boa { border-color: #5fbf5f; }
+    .captura.vazia { border-color: var(--erro); }
+    .captura h3 { margin: 0 0 4px; font-size: 15px; }
+    .falas { font-size: 14px; margin: 6px 0 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+    .falas li { padding: 2px 0; }
+    .falas .t { color: var(--texto-2); font-variant-numeric: tabular-nums; margin-right: 6px; }
+    textarea { width: 100%; min-height: 180px; background: var(--fundo-3); color: var(--texto); border: 1px solid var(--borda); border-radius: 10px; font: 12px/1.4 ui-monospace, monospace; padding: 8px; }
+    .btn { min-height: 44px; }
+  </style>
+  <script type="module" src="./js/prototipo.js"></script>
+</head>
+<body>
+  <h1>Teste do app Android: legenda automática</h1>
+  <p id="info" class="info">Carregando…</p>
+  <p id="aviso-navegador" class="msg msg-alerta" hidden>Esta página só faz o teste de verdade dentro do app Android do Legenda Dupla. Aqui no navegador, a captura da legenda não acontece.</p>
+
+  <section class="bloco">
+    <h2><span class="passo">1.</span> Vídeo</h2>
+    <div class="linha">
+      <input id="campo-link" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/...">
+      <button id="btn-carregar" type="button" class="btn btn-principal">Carregar</button>
+    </div>
+    <p class="info">Já vem um vídeo com várias legendas. Pode trocar por outro link.</p>
+    <div id="player-host" class="player-teste"></div>
+  </section>
+
+  <section class="bloco">
+    <h2><span class="passo">2.</span> Legendas que o vídeo tem</h2>
+    <p id="msg-faixas" class="info">Aparecem aqui depois que o vídeo começar a tocar.</p>
+    <div class="linha">
+      <select id="sel-faixa" aria-label="Legenda do vídeo" disabled></select>
+    </div>
+    <div class="linha" style="margin-top: 8px">
+      <select id="sel-trad" aria-label="Traduzir para" disabled></select>
+    </div>
+    <div class="linha" style="margin-top: 8px">
+      <button id="btn-pegar" type="button" class="btn btn-principal" disabled>Pegar esta legenda</button>
+      <button id="btn-reler" type="button" class="btn">Ler a lista de novo</button>
+    </div>
+  </section>
+
+  <section class="bloco">
+    <h2><span class="passo">3.</span> Legendas capturadas</h2>
+    <p id="msg-capturas" class="info">Nenhuma ainda.</p>
+    <div id="capturas"></div>
+  </section>
+
+  <section class="bloco">
+    <h2>Plano B: o Android baixa de novo</h2>
+    <p id="msg-vistos" class="info">Pedidos de legenda que o Android viu passar: 0.</p>
+    <button id="btn-baixar-android" type="button" class="btn" disabled>Baixar de novo pelo Android</button>
+  </section>
+
+  <section class="bloco">
+    <h2><span class="passo">4.</span> Relatório</h2>
+    <p class="info">Toque em <b>Copiar relatório</b> e cole na conversa com o Claude.</p>
+    <button id="btn-copiar" type="button" class="btn btn-principal">Copiar relatório</button>
+    <textarea id="relatorio" readonly aria-label="Relatório do teste" style="margin-top: 8px"></textarea>
+  </section>
+
+  <p class="info"><a href="./index.html" style="color: var(--ambar)">Abrir o Legenda Dupla normal</a></p>
+</body>
+</html>

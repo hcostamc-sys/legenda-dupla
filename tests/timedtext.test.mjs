@@ -1,0 +1,52 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { lerTimedText, paraSrt, infoUrl } from '../js/timedtext.js';
+
+test('json3: junta os pedaços de cada evento e ignora eventos sem texto', () => {
+  const json = JSON.stringify({
+    events: [
+      { tStartMs: 0, dDurationMs: 5000, id: 1 },
+      { tStartMs: 1200, dDurationMs: 2300, segs: [{ utf8: 'Hello' }, { utf8: ' world', tOffsetMs: 400 }] },
+      { tStartMs: 3500, dDurationMs: 10, aAppend: 1, segs: [{ utf8: '\n' }] },
+      { tStartMs: 4000, dDurationMs: 1500, segs: [{ utf8: 'ação' }] },
+    ],
+  });
+  const r = lerTimedText(json);
+  assert.equal(r.formato, 'json3');
+  assert.deepEqual(r.falas, [{ s: 1.2, e: 3.5, t: 'Hello world' }, { s: 4, e: 5.5, t: 'ação' }]);
+});
+
+test('srv3: <p t= d=> com <s> e entidades', () => {
+  const xml = '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>'
+    + '<p t="1000" d="2000"><s>It&#39;s</s><s t="300"> fine</s></p>'
+    + '<p t="3500" d="1000">A &amp; B<br/>C</p><p t="5000" d="10"></p></body></timedtext>';
+  const r = lerTimedText(xml);
+  assert.equal(r.formato, 'srv3');
+  assert.deepEqual(r.falas, [{ s: 1, e: 3, t: "It's fine" }, { s: 3.5, e: 4.5, t: 'A & B C' }]);
+});
+
+test('formato 1: <text start= dur=> com entidades escapadas duas vezes', () => {
+  const xml = '<?xml version="1.0" encoding="utf-8" ?><transcript>'
+    + '<text start="0.5" dur="1.5">don&amp;#39;t stop</text><text start="2" dur="1">não</text></transcript>';
+  const r = lerTimedText(xml);
+  assert.equal(r.formato, 'xml');
+  assert.deepEqual(r.falas, [{ s: 0.5, e: 2, t: "don't stop" }, { s: 2, e: 3, t: 'não' }]);
+});
+
+test('vtt usa o leitor de legendas do app', () => {
+  const r = lerTimedText('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nOlá\n');
+  assert.equal(r.formato, 'vtt');
+  assert.equal(r.falas.length, 1);
+});
+
+test('resposta vazia (sem token) vira erro claro', () => {
+  assert.match(lerTimedText('').erro, /vazia/);
+  assert.ok(lerTimedText('lixo').erro);
+});
+
+test('paraSrt e infoUrl', () => {
+  assert.equal(paraSrt([{ s: 1.2, e: 3.5, t: 'Oi' }]), '1\n00:00:01,200 --> 00:00:03,500\nOi\n');
+  const i = infoUrl('https://www.youtube.com/api/timedtext?v=abc&lang=en&kind=asr&tlang=pt&fmt=json3&pot=XYZ');
+  assert.deepEqual(i, { video: 'abc', idioma: 'en', traducao: 'pt', formato: 'json3', automatica: true, token: true });
+  assert.equal(infoUrl('/api/timedtext?v=abc&lang=fr').token, false);
+});
