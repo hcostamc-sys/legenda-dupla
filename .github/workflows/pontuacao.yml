@@ -9,6 +9,7 @@ on:
       - 'tests/pontuacao_ci/**'
       - 'js/pontuador.js'
       - 'js/pontuador-worker.js'
+      - 'vendor/ort/**'
       - '.github/workflows/pontuacao.yml'
   workflow_dispatch:
 
@@ -44,8 +45,7 @@ jobs:
         if: hashFiles('tests/pontuacao_ci/testar_js.mjs') != ''
         run: |
           set -o pipefail
-          npm install --no-save --prefix /tmp/ort onnxruntime-web@$(cat tests/pontuacao_ci/versao-ort.txt)
-          node tests/pontuacao_ci/testar_js.mjs saida /tmp/ort/node_modules/onnxruntime-web 2>&1 | tee saida/js.txt
+          node tests/pontuacao_ci/testar_js.mjs saida 2>&1 | tee saida/js.txt
 
       - name: Publicar os resultados
         if: always()

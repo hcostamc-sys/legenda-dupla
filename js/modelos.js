@@ -1,0 +1,182 @@
+// modelos.js — pacotes de pontuação melhorada: baixar, conferir, apagar e usar.
+// Os arquivos ficam no cache do aparelho ("modelos-pontuacao-v1"), separados do cache do site:
+// atualizar o app não apaga os pacotes. O modelo roda num Web Worker (js/pontuador-worker.js).
+
+import { PACOTES, pacoteDoIdioma } from './pontuador.js';
+
+export { PACOTES, pacoteDoIdioma };
+
+export const CACHE_MODELOS = 'modelos-pontuacao-v1';
+export const URL_WASM = new URL('../vendor/ort/ort-wasm-simd-threaded.wasm', import.meta.url).href;
+export const BYTES_WASM = 14848852;
+
+const suportado = () => typeof caches !== 'undefined' && typeof Worker !== 'undefined';
+
+/** O aparelho consegue usar a pontuação melhorada? */
+export function pontuacaoSuportada() {
+  return suportado() && typeof WebAssembly === 'object';
+}
+
+/** Tamanho do download (bytes) de um pacote; inclui o motor se ele ainda não estiver no aparelho. */
+export async function tamanhoDownload(id) {
+  const p = PACOTES[id];
+  let total = p.bytesModelo + p.bytesSp;
+  if (!(await temArquivo(URL_WASM))) total += BYTES_WASM;
+  return total;
+}
+
+async function temArquivo(url) {
+  if (!suportado()) return false;
+  try {
+    const c = await caches.open(CACHE_MODELOS);
+    return !!(await c.match(url));
+  } catch {
+    return false;
+  }
+}
+
+/** 'pronto' quando os três arquivos (modelo, tokenizador e motor) estão no aparelho; senão 'ausente'. */
+export async function estadoPacote(id) {
+  const p = PACOTES[id];
+  if (!p || !suportado()) return 'ausente';
+  const [a, b, c] = await Promise.all([temArquivo(p.modelo), temArquivo(p.sp), temArquivo(URL_WASM)]);
+  return a && b && c ? 'pronto' : 'ausente';
+}
+
+/** Baixa um arquivo inteiro, avisando o progresso, e guarda no cache. */
+async function baixarArquivo(cache, url, aoBytes, sinal) {
+  const r = await fetch(url, { signal: sinal, credentials: 'omit', cache: 'no-store' });
+  if (!r.ok) throw new Error(`O servidor respondeu ${r.status}.`);
+  const esperado = Number(r.headers.get('content-length')) || 0;
+  const partes = [];
+  let recebidos = 0;
+  if (r.body?.getReader) {
+    const leitor = r.body.getReader();
+    for (;;) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      partes.push(value);
+      recebidos += value.byteLength;
+      aoBytes(value.byteLength);
+    }
+  } else {
+    const b = new Uint8Array(await r.arrayBuffer());
+    partes.push(b);
+    recebidos = b.byteLength;
+    aoBytes(recebidos);
+  }
+  if (esperado && recebidos !== esperado) throw new Error('O download veio incompleto. Tente de novo.');
+  await cache.put(url, new Response(new Blob(partes), { headers: { 'Content-Type': 'application/octet-stream' } }));
+}
+
+/**
+ * Baixa um pacote. aoProgresso(feitos, total) em bytes. Cancela com o AbortSignal.
+ * Se faltar espaço ou a internet cair, lança erro e não deixa arquivo pela metade.
+ */
+export async function baixarPacote(id, { aoProgresso = () => {}, sinal } = {}) {
+  const p = PACOTES[id];
+  if (!p) throw new Error('Pacote desconhecido.');
+  if (!suportado()) throw new Error('Este aparelho não consegue guardar o pacote.');
+  try { await navigator.storage?.persist?.(); } catch { /* nada: o pedido é só um reforço */ }
+  const cache = await caches.open(CACHE_MODELOS);
+  const lista = [];
+  if (!(await cache.match(URL_WASM))) lista.push([URL_WASM, BYTES_WASM]);
+  lista.push([p.sp, p.bytesSp], [p.modelo, p.bytesModelo]);
+  const total = lista.reduce((s, [, n]) => s + n, 0);
+  let feitos = 0;
+  aoProgresso(0, total);
+  try {
+    for (const [url] of lista) {
+      await baixarArquivo(cache, url, (n) => { feitos += n; aoProgresso(Math.min(feitos, total), total); }, sinal);
+    }
+  } catch (e) {
+    // Não deixa o pacote pela metade (o motor fica: serve para o outro pacote).
+    await Promise.all([cache.delete(p.modelo), cache.delete(p.sp)]).catch(() => {});
+    if (e?.name === 'AbortError') throw e;
+    const semEspaco = e?.name === 'QuotaExceededError' || /quota/i.test(String(e?.message));
+    throw new Error(semEspaco ? 'Falta espaço no celular para o pacote.' : e?.message || 'Não consegui baixar.');
+  }
+  aoProgresso(total, total);
+}
+
+/** Apaga um pacote. O motor só sai quando não sobra nenhum pacote. */
+export async function apagarPacote(id) {
+  const p = PACOTES[id];
+  if (!p || !suportado()) return;
+  encerrarWorker();
+  const cache = await caches.open(CACHE_MODELOS);
+  await Promise.all([cache.delete(p.modelo), cache.delete(p.sp)]);
+  const outros = await Promise.all(Object.keys(PACOTES).filter((k) => k !== id).map((k) => estadoPacote(k)));
+  if (!outros.includes('pronto')) await cache.delete(URL_WASM);
+}
+
+// ---------------------------------------------------------------- uso (Web Worker)
+
+let worker = null;
+let timerOcioso = 0;
+let proximoId = 1;
+const pedidos = new Map();
+const OCIOSO_MS = 60000; // o modelo ocupa bastante memória: solta um minuto depois do último uso
+
+function encerrarWorker() {
+  clearTimeout(timerOcioso);
+  if (worker) worker.terminate();
+  worker = null;
+  for (const p of pedidos.values()) p.rejeitar(new Error('Pontuação interrompida.'));
+  pedidos.clear();
+}
+
+function obterWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL('./pontuador-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = (ev) => {
+    const d = ev.data || {};
+    const p = pedidos.get(d.id);
+    if (!p) return;
+    if (d.tipo === 'progresso') { p.aoProgresso?.(d.feitas, d.total); return; }
+    pedidos.delete(d.id);
+    if (d.tipo === 'pronto') p.resolver(d.resultado);
+    else p.rejeitar(new Error(d.mensagem || 'Falha no modelo.'));
+    agendarFim();
+  };
+  worker.onerror = (ev) => {
+    // Erro sem resposta (memória insuficiente, por exemplo): derruba o worker e avisa todos.
+    ev.preventDefault?.();
+    const msg = ev.message || 'O modelo parou (talvez falta de memória).';
+    const lista = [...pedidos.values()];
+    pedidos.clear();
+    if (worker) worker.terminate();
+    worker = null;
+    for (const p of lista) p.rejeitar(new Error(msg));
+  };
+  return worker;
+}
+
+function agendarFim() {
+  clearTimeout(timerOcioso);
+  timerOcioso = setTimeout(() => { if (!pedidos.size) encerrarWorker(); }, OCIOSO_MS);
+}
+
+/**
+ * Pontua uma lista de palavras com o pacote do idioma. Devolve [{ w, fim }] do mesmo tamanho.
+ * aoProgresso(feitas, total) em janelas de texto. Cancelar (AbortSignal) encerra o worker.
+ */
+export function pontuarPalavras(idPacote, palavras, idioma, { aoProgresso, sinal } = {}) {
+  const p = PACOTES[idPacote];
+  if (!p) return Promise.reject(new Error('Pacote desconhecido.'));
+  clearTimeout(timerOcioso);
+  return new Promise((resolver, rejeitar) => {
+    const id = proximoId++;
+    pedidos.set(id, { resolver, rejeitar, aoProgresso });
+    sinal?.addEventListener('abort', () => {
+      if (!pedidos.has(id)) return;
+      pedidos.delete(id);
+      encerrarWorker();
+      rejeitar(new DOMException('cancelado', 'AbortError'));
+    }, { once: true });
+    obterWorker().postMessage({
+      tipo: 'pontuar', id, cache: CACHE_MODELOS, wasm: URL_WASM,
+      pacote: { id: p.id, modelo: p.modelo, sp: p.sp }, palavras, idioma,
+    });
+  });
+}
