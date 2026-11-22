@@ -5,7 +5,13 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowInsets;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -41,14 +47,22 @@ import java.util.concurrent.Executors;
  * 1) injeta o gancho (assets/gancho.js) no player do YouTube, que copia a legenda que o player baixa;
  * 2) recebe o Compartilhar do app do YouTube;
  * 3) oferece à página o objeto LDNativo: tela ligada e, no teste, baixar de novo uma legenda;
- * 4) tela cheia (deitado) quando a página pede.
+ * 4) tela cheia (deitado) quando a página pede;
+ * 5) o YouTube dentro do app (busca): tocar num vídeo abre o vídeo no Legenda Dupla.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
+    private static final int VERSAO_APK = 3; // a página usa para saber o que o app sabe fazer
 
     private WebView web;
+    private FrameLayout raiz;
+    private LinearLayout painelYt;
+    private WebView ytWeb;
+    private String ultimoUrlYt = "";
+    private String ultimoVideo = "";
+    private long ultimoVideoEm = 0;
     private View telaCheia;
     private WebChromeClient.CustomViewCallback fimTelaCheia;
     private String agenteUsuario = "";
@@ -59,7 +73,25 @@ public class MainActivity extends Activity {
         super.onCreate(salvo);
         WebView.setWebContentsDebuggingEnabled(true); // permite inspecionar pelo chrome://inspect do notebook
         web = new WebView(this);
-        setContentView(web);
+        raiz = new FrameLayout(this);
+        raiz.setBackgroundColor(Color.parseColor("#111111"));
+        raiz.addView(web, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(raiz);
+        // Android 15 desenha atrás das barras do sistema: afasta o conteúdo delas e do teclado.
+        raiz.setOnApplyWindowInsetsListener((v, ins) -> {
+            int esq, topo, dir, baixo;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets b = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                android.graphics.Insets t = ins.getInsets(WindowInsets.Type.ime());
+                esq = b.left; topo = b.top; dir = b.right; baixo = Math.max(b.bottom, t.bottom);
+            } else {
+                esq = ins.getSystemWindowInsetLeft(); topo = ins.getSystemWindowInsetTop();
+                dir = ins.getSystemWindowInsetRight(); baixo = ins.getSystemWindowInsetBottom();
+            }
+            v.setPadding(esq, topo, dir, baixo);
+            return ins;
+        });
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -143,7 +175,7 @@ public class MainActivity extends Activity {
         PackageInfo pacote = WebViewCompat.getCurrentWebViewPackage(this);
         if (pacote != null) versaoWebView = pacote.versionName;
 
-        String url = PAGINA + "?app=android"
+        String url = PAGINA + "?app=android&apk=" + VERSAO_APK
                 + "&gancho=" + gancho
                 + "&ponte=" + ponte
                 + "&wv=" + Uri.encode(versaoWebView)
@@ -156,7 +188,8 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         String link = linkCompartilhado(intent);
         if (!link.isEmpty() && web != null) {
-            web.loadUrl(PAGINA + "?app=android" + link);
+            fecharYoutube();
+            web.loadUrl(PAGINA + "?app=android&apk=" + VERSAO_APK + link);
         }
     }
 
@@ -192,9 +225,132 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ------------------------------------------------------------------ YouTube dentro do app
+
+    private void criarPainelYoutube() {
+        painelYt = new LinearLayout(this);
+        painelYt.setOrientation(LinearLayout.VERTICAL);
+        painelYt.setBackgroundColor(Color.parseColor("#111111"));
+
+        LinearLayout barra = new LinearLayout(this);
+        barra.setOrientation(LinearLayout.HORIZONTAL);
+        barra.setBackgroundColor(Color.parseColor("#1c1c1c"));
+        barra.setPadding(8, 4, 16, 4);
+        Button voltar = new Button(this);
+        voltar.setText("← Legenda Dupla");
+        voltar.setAllCaps(false);
+        voltar.setTextColor(Color.parseColor("#111111"));
+        voltar.setBackgroundColor(Color.parseColor("#ffd54f"));
+        voltar.setOnClickListener(v -> fecharYoutube());
+        TextView dica = new TextView(this);
+        dica.setText("Toque num vídeo para estudar com ele");
+        dica.setTextColor(Color.parseColor("#b8b8b8"));
+        dica.setPadding(24, 0, 0, 0);
+        dica.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        barra.addView(voltar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        barra.addView(dica, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+        ytWeb = new WebView(this);
+        WebSettings s = ytWeb.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(true); // a lista não começa a tocar sozinha
+        CookieManager.getInstance().setAcceptThirdPartyCookies(ytWeb, true);
+        ytWeb.setWebChromeClient(new WebChromeClient());
+        ytWeb.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest pedido) {
+                String url = pedido.getUrl().toString();
+                if (pedido.isForMainFrame() && ehVideo(pedido.getUrl())) {
+                    escolherVideo(url, false);
+                    return true;
+                }
+                if (!pedido.isForMainFrame()) return false;
+                String host = pedido.getUrl().getHost() == null ? "" : pedido.getUrl().getHost();
+                if (host.endsWith("youtube.com") || host.endsWith("google.com") || host.endsWith("google.com.br")
+                        || host.endsWith("gstatic.com") || host.endsWith("youtu.be")) return false;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, pedido.getUrl()));
+                } catch (Exception e) {
+                    // nada
+                }
+                return true;
+            }
+
+            @Override
+            public void doUpdateVisitedHistory(WebView view, String url, boolean recarregou) {
+                // O site do YouTube troca de página sem recarregar: a abertura de um vídeo aparece aqui.
+                if (url != null && ehVideo(Uri.parse(url))) escolherVideo(url, true);
+            }
+        });
+
+        painelYt.addView(barra, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        painelYt.addView(ytWeb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        painelYt.setVisibility(View.GONE);
+        raiz.addView(painelYt, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private static boolean ehVideo(Uri u) {
+        if (u == null || u.getHost() == null) return false;
+        String host = u.getHost();
+        String caminho = u.getPath() == null ? "" : u.getPath();
+        if (host.endsWith("youtu.be")) return caminho.length() > 1;
+        if (!host.endsWith("youtube.com")) return false;
+        if (caminho.startsWith("/watch")) return u.getQueryParameter("v") != null;
+        return caminho.startsWith("/shorts/") || caminho.startsWith("/live/");
+    }
+
+    private void abrirYoutube(String url) {
+        Uri u = Uri.parse(url);
+        String host = u.getHost() == null ? "" : u.getHost();
+        if (!"https".equals(u.getScheme()) || !host.endsWith("youtube.com")) return;
+        if (painelYt == null) criarPainelYoutube();
+        painelYt.setVisibility(View.VISIBLE);
+        ytWeb.onResume();
+        if (!url.equals(ultimoUrlYt)) {
+            ultimoUrlYt = url;
+            ytWeb.loadUrl(url);
+        }
+    }
+
+    private void pausarYoutube() {
+        if (ytWeb == null) return;
+        ytWeb.evaluateJavascript(
+                "document.querySelectorAll('video').forEach(function(v){try{v.pause()}catch(e){}})", null);
+    }
+
+    private void fecharYoutube() {
+        if (painelYt == null || painelYt.getVisibility() != View.VISIBLE) return;
+        pausarYoutube();
+        painelYt.setVisibility(View.GONE);
+        ytWeb.onPause();
+    }
+
+    /** Vídeo tocado na lista do YouTube: fecha o YouTube e abre o vídeo no Legenda Dupla. */
+    private void escolherVideo(String url, boolean jaAbriu) {
+        long agora = System.currentTimeMillis();
+        if (url.equals(ultimoVideo) && agora - ultimoVideoEm < 2000) return; // o mesmo aviso duas vezes
+        ultimoVideo = url;
+        ultimoVideoEm = agora;
+        if (jaAbriu) {
+            pausarYoutube();
+            if (ytWeb.canGoBack()) ytWeb.goBack(); // volta para a lista, para a próxima busca
+        }
+        fecharYoutube();
+        chamarPagina("ldAbrirDoYoutube", url);
+    }
+
     @Override
     public void onBackPressed() {
         if (telaCheia != null) { sairTelaCheia(); return; }
+        if (painelYt != null && painelYt.getVisibility() == View.VISIBLE) {
+            if (ytWeb.canGoBack()) ytWeb.goBack();
+            else fecharYoutube();
+            return;
+        }
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
     }
@@ -202,6 +358,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         rede.shutdownNow();
+        if (ytWeb != null) ytWeb.destroy();
         if (web != null) web.destroy();
         super.onDestroy();
     }
@@ -218,6 +375,11 @@ public class MainActivity extends Activity {
     private void aoMensagem(String dados, JavaScriptReplyProxy resposta) {
         try {
             JSONObject o = new JSONObject(dados == null ? "{}" : dados);
+            if ("youtube".equals(o.optString("acao"))) {
+                final String url = o.optString("url");
+                runOnUiThread(() -> abrirYoutube(url));
+                return;
+            }
             if ("telaLigada".equals(o.optString("acao"))) {
                 if (o.optBoolean("ligada")) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

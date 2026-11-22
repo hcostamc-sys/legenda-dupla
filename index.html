@@ -22,6 +22,28 @@
     <h1>Legenda Dupla</h1>
   </header>
 
+  <!-- Busca no YouTube (só no app Android): abre o YouTube dentro do app; tocar num vídeo abre aqui -->
+  <section class="cartao so-android" id="area-busca" aria-labelledby="t-busca">
+    <h2 id="t-busca" class="rotulo">Buscar no YouTube</h2>
+    <div id="busca-ativa">
+      <form id="form-busca" class="linha-link" role="search">
+        <input id="campo-busca" type="search" enterkeyhint="search" autocomplete="off" placeholder="O que você quer assistir?" aria-label="Buscar no YouTube">
+        <button id="btn-buscar" type="submit" class="btn btn-principal">Buscar</button>
+      </form>
+      <details id="filtros-busca" class="filtros-busca">
+        <summary>Filtros <span id="resumo-filtros" class="resumo-filtros"></span></summary>
+        <label class="ajuste">Data de envio <select data-filtro="data"></select></label>
+        <label class="ajuste">Duração <select data-filtro="duracao"></select></label>
+        <label class="ajuste">Ordenar por <select data-filtro="ordem"></select></label>
+        <label class="ajuste ajuste-check"><input type="checkbox" data-filtro="legendas"> Só vídeos com legenda feita por pessoa (CC)</label>
+        <p class="dica">Vídeos só com legenda automática também funcionam no app; esse filtro deixa de fora os que só têm a automática.</p>
+      </details>
+      <button id="btn-youtube-inicio" type="button" class="btn-link">Abrir a página inicial do YouTube</button>
+      <p class="dica">Toque num vídeo dos resultados para estudar com ele aqui. Para voltar, use “← Legenda Dupla” no topo.</p>
+    </div>
+    <p id="busca-atualizar" class="msg msg-alerta" hidden>Para buscar no YouTube dentro do app, atualize o app Android (baixe e instale de novo pelo mesmo link).</p>
+  </section>
+
   <section class="cartao" id="area-novo" aria-labelledby="t-novo">
     <h2 id="t-novo" class="visualmente-oculto">Abrir um vídeo</h2>
     <label for="campo-link" class="rotulo">Link do vídeo do YouTube</label>

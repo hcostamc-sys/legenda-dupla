@@ -74,6 +74,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 
 - Baixar e instalar (o mesmo link sempre traz a versão mais nova, que instala por cima): https://github.com/hcostamc-sys/legenda-dupla/releases/download/android-prototipo/legenda-dupla-android.apk
 - Uso: no app do YouTube, **Compartilhar → Legenda Dupla**. O vídeo abre e aparece a escolha do idioma da legenda (já vem marcado o idioma falado) e da tradução. A tradução é a do app, fala por fala, no tempo de cada fala. Também funciona colando o link e tocando em **Abrir vídeo**, sem arquivo.
+- **Buscar no YouTube** (no topo da biblioteca): digite e toque em **Buscar**. O YouTube abre dentro do app, com os resultados; os **Filtros** (data de envio, duração, ordem e “só com legenda feita por pessoa”) ficam guardados. Tocar num vídeo fecha o YouTube e abre o vídeo no Legenda Dupla, já com a escolha do idioma. **← Legenda Dupla** no topo (ou o voltar do celular) fecha sem escolher. O campo de link continua logo abaixo.
 - O vídeo fica na biblioteca com a legenda; ao abrir de novo, não pergunta. Para trocar: ⚙ Ajustes → **Trocar o idioma da legenda deste vídeo**.
 - Arquivos do DownSub continuam funcionando (para vídeos sem legenda no YouTube).
 - Limitações: o app não entra na sua conta do YouTube, então pode ter anúncios; áudio em outro idioma não dá para escolher (o player embutido não oferece); depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar.

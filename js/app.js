@@ -9,6 +9,7 @@ import {
 import { textosPendentes, aplicarMapa, traduzirTodos, NOMES_IDIOMA } from './traducao.js';
 import { criarPlayer, MSG_API } from './player.js';
 import { lerTimedText, infoUrl, faixaSugerida } from './timedtext.js';
+import { urlBusca, misturarFiltros, OPCOES_FILTROS } from './busca.js';
 import { ligarGestos } from './gestos.js';
 import {
   carregarAjustes, salvarAjustes, salvarVideo, obterVideo, listarVideos,
@@ -27,6 +28,17 @@ const ANDROID = (() => {
     return sessionStorage.getItem('ld.android') === '1';
   } catch {
     return new URLSearchParams(location.search).get('app') === 'android';
+  }
+})();
+
+// Versão do app Android (parâmetro ?apk=). A busca no YouTube precisa da versão 3 ou mais nova.
+const APK = (() => {
+  try {
+    const v = new URLSearchParams(location.search).get('apk');
+    if (v) sessionStorage.setItem('ld.apk', v);
+    return Number(sessionStorage.getItem('ld.apk')) || 0;
+  } catch {
+    return Number(new URLSearchParams(location.search).get('apk')) || 0;
   }
 })();
 
@@ -2020,9 +2032,89 @@ function lerCompartilhamento() {
   validarFormulario();
 }
 
+// ============================================================ busca no YouTube (app Android, 15.11)
+
+const CHAVE_FILTROS = 'ld.filtrosBusca';
+let filtrosBusca = (() => {
+  try { return misturarFiltros(JSON.parse(localStorage.getItem(CHAVE_FILTROS) || 'null')); } catch { return misturarFiltros(null); }
+})();
+
+function montarFiltros() {
+  for (const el of $$('[data-filtro]')) {
+    const k = el.dataset.filtro;
+    if (el.type === 'checkbox') {
+      el.checked = filtrosBusca.legendas;
+    } else {
+      el.textContent = '';
+      for (const [v, nome] of OPCOES_FILTROS[k]) {
+        const o = document.createElement('option');
+        o.value = String(v);
+        o.textContent = nome;
+        el.appendChild(o);
+      }
+      el.value = String(filtrosBusca[k]);
+    }
+  }
+  resumirFiltros();
+}
+
+function resumirFiltros() {
+  const partes = [];
+  for (const k of ['data', 'duracao', 'ordem']) {
+    if (filtrosBusca[k]) partes.push(OPCOES_FILTROS[k].find(([v]) => v === filtrosBusca[k])[1]);
+  }
+  if (filtrosBusca.legendas) partes.push('com legenda (CC)');
+  $('#resumo-filtros').textContent = partes.length ? `(${partes.join(', ')})` : '';
+}
+
+function aoMudarFiltro(el) {
+  const k = el.dataset.filtro;
+  filtrosBusca = misturarFiltros({ ...filtrosBusca, [k]: el.type === 'checkbox' ? el.checked : Number(el.value) });
+  try { localStorage.setItem(CHAVE_FILTROS, JSON.stringify(filtrosBusca)); } catch { /* nada */ }
+  resumirFiltros();
+}
+
+/** Abre o YouTube dentro do app Android (tela por cima, com "← Legenda Dupla" no topo). */
+function abrirYoutube(url) {
+  if (!window.LDNativo) { toast('A busca no YouTube só funciona dentro do app Android.'); return; }
+  try {
+    window.LDNativo.postMessage(JSON.stringify({ acao: 'youtube', url }));
+  } catch {
+    toast('Não consegui abrir o YouTube.');
+  }
+}
+
+/** O app Android chama esta função quando um vídeo é tocado no YouTube de dentro do app. */
+window.ldAbrirDoYoutube = (url) => {
+  const link = lerLink(String(url || ''));
+  if (!link) return;
+  if (S.registro) fecharVideo();
+  limparFormulario();
+  $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
+  validarFormulario();
+  abrirDoFormulario();
+};
+
+function ligarBusca() {
+  const atualizado = ANDROID && APK >= 3;
+  $('#busca-ativa').hidden = !atualizado;
+  $('#busca-atualizar').hidden = atualizado;
+  montarFiltros();
+  for (const el of $$('[data-filtro]')) el.addEventListener('change', () => aoMudarFiltro(el));
+  $('#form-busca').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const termo = $('#campo-busca').value.trim();
+    if (!termo) { $('#campo-busca').focus(); return; }
+    $('#campo-busca').blur(); // fecha o teclado
+    abrirYoutube(urlBusca(termo, filtrosBusca));
+  });
+  $('#btn-youtube-inicio').addEventListener('click', () => abrirYoutube(urlBusca('')));
+}
+
 // ============================================================ ligar tudo
 
 function ligarEventos() {
+  ligarBusca();
   // biblioteca
   $('#campo-link').addEventListener('input', validarFormulario);
   $('#btn-colar').addEventListener('click', colar);

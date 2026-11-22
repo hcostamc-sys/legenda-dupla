@@ -781,6 +781,62 @@ def t_android(browser, base):
     ctx.close()
 
 
+@caso('13. App Android: busca no YouTube com filtros e vídeo tocado lá abre aqui')
+def t_busca(browser, base):
+    # fora do app: o cartão de busca não aparece
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    page = ctx.new_page()
+    page.goto(base + '?mock=1')
+    expect(page.locator('#area-busca')).to_be_hidden()
+    ctx.close()
+    # app antigo (sem ?apk=3): pede para atualizar
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    page = ctx.new_page()
+    page.goto(base + '?mock=1&app=android')
+    expect(page.locator('#area-busca')).to_be_visible()
+    expect(page.locator('#busca-atualizar')).to_be_visible()
+    expect(page.locator('#form-busca')).to_be_hidden()
+    ctx.close()
+    # app novo, com a ponte LDNativo simulada
+    ctx = browser.new_context(viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    falso_tradutor(page)
+    page.goto(base + '?mock=1&app=android&apk=3')
+    expect(page.locator('#form-busca')).to_be_visible()
+    expect(page.locator('#busca-atualizar')).to_be_hidden()
+    # a busca fica acima do campo de link
+    y_busca = page.locator('#campo-busca').bounding_box()['y']
+    y_link = page.locator('#campo-link').bounding_box()['y']
+    assert y_busca < y_link, (y_busca, y_link)
+    page.click('#filtros-busca summary')
+    page.select_option('[data-filtro="duracao"]', '2')
+    page.check('[data-filtro="legendas"]')
+    expect(page.locator('#resumo-filtros')).to_contain_text('Mais de 20 min')
+    os.makedirs(CAPTURAS, exist_ok=True)
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-busca.png'))
+    page.fill('#campo-busca', 'english podcast')
+    page.keyboard.press('Enter')
+    msgs = page.evaluate('window.__msgs')
+    assert msgs == [{'acao': 'youtube', 'url': 'https://m.youtube.com/results?search_query=english%20podcast&sp=EgYQARgCKAE%3D'}], msgs
+    page.click('#btn-youtube-inicio')
+    assert page.evaluate('window.__msgs[1].url') == 'https://m.youtube.com/'
+    # filtros ficam guardados
+    page.reload()
+    expect(page.locator('[data-filtro="duracao"]')).to_have_value('2')
+    # o app Android avisa que um vídeo foi tocado no YouTube: abre aqui e pergunta o idioma
+    page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=FFFFFFFFFFF&pp=abc')")
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    expect(page.locator('#tela-idioma')).to_be_visible()
+    page.click('#idioma-ok')
+    expect(page.locator('#toast')).to_contain_text('40 falas')
+    assert page.evaluate('window.__ld.S.registro.id') == 'FFFFFFFFFFF'
+    assert not erros, erros
+    ctx.close()
+
+
 @caso('10. Capturas de tela nos quatro tamanhos')
 def t_capturas(browser, url, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
@@ -877,6 +933,7 @@ def main():
         ctx.close()
         t_capturas(browser, url, en, pt)
         t_android(browser, base)
+        t_busca(browser, base)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)
