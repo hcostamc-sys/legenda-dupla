@@ -503,7 +503,7 @@ body.android .tela-ab { padding-top: 0; }
 .btn-ctrl:active { filter: brightness(1.4); }
 .btn-ctrl:focus-visible { outline: 2px solid var(--ambar); outline-offset: 2px; }
 .btn-ctrl[aria-pressed="true"] { background: var(--ambar); color: #111; border-color: var(--ambar); }
-.btn-ctrl.btn-ab svg { width: 26px; height: 26px; }
+.btn-ctrl.btn-ab svg, #btn-loop svg { width: 26px; height: 26px; } /* loop da fala e A–B do mesmo tamanho */
 .btn-ab text { fill: currentColor; }
 .btn-ctrl.modo-desligada svg { opacity: 0.45; }
 .btn-ctrl.modo-desligada::after {
