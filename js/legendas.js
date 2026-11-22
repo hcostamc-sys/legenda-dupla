@@ -294,23 +294,92 @@ export function lerArquivoLegenda(buffer) {
 
 export const MSG_NAO_DUPLA = 'Esse arquivo não tem dois idiomas em cada fala. Use o botão “Legenda do idioma que estou estudando”.';
 
-const PALAVRAS_PT = new Set([
-  'que', 'nao', 'de', 'do', 'da', 'dos', 'das', 'um', 'uma', 'para', 'pra', 'com', 'voce', 'voces', 'e', 'o', 'os', 'as',
-  'em', 'no', 'na', 'nos', 'nas', 'por', 'mais', 'mas', 'eu', 'ele', 'ela', 'eles', 'elas', 'isso', 'isto', 'esta',
-  'estao', 'sao', 'foi', 'como', 'muito', 'muita', 'tambem', 'entao', 'porque', 'quando', 'se', 'seu', 'sua', 'meu',
-  'minha', 'ao', 'aos', 'pelo', 'pela', 'ja', 'so', 'ser', 'ter', 'tem', 'vai', 'aqui', 'agora', 'sobre', 'ate', 'ha',
-  'fazer', 'coisa', 'bem', 'sim', 'obrigado', 'ola', 'nosso', 'nossa', 'era', 'estava', 'ainda', 'onde', 'todos',
-]);
+// Palavras muito comuns e típicas de cada idioma (sem acento, como sai de normalizar).
+// Ficaram de fora as que existem em mais de um deles com frequência alta (de, que, a, se, para, por, como...).
+const PALAVRAS_IDIOMA = {
+  pt: 'o os e em uma umas uns com nao voce voces isso isto ele ela eles elas eu muito muita tambem entao mas mais do da dos das na nas ao aos pelo pela seu sua meu minha sao foi tem ja so agora nosso nossa obrigado ola tudo nada ainda gente vou vai fazer coisa aqui sim bem onde quem depois',
+  en: 'the and you to of is that it i what this we they was have with for are be not but my your he she just like know there can will would about one all an or going get think really people does did were been his her them our me if',
+  es: 'el los las y en un una unos con pero muy eso esto lo le del al yo su sus ella ellos tambien entonces cuando donde hay es fue tiene hacer nosotros usted bueno aqui ahora todo nada gracias hola',
+  fr: 'le les des et est je tu il elle nous vous ils elles pas ce cette une du au aux qui dans sur avec tres bien oui c j qu n ai sont fait faire mon ma mes ton ta tout rien merci bonjour',
+  it: 'il lo gli che non di della delle sono questo questa anche molto perche ma ho hai ci sei io del nel alla tutto niente grazie ciao',
+  de: 'der die das und ist ich nicht du ein eine zu mit sie wir auf den dem auch sich aber nein sehr hier noch wie danke',
+};
+const CONJ_IDIOMA = Object.fromEntries(Object.entries(PALAVRAS_IDIOMA).map(([k, v]) => [k, new Set(v.split(' '))]));
+// Letras que só aparecem (ou quase só) num idioma: valem pontos extras.
+const LETRAS_IDIOMA = { pt: /[ãõ]/g, es: /[ñ¿¡]/g, fr: /[èêëœ]|\b[cjldnm]['’]/g, de: /[ßäöü]/g };
 
-/** Quanto o texto parece português (0 a ~1). Serve para decidir qual lado é a tradução. */
-export function pontuacaoPortugues(texto) {
+export const NOMES_IDIOMAS = { pt: 'português', en: 'inglês', es: 'espanhol', fr: 'francês', it: 'italiano', de: 'alemão' };
+
+/** Pontos de cada idioma para um texto: { pt: 0..1, en: ..., ... } (fração de palavras típicas). */
+export function pontosIdioma(texto) {
   const bruto = String(texto || '').toLowerCase();
   const palavras = normalizar(bruto).match(/\p{L}+/gu) || [];
-  if (!palavras.length) return 0;
-  let n = 0;
-  for (const w of palavras) if (PALAVRAS_PT.has(w)) n++;
-  n += 2 * (bruto.match(/[ãõ]|ç[ãõo]/g) || []).length;
-  return n / palavras.length;
+  const r = {};
+  for (const k of Object.keys(CONJ_IDIOMA)) r[k] = 0;
+  if (!palavras.length) return r;
+  for (const w of palavras) for (const k in CONJ_IDIOMA) if (CONJ_IDIOMA[k].has(w)) r[k]++;
+  for (const k in LETRAS_IDIOMA) r[k] += 2 * (bruto.match(LETRAS_IDIOMA[k]) || []).length;
+  for (const k in r) r[k] /= palavras.length;
+  return r;
+}
+
+/**
+ * Idioma de uma legenda inteira, pelo texto (até ~600 falas espalhadas pelo arquivo).
+ * Devolve 'pt', 'en', 'es', 'fr', 'it', 'de' ou '' (não reconhecido ou empate).
+ */
+export function detectarIdioma(falas) {
+  const lista = Array.isArray(falas) ? falas : [];
+  if (!lista.length) return '';
+  const passo = Math.max(1, Math.floor(lista.length / 600));
+  let texto = '';
+  for (let i = 0; i < lista.length; i += passo) texto += ' ' + (lista[i].t ?? lista[i].texto ?? '');
+  const p = pontosIdioma(texto);
+  const ordem = Object.keys(p).sort((a, b) => p[b] - p[a]);
+  const [primeiro, segundo] = ordem;
+  // Precisa de um mínimo de palavras típicas e de vantagem clara sobre o segundo colocado.
+  if (p[primeiro] < 0.08 || p[primeiro] < 1.5 * p[segundo]) return '';
+  return primeiro;
+}
+
+/**
+ * Decide qual legenda é a tradução, pelo conteúdo (o nome do arquivo só desempata).
+ * a e b: { falas, arquivo }. alvo: idioma da tradução ('pt' por padrão).
+ * estudoPreferido: idioma do vídeo escolhido nos ajustes ('auto' = não sabe).
+ * Devolve { trocar, idiomaA, idiomaB, conflito }:
+ *   trocar = true quando b deve ser a legenda estudada e a, a tradução;
+ *   conflito = true quando as duas estão no mesmo idioma.
+ */
+export function decidirPapeis(a, b, alvo = 'pt', estudoPreferido = 'auto') {
+  const idiomaA = detectarIdioma(a?.falas);
+  const idiomaB = detectarIdioma(b?.falas);
+  const base = { idiomaA, idiomaB, trocar: false, conflito: false };
+  if (idiomaA && idiomaA === idiomaB) return { ...base, conflito: true };
+  // 1) Uma delas está no idioma da tradução e a outra não.
+  if (idiomaA === alvo && idiomaB !== alvo) return { ...base, trocar: true };
+  if (idiomaB === alvo && idiomaA !== alvo) return base;
+  // 1b) Tradução automática para outro idioma, mas um dos arquivos está em português.
+  if (alvo !== 'pt') {
+    if (idiomaA === 'pt' && idiomaB !== 'pt') return { ...base, trocar: true };
+    if (idiomaB === 'pt' && idiomaA !== 'pt') return base;
+  }
+  // 2) O idioma do vídeo foi informado nos ajustes.
+  if (estudoPreferido && estudoPreferido !== 'auto') {
+    if (idiomaB === estudoPreferido && idiomaA !== estudoPreferido) return { ...base, trocar: true };
+    if (idiomaA === estudoPreferido) return base;
+  }
+  // 3) O nome do arquivo do DownSub diz o idioma.
+  if (pareceTraducao(a?.arquivo) && !pareceTraducao(b?.arquivo)) return { ...base, trocar: true };
+  if (pareceTraducao(b?.arquivo)) return base;
+  // 4) Qual tem mais cara do idioma da tradução.
+  const pa = pontosIdioma((a?.falas || []).slice(0, 600).map((f) => f.t).join(' '))[alvo] || 0;
+  const pb = pontosIdioma((b?.falas || []).slice(0, 600).map((f) => f.t).join(' '))[alvo] || 0;
+  if (pa > 1.5 * pb && pa >= 0.04) return { ...base, trocar: true };
+  return base;
+}
+
+/** Quanto o texto parece português (0 a ~1). Mantida por compatibilidade. */
+export function pontuacaoPortugues(texto) {
+  return pontosIdioma(texto).pt;
 }
 
 const palavrasDe = (t) => normalizar(t).match(/\p{L}+/gu) || [];
@@ -321,7 +390,7 @@ const palavrasDe = (t) => normalizar(t).match(/\p{L}+/gu) || [];
  * Quando a fala tem mais de duas linhas, o ponto de corte é escolhido pelas palavras
  * típicas de cada lado (aprendidas nas falas que têm exatamente duas linhas).
  */
-export function lerLegendaDupla(texto) {
+export function lerLegendaDupla(texto, alvo = 'pt', estudoPreferido = 'auto') {
   try {
     if (typeof texto !== 'string') return { erro: MSG_SEM_LEGENDA };
     let t = texto;
@@ -374,22 +443,22 @@ export function lerLegendaDupla(texto) {
     if (!falasCima.length || !falasBaixo.length) return { erro: MSG_NAO_DUPLA };
     const A = corrigirSequencia(falasCima);
     const B = corrigirSequencia(falasBaixo);
-    // O lado que parece mais português vira a tradução.
-    const media = (falas) => falas.reduce((s, f) => s + pontuacaoPortugues(f.t), 0) / falas.length;
-    if (media(A) > media(B)) return { estudo: B, traducao: A };
-    return { estudo: A, traducao: B };
+    // O lado que está no idioma da tradução (português, em geral) vira a tradução.
+    const d = decidirPapeis({ falas: A }, { falas: B }, alvo, estudoPreferido);
+    if (d.trocar) return { estudo: B, traducao: A, idiomaEstudo: d.idiomaB, idiomaTraducao: d.idiomaA };
+    return { estudo: A, traducao: B, idiomaEstudo: d.idiomaA, idiomaTraducao: d.idiomaB };
   } catch {
     return { erro: MSG_SEM_LEGENDA };
   }
 }
 
 /** Mesmo que lerLegendaDupla, a partir dos bytes do arquivo. */
-export function lerArquivoLegendaDupla(buffer) {
+export function lerArquivoLegendaDupla(buffer, alvo = 'pt', estudoPreferido = 'auto') {
   try {
     const tamanho = buffer?.byteLength ?? 0;
     if (tamanho > LIMITE_BYTES) return { erro: 'Arquivo grande demais (limite de 5 MB).' };
     if (!tamanho) return { erro: MSG_SEM_LEGENDA };
-    return lerLegendaDupla(decodificar(buffer));
+    return lerLegendaDupla(decodificar(buffer), alvo, estudoPreferido);
   } catch {
     return { erro: MSG_SEM_LEGENDA };
   }
@@ -471,43 +540,233 @@ function unidadeDePalavras(ps) {
   return { s: ps[0].s, e: ps[ps.length - 1].e, texto: ps.map((p) => p.w).join(' ') };
 }
 
-const LIMITE_SEG = 15;
-const LIMITE_CAR = 220;
+// ---------------------------------------------------------------------------
+// Quebra no padrão de legenda de filme (Netflix Timed Text Style Guide):
+// até 42 caracteres por linha, no máximo 2 linhas (84) e no máximo 7 s na tela.
+// ---------------------------------------------------------------------------
 
-function dividirFrase(ps) {
-  const texto = ps.map((p) => p.w).join(' ');
-  const dur = ps[ps.length - 1].e - ps[0].s;
-  if ((dur <= LIMITE_SEG && texto.length <= LIMITE_CAR) || ps.length < 2) return [ps];
-  // posição (em caracteres) do fim de cada palavra
-  const fins = [];
-  let pos = 0;
-  for (let i = 0; i < ps.length; i++) {
-    pos += ps[i].w.length;
-    fins.push(pos);
-    pos += 1;
+export const CAR_POR_LINHA = 42;
+export const MAX_CAR_LEGENDA = 2 * CAR_POR_LINHA;
+export const MAX_SEG_LEGENDA = 7;
+const MIN_CAR_POR_TEMPO = 20; // dividir só pelo tempo não pode gerar pedaços menores que isto
+
+// Antes de quebrar no padrão de filme, uma frase sem pontuação (comum na legenda automática)
+// é cortada em blocos de até 20 s / 300 caracteres, para o pareamento e a conta não ficarem enormes.
+const LIMITE_SEG = 20;
+const LIMITE_CAR = 300;
+
+const lista = (t) => new Set(t.split(' '));
+// Palavras que começam um trecho novo: bom lugar para quebrar ANTES delas.
+const CONJUNCOES = lista('and but or so because that which who whom whose when where while if although though unless until since after before then as than ' +
+  'e mas ou porque que quando onde enquanto embora se entao depois antes ate como pois porem ' +
+  'y pero o porque cuando donde mientras aunque si entonces despues antes hasta como ' +
+  'et mais ou parce quand ou si alors pendant apres avant comme donc car ' +
+  'und aber oder weil dass wenn als ma perche quando mentre se allora dopo prima come');
+const PREPOSICOES = lista('to of in on at for with from by about into over under without through between during ' +
+  'de do da dos das em no na nos nas para pra com por sem sobre entre ' +
+  'en con sin para por sobre entre del al ' +
+  'a au aux dans sur avec sans pour par chez ' +
+  'zu mit von auf fur bei nach aus di in con su per tra fra');
+// Palavras que não podem ficar no fim de uma legenda (artigos, preposições, possessivos...).
+const FRACAS = lista('the a an to of in on at for with from by and or but my your his her its our their this these those some any no ' +
+  'is are was were be been am will would can could should do does did have has had i you he she we they it ' +
+  'o a os as um uma uns umas de do da dos das em no na nos nas e ou mas que para pra com por meu minha seu sua nosso nossa ' +
+  'el la los las un una unos unas y del al en con mi tu su ' +
+  'le la les un une des du au et de mon ma mes ton ta ses ce cette ' +
+  'der die das ein eine und il lo gli i le un una di e');
+
+const CACHE_LIMPA = new Map();
+const limpa = (w) => {
+  let r = CACHE_LIMPA.get(w);
+  if (r === undefined) {
+    r = normalizar(w).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+    if (CACHE_LIMPA.size > 20000) CACHE_LIMPA.clear();
+    CACHE_LIMPA.set(w, r);
   }
-  const total = texto.length;
-  const meio = total / 2;
+  return r;
+};
+
+const FECHA = new Set(['"', "'", '”', '’', '»', ')', ']']);
+
+/** Custo de quebrar a legenda entre as palavras w e prox (menor = melhor lugar). */
+export function custoQuebra(w, prox) {
+  let k = w.length - 1;
+  while (k > 0 && FECHA.has(w[k])) k--;
+  const ult = w[k];
+  let c;
+  if (ult === '.' || ult === '?' || ult === '!' || ult === '…') c = 0;
+  else if (ult === ';' || ult === ':') c = 30;
+  else if (ult === ',' || ult === '—' || ult === '–') c = 60;
+  else {
+    const p = limpa(prox);
+    if (CONJUNCOES.has(p)) c = 120;
+    else if (PREPOSICOES.has(p)) c = 200;
+    else c = 400;
+  }
+  if (c >= 120 && FRACAS.has(limpa(w))) c += 300;
+  return c;
+}
+
+/**
+ * Divide uma sequência de palavras em exatamente m pedaços, com o menor custo:
+ * custo das quebras + desequilíbrio de tamanho + tempo acima do limite.
+ * itens: [{ w, s?, e? }]. limite: caracteres por pedaço (Infinity = sem limite).
+ * alvos (opcional): posição desejada (em caracteres) de cada quebra; com eles, a distância conta mais.
+ * Devolve os índices finais de cada pedaço (o último é itens.length - 1) ou null se não couber.
+ */
+function particionar(itens, m, { limite = Infinity, alvos = null, comTempo = false } = {}) {
+  const n = itens.length;
+  if (m < 1 || m > n) return null;
+  const fim = new Float64Array(n); // posição (caracteres) do fim de cada palavra
+  let pos = 0;
+  for (let i = 0; i < n; i++) { pos += itens[i].w.length; fim[i] = pos; pos += 1; }
+  const total = fim[n - 1];
+  const meta = total / m;
+  const quebra = new Float64Array(n);
+  for (let j = 0; j < n - 1; j++) quebra[j] = custoQuebra(itens[j].w, itens[j + 1].w);
+  // melhor[k*n + j]: menor custo para pôr as palavras 0..j em k+1 pedaços
+  const melhor = new Float64Array(m * n).fill(Infinity);
+  const volta = new Int32Array(m * n).fill(-1);
+  for (let k = 0; k < m; k++) {
+    // o pedaço k termina em j; ainda precisam caber m-1-k pedaços depois dele
+    for (let j = k; j <= n - m + k; j++) {
+      let melhorC = Infinity;
+      let melhorI = -1;
+      // o primeiro pedaço sempre começa na palavra 0
+      for (let i = k ? j : 0; i >= k; i--) {
+        const t = fim[j] - (i ? fim[i - 1] + 1 : 0);
+        if (t > limite && i < j) break;
+        const antes = k ? melhor[(k - 1) * n + i - 1] : 0;
+        if (antes === Infinity) continue;
+        let c = antes;
+        if (!alvos) c += 0.03 * (t - meta) * (t - meta);
+        if (comTempo) {
+          const excesso = itens[j].e - itens[i].s - MAX_SEG_LEGENDA;
+          if (excesso > 0) c += 50 * excesso;
+        }
+        if (j < n - 1) {
+          c += quebra[j];
+          if (alvos) c += 4 * Math.abs(fim[j] - alvos[k]);
+        }
+        if (c < melhorC) { melhorC = c; melhorI = i - 1; }
+      }
+      melhor[k * n + j] = melhorC;
+      volta[k * n + j] = melhorI;
+    }
+  }
+  const custo = melhor[(m - 1) * n + n - 1];
+  if (custo === Infinity) return null;
+  const fins = [];
+  let j = n - 1;
+  for (let k = m - 1; k >= 0; k--) { fins.unshift(j); j = volta[k * n + j]; }
+  fins.custo = custo;
+  return fins;
+}
+
+/**
+ * Quebra as palavras de uma frase em legendas no padrão de filme.
+ * ps: [{ w, s, e }]. Devolve uma lista de pedaços (cada um, uma lista de palavras).
+ */
+export function quebrarEmLegendas(ps) {
+  const n = ps.length;
+  if (n < 2) return [ps];
+  const total = ps.reduce((soma, p) => soma + p.w.length, 0) + n - 1;
+  const dur = ps[n - 1].e - ps[0].s;
+  const porTexto = Math.ceil(total / MAX_CAR_LEGENDA);
+  const porTempo = dur > MAX_SEG_LEGENDA ? Math.min(Math.ceil(dur / MAX_SEG_LEGENDA), Math.max(1, Math.floor(total / MIN_CAR_POR_TEMPO))) : 1;
+  const m0 = Math.min(n, Math.max(porTexto, porTempo));
+  if (m0 <= 1) return [ps];
+  // O menor número de legendas costuma ser o melhor, mas uma legenda a mais vale a pena
+  // quando deixa todos os cortes em lugares naturais (cada legenda extra custa 150).
+  let fins = null;
+  let melhorCusto = Infinity;
+  for (let m = m0, achou = 0; m <= n && achou < 3; m++) {
+    if (melhorCusto <= 150 * (m - m0)) break; // mais legendas já não teriam como sair mais baratas
+    const f = particionar(ps, m, { limite: MAX_CAR_LEGENDA, comTempo: true });
+    if (!f) continue;
+    achou++;
+    const c = f.custo + 150 * (m - m0);
+    if (c < melhorCusto) { melhorCusto = c; fins = f; }
+  }
+  if (!fins) return [ps];
+  const pedacos = [];
+  let ini = 0;
+  for (const f of fins) { pedacos.push(ps.slice(ini, f + 1)); ini = f + 1; }
+  return pedacos;
+}
+
+/**
+ * Divide a tradução de uma frase em tantos pedaços quanto a frase original foi dividida,
+ * nos pontos proporcionais (pelo número de caracteres), ajustados para a quebra mais natural por perto.
+ * fracoes: fim de cada pedaço original como fração do texto (0..1), sem o último.
+ */
+export function dividirTraducao(texto, fracoes) {
+  const m = fracoes.length + 1;
+  const palavras = String(texto || '').split(/\s+/).filter(Boolean);
+  if (m === 1) return [palavras.join(' ')];
+  if (!palavras.length) return new Array(m).fill('');
+  const itens = palavras.map((w) => ({ w }));
+  const total = palavras.join(' ').length;
+  const alvos = fracoes.map((f) => f * total);
+  let fins = null;
+  if (palavras.length >= m) {
+    // Um pedaço da tradução raramente passa do dobro do tamanho médio: limita a busca (mais rápido).
+    fins = particionar(itens, m, { alvos, limite: Math.max(2 * (total / m), total / m + 40) })
+      || particionar(itens, m, { alvos });
+  }
+  if (!fins) {
+    // Menos palavras que pedaços: cada palavra vai para o pedaço do seu ponto proporcional.
+    const saida = new Array(m).fill(null).map(() => []);
+    let pos = 0;
+    for (const w of palavras) {
+      const meio = (pos + w.length / 2) / total;
+      let k = 0;
+      while (k < fracoes.length && meio > fracoes[k]) k++;
+      saida[k].push(w);
+      pos += w.length + 1;
+    }
+    return saida.map((x) => x.join(' '));
+  }
+  const saida = [];
+  let ini = 0;
+  for (const f of fins) { saida.push(palavras.slice(ini, f + 1).join(' ')); ini = f + 1; }
+  return saida;
+}
+
+/**
+ * Corta blocos grandes demais (frases sem pontuação) no melhor ponto do terço central.
+ * Conta linear por nível (uma legenda automática inteira sem pontuação pode ter 20 mil palavras).
+ */
+function dividirFrase(ps) {
+  const n = ps.length;
+  if (n < 2) return [ps];
+  let total = n - 1;
+  for (const p of ps) total += p.w.length;
+  const dur = ps[n - 1].e - ps[0].s;
+  if (dur <= LIMITE_SEG && total <= LIMITE_CAR) return [ps];
   let corte = -1;
   let melhor = Infinity;
-  for (let i = 0; i < ps.length - 1; i++) {
-    if (!/[,;:]["'”’»)\]]*$/.test(ps[i].w)) continue;
-    const p = fins[i];
-    if (p < total / 3 || p > (2 * total) / 3) continue;
-    const dist = Math.abs(p - meio);
-    if (dist < melhor) { melhor = dist; corte = i; }
+  let pos = 0;
+  for (let j = 0; j < n - 1; j++) {
+    pos += ps[j].w.length;
+    const f = pos / total;
+    if (f >= 1 / 3 && f <= 2 / 3) {
+      const c = custoQuebra(ps[j].w, ps[j + 1].w) + 800 * Math.abs(f - 0.5);
+      if (c < melhor) { melhor = c; corte = j; }
+    }
+    pos += 1;
   }
-  if (corte < 0) corte = Math.floor(ps.length / 2) - 1;
+  if (corte < 0) corte = Math.floor(n / 2) - 1;
   return [...dividirFrase(ps.slice(0, corte + 1)), ...dividirFrase(ps.slice(corte + 1))];
 }
 
-/** 6.2: transforma falas em frases completas. Devolve [{s, e, texto, marca?}]. */
-export function montarFrases(falas) {
+/** 6.2: junta as falas em frases completas (sem a quebra de filme). Devolve [{s, e, texto, ps, marca?}]. */
+export function montarFrasesInteiras(falas) {
   const unidades = [];
   let atual = [];
   const fechar = () => {
     if (!atual.length) return;
-    for (const parte of dividirFrase(atual)) unidades.push(unidadeDePalavras(parte));
+    for (const parte of dividirFrase(atual)) unidades.push({ ...unidadeDePalavras(parte), ps: parte });
     atual = [];
   };
   for (const f of falas) {
@@ -529,7 +788,49 @@ export function montarFrases(falas) {
     }
   }
   fechar();
-  return unidades.map((u) => ({ ...u, s: arred(u.s), e: arred(u.e) }));
+  return unidades;
+}
+
+/**
+ * Quebra frases inteiras em legendas no padrão de filme. Se a frase já tem tradução (trad),
+ * ela é dividida nos pontos equivalentes. Devolve [{s, e, texto, trad?, marca?}].
+ */
+export function quebrarFrases(frases) {
+  const saida = [];
+  for (const f of frases) {
+    if (f.marca || !f.ps) {
+      const { ps, ...resto } = f;
+      saida.push(resto);
+      continue;
+    }
+    const pedacos = quebrarEmLegendas(f.ps);
+    let trads = null;
+    if (typeof f.trad === 'string') {
+      if (pedacos.length === 1) trads = [f.trad];
+      else {
+        const total = f.texto.length;
+        const fracoes = [];
+        let pos = 0;
+        for (let k = 0; k < pedacos.length - 1; k++) {
+          pos += pedacos[k].map((p) => p.w).join(' ').length + 1;
+          fracoes.push(pos / total);
+        }
+        trads = dividirTraducao(f.trad, fracoes);
+      }
+    }
+    pedacos.forEach((parte, k) => {
+      const u = unidadeDePalavras(parte);
+      if (trads) u.trad = trads[k];
+      saida.push(u);
+    });
+  }
+  for (const u of saida) { u.s = arred(u.s); u.e = arred(u.e); }
+  return saida;
+}
+
+/** 6.2: transforma falas em frases completas, já quebradas no padrão de filme. Devolve [{s, e, texto, marca?}]. */
+export function montarFrases(falas) {
+  return quebrarFrases(montarFrasesInteiras(falas));
 }
 
 /** Tira o ">>" do texto quando o modo frases está desligado (troca de quem fala). */
@@ -642,19 +943,21 @@ export function processar(entrada, opcoes = {}) {
 
   let unidades;
   if (frases) {
-    unidades = montarFrases(estudo);
+    // Pareia a tradução com a frase inteira e só depois quebra as duas no padrão de filme:
+    // assim cada pedaço da tradução corresponde ao pedaço da frase original.
+    const inteiras = montarFrasesInteiras(estudo);
+    if (trad.length) parearPorPalavra(inteiras, trad);
+    unidades = quebrarFrases(inteiras);
   } else {
     unidades = [];
     for (const f of estudo) {
       const texto = limparSetas(f.t);
       if (texto) unidades.push({ s: f.s, e: f.e, texto, ...(ehMarcacao(texto) ? { marca: true } : {}) });
     }
+    unidades.forEach((u) => { u.trad = ''; });
+    if (trad.length) parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
   }
-  unidades.forEach((u, i) => { u.i = i; u.trad = ''; });
-  if (trad.length) {
-    if (frases) parearPorPalavra(unidades, trad);
-    else parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
-  }
+  unidades.forEach((u, i) => { u.i = i; if (typeof u.trad !== 'string') u.trad = ''; });
   return { unidades, frases, automatica };
 }
 

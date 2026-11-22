@@ -147,7 +147,6 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .info-arquivo { margin: 0; font-size: 14px; color: var(--texto-2); overflow-wrap: anywhere; }
 .info-arquivo.ok { color: #a5d6a7; }
 .info-arquivo.erro { color: var(--erro); }
-.btn-trocar { align-self: center; }
 .separador { display: flex; align-items: center; gap: 10px; color: var(--texto-2); font-size: 14px; margin: 2px 0; }
 .separador::before, .separador::after { content: ""; flex: 1; border-top: 1px solid var(--borda); }
 .btn-principal#btn-abrir { width: 100%; font-size: 18px; min-height: 56px; }
@@ -308,7 +307,10 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   max-width: 100%;
   overflow-wrap: anywhere;
   line-height: 1.3;
+  text-wrap: balance; /* linhas do mesmo tamanho, como em legenda de filme */
 }
+/* Trecho A–B repetindo: a legenda sobre o vídeo ganha contorno âmbar */
+.legenda-sobre.loop-ab .l1 { box-shadow: 0 0 0 2px var(--ambar); }
 .legenda-sobre .l1 { font-size: var(--fonte-l1); color: var(--texto); }
 .legenda-sobre .l2 { font-size: var(--fonte-l2); color: var(--ambar); }
 .legenda-sobre .l1:empty, .legenda-sobre .l2:empty { display: none; }
@@ -521,12 +523,66 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
   max-width: 100%;
 }
 .legenda-meio { margin: auto 0; display: flex; flex-direction: column; gap: 10px; }
-.caixa-legenda .linha { overflow-wrap: anywhere; line-height: 1.35; }
-.caixa-legenda .l1 { font-size: var(--fonte-l1); color: var(--texto); font-weight: 500; }
+.fala { display: flex; flex-direction: column; gap: 8px; }
+.caixa-legenda .linha { overflow-wrap: anywhere; line-height: 1.35; text-wrap: balance; }
+/* --escala: diminui as letras quando a fala não cabe na caixa (ajustarEscala em app.js) */
+.caixa-legenda .l1 { font-size: calc(var(--fonte-l1) * var(--escala, 1)); color: var(--texto); font-weight: 500; }
+.caixa-legenda .l2 { font-size: calc(var(--fonte-l2) * var(--escala, 1)); color: var(--ambar); }
 /* Só a legenda original na tela: ela ocupa o lugar das duas, maior e com mais respiro */
-.caixa-legenda.so-original .l1 { font-size: calc(var(--fonte-l1) * 1.2); line-height: 1.4; }
+.caixa-legenda.so-original .l1 { font-size: calc(var(--fonte-l1) * 1.2 * var(--escala, 1)); line-height: 1.4; }
 .legenda-sobre.so-original .l1 { font-size: calc(var(--fonte-l1) * 1.15); }
-.caixa-legenda .l2 { font-size: var(--fonte-l2); color: var(--ambar); }
+
+/* Modo lista: fala anterior (em cima), atual (sempre no meio) e próxima (embaixo) */
+.caixa-legenda.modo-lista { overflow: hidden; padding-top: 8px; padding-bottom: 8px; }
+.modo-lista .legenda-meio {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px;
+}
+.modo-lista .fala.atual { grid-row: 2; }
+.modo-lista .fala.vizinha {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0.4;
+  gap: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+/* a anterior encosta na atual por cima; se não couber, some aos poucos na borda de cima */
+.modo-lista .fala.anterior {
+  grid-row: 1;
+  justify-content: flex-end;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+}
+.modo-lista .fala.proxima {
+  grid-row: 3;
+  justify-content: flex-start;
+  -webkit-mask-image: linear-gradient(to top, transparent 0, #000 28px);
+  mask-image: linear-gradient(to top, transparent 0, #000 28px);
+}
+.caixa-legenda .vizinha .l1 { font-size: calc(var(--fonte-l1) * 0.85 * var(--escala, 1)); font-weight: 400; }
+.caixa-legenda.so-original .vizinha .l1 { font-size: calc(var(--fonte-l1) * 1.2 * 0.85 * var(--escala, 1)); }
+.caixa-legenda .vizinha .l2 { font-size: calc(var(--fonte-l2) * 0.85 * var(--escala, 1)); }
+.modo-lista .fala.vizinha.fora-ab { opacity: 0.16; }
+@keyframes subir { from { transform: translateY(18px); } to { transform: none; } }
+.modo-lista .legenda-meio.subindo { animation: subir 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .modo-lista .legenda-meio.subindo { animation: none; } }
+
+/* Trecho A–B repetindo: borda cheia âmbar, fundo levemente âmbar e selo com o trecho */
+.caixa-legenda.loop-ab {
+  border: 2px solid var(--ambar);
+  background: linear-gradient(rgba(255, 213, 79, 0.10), rgba(255, 213, 79, 0.03)), var(--fundo-2);
+}
+.dica-ab.ativo {
+  background: rgba(255, 213, 79, 0.14);
+  color: var(--ambar);
+  border: 1px solid var(--ambar);
+  font-variant-numeric: tabular-nums;
+}
 .palavra { border-radius: 4px; cursor: pointer; }
 .palavra:hover { background: rgba(255, 255, 255, 0.12); }
 .palavra.tocada { background: rgba(255, 213, 79, 0.35); }
@@ -572,6 +628,11 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
     width: min(100%, 1100px, calc((100dvh - 300px) * 16 / 9));
     min-width: 356px;
     margin: 0 auto;
+  }
+  /* Modo lista: três falas precisam de mais altura; o vídeo encolhe um pouco mais */
+  body:not(.imersivo):has(#caixa-legenda.modo-lista) #tela-assistir > .area-video {
+    width: min(100%, 1100px, calc((100vh - 430px) * 16 / 9));
+    width: min(100%, 1100px, calc((100dvh - 430px) * 16 / 9));
   }
   body:not(.imersivo) #tela-assistir > .faixa,
   body:not(.imersivo) #tela-assistir > .caixa-legenda,

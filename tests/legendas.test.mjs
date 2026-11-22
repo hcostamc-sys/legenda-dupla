@@ -144,14 +144,16 @@ test('Automática estilo DownSub: detecção, frases, >> e limites', () => {
     'really?',
     'nobody?',
     'yes, nobody at all.',
-    '[clears throat] the first thing you need to do is turn off the power and lock the panel.',
+    // 87 caracteres: passa de 2 linhas de 42 e quebra antes do "and"
+    '[clears throat] the first thing you need to do is turn off the power',
+    'and lock the panel.',
     'then you can open the cover.',
     'Mr. Smith showed me this trick in the U.S. a long time ago.',
     'after that check the bearings and the shaft for any noise or',
   ]);
   for (const u of r.unidades) {
     assert.ok(!u.texto.includes('>>'));
-    assert.ok(u.e - u.s <= 15 && u.texto.length <= 220);
+    assert.ok(u.e - u.s <= 7 && u.texto.length <= 84, JSON.stringify(u));
     assert.ok(u.s >= 10 && u.e <= 40);
   }
   // tempo estimado por palavra dentro da fala original: "it" é a última palavra da fala 10–12 s
@@ -164,20 +166,50 @@ test('Detecção pelo rótulo "(auto-generated)" no nome do arquivo', () => {
   assert.ok(ehAutomatica([{ s: 0, e: 1, t: 'a' }], nome));
 });
 
-test('Modo frases divide frase longa sem pontuação (15 s / 220 caracteres)', () => {
+test('Modo frases divide frase longa sem pontuação no padrão de filme (84 caracteres / 7 s)', () => {
   const { falas } = ler('auto_sem_pontuacao.srt');
   const fr = montarFrases(falas);
   assert.ok(fr.length >= 2);
-  for (const u of fr) assert.ok(u.e - u.s <= 15 && u.texto.length <= 220, JSON.stringify(u));
+  for (const u of fr) assert.ok(u.e - u.s <= 7 && u.texto.length <= 84, JSON.stringify(u));
+  // quebra antes do "and" (começo de trecho), nunca depois de "the"
+  for (const u of fr) assert.ok(!/\b(the|a|of|to)$/.test(u.texto), u.texto);
   // nenhuma palavra perdida
   assert.equal(fr.map((u) => u.texto).join(' '), falas.map((f) => f.t).join(' '));
 });
 
-test('Modo frases: divide na vírgula do terço central', () => {
-  const texto = 'a'.repeat(110) + ' bb, ' + 'c'.repeat(110) + ' end';
-  const fr = montarFrases([{ s: 0, e: 10, t: texto }]);
+test('Modo frases: frase longa quebra na vírgula, em pedaços equilibrados', () => {
+  const texto = 'When we opened the main panel of the old machine last week, we found two loose terminals and a burned contactor.';
+  const fr = montarFrases([{ s: 0, e: 6, t: texto }]);
+  assert.deepEqual(fr.map((u) => u.texto), [
+    'When we opened the main panel of the old machine last week,',
+    'we found two loose terminals and a burned contactor.',
+  ]);
+  // tempos contínuos e proporcionais
+  assert.equal(fr[0].s, 0);
+  assert.equal(fr[1].e, 6);
+  assert.ok(fr[0].e <= fr[1].s && fr[1].s - fr[0].e < 0.1);
+});
+
+test('Modo frases: frase curta e lenta (mais de 7 s) é dividida pelo tempo', () => {
+  const fr = montarFrases([{ s: 0, e: 12, t: 'and then we waited for the operator to come back to the line.' }]);
   assert.equal(fr.length, 2);
-  assert.ok(fr[0].texto.endsWith('bb,'));
+  for (const u of fr) assert.ok(u.e - u.s <= 7.5, JSON.stringify(u));
+});
+
+test('Modo frases: frase curta e rápida fica inteira', () => {
+  const fr = montarFrases([{ s: 0, e: 3, t: 'Turn off the power first.' }]);
+  assert.equal(fr.length, 1);
+});
+
+test('Tradução de arquivo é dividida nos mesmos pontos da frase original', () => {
+  const r = processar({
+    estudo: { falas: F([[0, 6, 'When we opened the main panel of the old machine last week, we found two loose terminals and a burned contactor.']]) },
+    traducao: { falas: F([[0, 6, 'Quando abrimos o painel principal da máquina velha na semana passada, encontramos dois bornes soltos e um contator queimado.']]) },
+  }, { modoFrases: 'ligado' });
+  assert.deepEqual(r.unidades.map((u) => u.trad), [
+    'Quando abrimos o painel principal da máquina velha na semana passada,',
+    'encontramos dois bornes soltos e um contator queimado.',
+  ]);
 });
 
 test('Manual estilo TED: Automático fica desligado; ligado mantém (Laughter) sozinha', () => {

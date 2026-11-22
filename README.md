@@ -9,14 +9,14 @@ Uso pessoal, sem servidor, sem contas e sem custo. As legendas e a biblioteca fi
 1. No app do YouTube, copie o link do vídeo e baixe a legenda no DownSub (veja abaixo).
 2. Abra o Legenda Dupla e escolha as legendas de um destes jeitos:
    - **Só a legenda do idioma que você estuda**: toque em **Legenda do idioma que estou estudando**. O app traduz sozinho cada fala para o português (ajustável em ⚙). Cada fala recebe a tradução dela, no mesmo tempo, por isso a tradução nunca sai de sincronia. A tradução fica guardada: na próxima vez, abre na hora.
-   - **Dois arquivos** (idioma estudado + português): escolha os dois de uma vez, ou um em cada botão. O app descobre qual é o português; se ficaram trocados, toque em **⇅ Trocar**.
-   - **Um arquivo com os dois idiomas juntos** (legenda bilíngue, um idioma em cima e outro embaixo em cada fala): toque em **Legenda dupla**. O app separa os dois idiomas e descobre qual é o português.
+   - **Dois arquivos** (idioma estudado + português): escolha os dois de uma vez, ou um em cada botão, em qualquer ordem. O app lê o texto de cada arquivo, reconhece o idioma (inglês, português, espanhol, francês, italiano ou alemão) e põe sozinho a tradução embaixo. Embaixo de cada botão aparece o idioma reconhecido. Se os dois estiverem no mesmo idioma, o app avisa.
+   - **Um arquivo com os dois idiomas juntos** (legenda bilíngue, um idioma em cima e outro embaixo em cada fala): toque em **Legenda dupla**. O app separa os dois idiomas e reconhece qual é o português.
 3. O link entra sozinho no campo: se o vídeo já está na biblioteca, o app reconhece pelo título; se não, usa o link que você copiou no passo 1. Na primeira vez, o Chrome pergunta se o site pode ver o que foi copiado: toque em **Permitir**. Se o campo ficar vazio, toque em **Colar**.
 4. Toque em **Abrir vídeo** e depois em **▶ Tocar**.
 
 ### Tela do vídeo
 
-De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**, **tocar/pausar** no centro e **文A** da tradução) e uma caixa só com as duas linhas da legenda. A navegação entre falas é por gestos:
+De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**, **tocar/pausar** no centro, **文A** da tradução e **Lista**) e a caixa da legenda. A navegação entre falas é por gestos:
 
 | Ação | Celular | Notebook |
 |---|---|---|
@@ -27,19 +27,20 @@ De cima para baixo: o vídeo, a barra do tempo, os botões (**Loop**, **A–B**,
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
 | Repetir a fala atual sem parar | Botão **Loop** (seta com 1); toque de novo para desligar | L |
-| Repetir um trecho | Toque em **A–B** (a legenda fica com borda tracejada). Toque **na legenda** na fala onde o trecho começa (A); avance até a fala final e toque **na legenda** de novo (B). O trecho começa a repetir. Toque em **A–B** para parar | B (inicia e marca) |
+| Repetir um trecho | Toque em **A–B** (a legenda fica com borda tracejada). Toque **na legenda** na fala onde o trecho começa (A); avance até a fala final e toque **na legenda** de novo (B). O trecho começa a repetir e a legenda muda de estilo: borda âmbar cheia, fundo levemente âmbar e o selo “Repetindo A–B” com o trecho. Toque em **A–B** para parar | B (inicia e marca) |
+| Ver a fala anterior, a atual e a próxima | Botão **Lista** (três barras, ao lado do 文A). A atual fica no meio; a anterior e a próxima, mais apagadas. Toque na anterior ou na próxima para ir até ela. Toque de novo no botão para voltar a uma fala por vez | V |
 | Tradução: mostrar sempre, só quando pausar ou desativar | Botão **文A** abre um menu pequeno | T (troca de modo) |
 | Velocidade | ⚙ Ajustes → Velocidade | [ e ] |
 | Tela cheia (gira para deitado) | Botão ⛶ | F |
 | Liberar o toque no vídeo por 10 s (para tocar em **Pular anúncio**) | Botão 👆 no topo (toque de novo para cancelar) | Igual |
 
-Quando a tradução não está na tela (desativada, ou vídeo tocando no modo “só quando pausar”), a legenda original fica maior, ocupando o lugar das duas.
+Quando a tradução não está na tela (desativada, ou vídeo tocando no modo “só quando pausar”), a legenda original fica maior, ocupando o lugar das duas. No modo lista, as três falas mudam de tamanho juntas. Se uma fala não couber na caixa, as letras diminuem um pouco (até 70%) em vez de aparecer rolagem.
 
 Em **⚙ Ajustes** ficam só: velocidade, sincronia de cada legenda (se ela aparecer adiantada ou atrasada), tradução automática (para qual idioma, ou não traduzir), tamanho das letras e inverter a direção do arraste.
 
 ### Frases montadas
 
-Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). Legendas feitas por pessoas ficam como vieram.
+Legendas automáticas do YouTube vêm em pedaços de uns 2 segundos, cortados no meio da frase. O app percebe isso e junta os pedaços em frases completas (aparece “Frases montadas pelo app” embaixo da legenda). Frase longa é quebrada no padrão de legenda de filme: no máximo 2 linhas de 42 caracteres (84) e 7 segundos na tela, cortando de preferência depois de ponto, vírgula, ou antes de palavras como “and”, “but”, “because”, e nunca depois de “the”, “a”, “of”. A tradução da frase é dividida nos mesmos pontos. Legendas feitas por pessoas ficam como vieram.
 
 ### Passar a biblioteca para outro aparelho
 

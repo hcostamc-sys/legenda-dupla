@@ -4,7 +4,7 @@
 import {
   tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, lerArquivoLegendaDupla, sugerirPapeis,
   processar, falaNoTempo, navegar, tempoDestino, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
-  MSG_LINK_INVALIDO,
+  MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS,
 } from './legendas.js';
 import { textosPendentes, aplicarMapa, traduzirTodos, NOMES_IDIOMA } from './traducao.js';
 import { criarPlayer, MSG_API } from './player.js';
@@ -139,6 +139,7 @@ function aplicarAparencia() {
   const f = S.ajustes.fonteL1;
   raiz.setProperty('--fonte-l1', `${f}px`);
   raiz.setProperty('--fonte-l2', `${Math.round(f * 0.85)}px`);
+  ajustarEscala();
 }
 
 function salvar() {
@@ -166,13 +167,20 @@ function validarFormulario() {
   $('#btn-abrir').disabled = !(link && S.escolha.estudo);
 }
 
+/** Idioma da tradução: o da tradução automática (ou português, se ela estiver desligada). */
+function idiomaAlvo() {
+  const d = S.ajustes.destino;
+  return d === 'nao' ? 'pt' : d;
+}
+
 function mostrarEscolha(papel) {
   const el = $(papel === 'estudo' ? '#info-estudo' : '#info-traducao');
   const e = S.escolha[papel];
   if (e) {
     const n = e.falas.length;
-    const parte = e.dupla ? (papel === 'estudo' ? ' (idioma estudado)' : ' (tradução)') : '';
-    el.textContent = `${e.arquivo}${parte} — ${n.toLocaleString('pt-BR')} ${n === 1 ? 'fala lida' : 'falas lidas'}`;
+    const parte = e.dupla ? (papel === 'estudo' ? ' (parte do idioma estudado)' : ' (parte da tradução)') : '';
+    const idioma = e.idioma ? `${NOMES_IDIOMAS[e.idioma]} · ` : '';
+    el.textContent = `${e.arquivo}${parte} — ${idioma}${n.toLocaleString('pt-BR')} ${n === 1 ? 'fala lida' : 'falas lidas'}`;
     el.className = 'info-arquivo ok';
   } else {
     el.textContent = papel === 'traducao' && S.escolha.estudo ? textoSemTraducao() : 'Nenhum arquivo escolhido.';
@@ -191,9 +199,9 @@ async function lerArquivo(file, dupla = false) {
   try {
     const buf = await file.arrayBuffer();
     if (dupla) {
-      const r = lerArquivoLegendaDupla(buf);
+      const r = lerArquivoLegendaDupla(buf, idiomaAlvo(), S.ajustes.idioma);
       if (r.erro) return { arquivo: file.name, erro: r.erro };
-      return { arquivo: file.name, estudo: r.estudo, traducao: r.traducao };
+      return { arquivo: file.name, estudo: r.estudo, traducao: r.traducao, idiomaEstudo: r.idiomaEstudo, idiomaTraducao: r.idiomaTraducao };
     }
     const r = lerArquivoLegenda(buf);
     if (r.erro) return { arquivo: file.name, erro: r.erro };
@@ -204,9 +212,42 @@ async function lerArquivo(file, dupla = false) {
 }
 
 function definirEscolha(papel, r) {
-  S.escolha[papel] = r && !r.erro ? { arquivo: r.arquivo, falas: r.falas } : null;
+  S.escolha[papel] = r && !r.erro ? { arquivo: r.arquivo, falas: r.falas, idioma: detectarIdioma(r.falas) } : null;
   mostrarEscolha(papel);
   if (r?.erro) mostrarErroArquivo(papel, r.arquivo, r.erro);
+}
+
+/**
+ * Com as duas legendas escolhidas, decide sozinho qual é a estudada e qual é a tradução,
+ * pelo idioma do texto (não pelo botão usado nem pela ordem). Mostra o resultado.
+ */
+function organizarPapeis() {
+  const { estudo, traducao } = S.escolha;
+  if (!estudo || !traducao) {
+    // Só uma legenda, e ela já está no idioma da tradução: falta a do idioma estudado.
+    const so = estudo || traducao;
+    if (so && so.idioma && so.idioma === idiomaAlvo() && !so.dupla) {
+      avisarLink(`Esse arquivo está em ${NOMES_IDIOMAS[so.idioma]}. Escolha também a legenda do idioma que você estuda.`);
+    }
+    if (!estudo && traducao) {
+      // Só veio a tradução: ela passa a ser a legenda principal até chegar a outra.
+      S.escolha = { estudo: traducao, traducao: null };
+      mostrarAmbas();
+    }
+    return;
+  }
+  const d = decidirPapeis(estudo, traducao, idiomaAlvo(), S.ajustes.idioma);
+  if (d.conflito) {
+    S.escolha.traducao = null;
+    mostrarAmbas();
+    mostrarErroArquivo('traducao', traducao.arquivo, `os dois arquivos estão em ${NOMES_IDIOMAS[d.idiomaA]}. Escolha a legenda em ${NOMES_IDIOMAS[idiomaAlvo()]} ou deixe vazio para o app traduzir.`);
+    return;
+  }
+  if (d.trocar) {
+    S.escolha.estudo = traducao;
+    S.escolha.traducao = estudo;
+  }
+  mostrarAmbas();
 }
 
 function mostrarAmbas() {
@@ -224,14 +265,26 @@ async function receberArquivos(lista, papel) {
     const lidos = await Promise.all(dois.map((f) => lerArquivo(f)));
     definirEscolha('estudo', lidos[papeis.estudo]);
     definirEscolha('traducao', lidos[papeis.traducao]);
-    toast('Confira os dois arquivos. Se estiverem trocados, toque em ⇅ Trocar.');
   } else {
-    const alvo = papel || (S.escolha.estudo ? 'traducao' : 'estudo');
+    const lido = await lerArquivo(arquivos[0]);
     // Um arquivo da legenda dupla estava escolhido: trocar uma parte desfaz o par.
     for (const k of ['estudo', 'traducao']) if (S.escolha[k]?.dupla) S.escolha[k].dupla = false;
-    definirEscolha(alvo, await lerArquivo(arquivos[0]));
+    // Os papéis são decididos pelo idioma, então o botão usado só desempata:
+    // mesmo idioma de um arquivo já escolhido → substitui esse; senão → vai para o lugar vazio.
+    const idioma = lido.erro ? '' : detectarIdioma(lido.falas);
+    const { estudo, traducao } = S.escolha;
+    let alvo;
+    if (idioma && estudo?.idioma === idioma) alvo = 'estudo';
+    else if (idioma && traducao?.idioma === idioma) alvo = 'traducao';
+    else if (!estudo) alvo = 'estudo';
+    else if (!traducao) alvo = 'traducao';
+    else alvo = papel || 'traducao';
+    definirEscolha(alvo, lido);
     if (alvo === 'estudo' && !S.escolha.traducao) mostrarEscolha('traducao');
   }
+  // Os erros de leitura ficam na tela; sem erro, o app arruma os papéis pelo idioma.
+  const comErro = $$('.info-arquivo.erro').length > 0;
+  if (!comErro) organizarPapeis();
   validarFormulario();
   await preencherLinkAutomatico();
 }
@@ -247,10 +300,9 @@ async function receberDupla(lista) {
     validarFormulario();
     return;
   }
-  S.escolha.estudo = { arquivo: r.arquivo, falas: r.estudo, dupla: true };
-  S.escolha.traducao = { arquivo: r.arquivo, falas: r.traducao, dupla: true };
+  S.escolha.estudo = { arquivo: r.arquivo, falas: r.estudo, dupla: true, idioma: r.idiomaEstudo || '' };
+  S.escolha.traducao = { arquivo: r.arquivo, falas: r.traducao, dupla: true, idioma: r.idiomaTraducao || '' };
   mostrarAmbas();
-  toast('Legenda dupla separada nos dois idiomas. Se ficaram trocados, toque em ⇅ Trocar.', 3500);
   validarFormulario();
   await preencherLinkAutomatico();
 }
@@ -299,14 +351,6 @@ async function preencherLinkAutomatico() {
     }
   } catch { /* sem permissão ou sem texto copiado */ }
   if (!$('#msg-link').textContent) avisarLink('Agora cole o link do vídeo (botão Colar).');
-}
-
-function trocarPapeis() {
-  const { estudo, traducao } = S.escolha;
-  S.escolha.estudo = traducao;
-  S.escolha.traducao = estudo;
-  mostrarAmbas();
-  validarFormulario();
 }
 
 function limparFormulario() {
@@ -590,8 +634,24 @@ function reprocessar() {
   atualizarAviso();
 }
 
+/**
+ * Vídeos salvos antes da detecção pelo idioma podem estar com as legendas trocadas
+ * (a tradução no lugar da estudada). Arruma, guarda e avisa.
+ */
+function corrigirPapeisSalvos(reg) {
+  if (!reg?.estudo?.falas?.length || !reg?.traducao?.falas?.length) return false;
+  const d = decidirPapeis(reg.estudo, reg.traducao, idiomaAlvo(), S.ajustes.idioma);
+  if (!d.trocar) return false;
+  [reg.estudo, reg.traducao] = [reg.traducao, reg.estudo];
+  [reg.ajusteEstudo, reg.ajusteTraducao] = [reg.ajusteTraducao || 0, reg.ajusteEstudo || 0];
+  reg.traducaoAuto = null;
+  salvarVideo(reg);
+  return true;
+}
+
 async function abrirVideo(reg, inicio) {
   if (S.player) encerrarPlayer();
+  const corrigido = corrigirPapeisSalvos(reg);
   clearTimeout(timerToast);
   $('#toast').hidden = true;
   S.registro = reg;
@@ -605,6 +665,7 @@ async function abrirVideo(reg, inicio) {
   zerarRepeticao();
   fecharMenuTraducao();
   atualizarBotaoTraducao();
+  atualizarBotaoModoLegenda();
   reprocessar();
   $('#titulo-video').textContent = tituloAtual();
   $('#erro-player').hidden = true;
@@ -649,6 +710,7 @@ async function abrirVideo(reg, inicio) {
   S.pronto = true;
   aplicarVelocidadeSalva();
   lerTitulo();
+  if (corrigido) toast(`As legendas estavam trocadas e foram arrumadas: a tradução (${NOMES_IDIOMAS[idiomaAlvo()]}) fica embaixo.`, 4000);
   $('#titulo-video').textContent = tituloAtual();
   atualizarProgresso(true);
 }
@@ -950,6 +1012,17 @@ function irParaIndice(i) {
   renderLegenda(true);
 }
 
+function modoLista() {
+  return S.ajustes.modoLegenda === 'lista';
+}
+
+/** A tradução está aparecendo agora? (depende do modo 文A, de tocar/pausar e de haver tradução) */
+function traducaoNaTela() {
+  const modo = S.ajustes.modoTraducao;
+  if (modo === 'desligada' || (modo === 'pausado' && S.tocandoLogico)) return false;
+  return !!S.registro && (!!S.registro.traducao || traducaoAutomaticaAtiva());
+}
+
 function renderLegenda(forcar) {
   const p = S.player;
   const U = S.unidades;
@@ -963,17 +1036,23 @@ function renderLegenda(forcar) {
   const u = U[indice];
   const t1 = u ? u.texto : '';
   const t2 = textoLinha2(u);
-  if (indice === S.exibida && t2 === S.exibidaTrad && !forcar) return;
+  // Tudo o que pode mudar sem a fala mudar: traduções (a atual e as vizinhas), modo e trecho A–B.
+  const lista = modoLista();
+  const assinatura = [t2, lista, lista ? textoLinha2(U[indice - 1]) : '', lista ? textoLinha2(U[indice + 1]) : '', S.ab.a, S.ab.b].join('\u0001');
+  if (indice === S.exibida && assinatura === S.exibidaTrad && !forcar) return;
   if (indice === S.exibida && !forcar) {
-    // Só mudou a linha 2 (tradução chegou, ou tocou/pausou no modo "só quando pausar"):
+    // Só mudou a tradução (chegou, ou tocou/pausou no modo "só quando pausar") ou o A–B:
     // não mexe na linha 1, porque o cartão da palavra pode estar aberto.
-    S.exibidaTrad = t2;
+    S.exibidaTrad = assinatura;
     mostrarLinha2(t2);
+    mostrarVizinhas(indice);
+    ajustarEscala();
     return;
   }
+  const avancou = indice === S.exibida + 1 && S.exibida >= 0;
   if (indice !== S.exibida) fecharCartao();
   S.exibida = indice;
-  S.exibidaTrad = t2;
+  S.exibidaTrad = assinatura;
 
   // caixa: linha 1 com palavras tocáveis
   const c1 = $('#caixa-l1');
@@ -991,6 +1070,37 @@ function renderLegenda(forcar) {
   $('#caixa-legenda').scrollTop = 0;
   $('#legenda-sobre .l1').textContent = t1; // legendas sobre o vídeo (deitado ou tela cheia)
   mostrarLinha2(t2);
+  mostrarVizinhas(indice);
+  ajustarEscala();
+  // No modo lista, a fala nova sobe suavemente para o meio (como letra de música).
+  if (lista && avancou) {
+    const meio = $('#caixa-legenda .legenda-meio');
+    meio.classList.remove('subindo');
+    void meio.offsetWidth; // reinicia a animação
+    meio.classList.add('subindo');
+  }
+}
+
+/** Modo lista: fala anterior e próxima, mais apagadas. No modo uma fala, ficam escondidas. */
+function mostrarVizinhas(indice) {
+  const lista = modoLista();
+  const U = S.unidades;
+  const { a, b } = S.ab;
+  const abAtivo = a !== null && b !== null;
+  for (const [sel, i] of [['#fala-ant', indice - 1], ['#fala-prox', indice + 1]]) {
+    const el = $(sel);
+    const u = lista ? U[i] : null;
+    el.hidden = !u;
+    el.dataset.indice = u ? String(i) : '';
+    if (!u) continue;
+    el.querySelector('.l1').textContent = u.texto;
+    const t2 = textoLinha2(u);
+    const l2 = el.querySelector('.l2');
+    l2.textContent = t2;
+    l2.hidden = !t2;
+    // Com o trecho A–B repetindo, a fala que fica fora dele aparece ainda mais apagada.
+    el.classList.toggle('fora-ab', abAtivo && (i < a || i > b));
+  }
 }
 
 /** Texto da linha 2 conforme o modo da tradução (sempre, só quando pausar, desativada). */
@@ -1002,14 +1112,80 @@ function textoLinha2(u) {
   return trad;
 }
 
-/** Mostra a linha 2 e ajusta o tamanho: sem tradução na tela, a linha 1 fica maior. */
+/**
+ * Mostra a linha 2 e ajusta o tamanho: sem tradução na tela, a legenda original fica maior.
+ * Uma fala por vez: depende da fala atual. Lista: depende do modo da tradução, para as três
+ * falas mudarem de tamanho juntas (e não uma grande e outra pequena).
+ */
 function mostrarLinha2(t2) {
   const c2 = $('#caixa-l2');
   c2.textContent = t2;
   c2.hidden = !t2;
   $('#legenda-sobre .l2').textContent = t2;
-  $('#caixa-legenda').classList.toggle('so-original', !t2);
+  const soOriginal = modoLista() ? !traducaoNaTela() : !t2;
+  $('#caixa-legenda').classList.toggle('so-original', soOriginal);
   $('#legenda-sobre').classList.toggle('so-original', !t2);
+}
+
+/**
+ * Se a fala não cabe na caixa, diminui as letras (até 70%) em vez de criar rolagem.
+ * Uma fala por vez: a fala inteira precisa caber. Lista: a fala atual precisa caber no meio;
+ * a anterior e a próxima podem ficar cortadas nas bordas.
+ */
+function ajustarEscala() {
+  const caixa = $('#caixa-legenda');
+  if (!caixa || caixa.offsetParent === null) return;
+  caixa.style.setProperty('--escala', '1');
+  const lista = modoLista();
+  const meio = caixa.querySelector('.legenda-meio');
+  const atual = $('#fala-atual');
+  const disponivel = () => {
+    if (lista) return Math.max(40, meio.clientHeight * 0.62);
+    const est = getComputedStyle(caixa);
+    const dica = $('#dica-ab');
+    return caixa.clientHeight - parseFloat(est.paddingTop) - parseFloat(est.paddingBottom) - (dica.hidden ? 0 : dica.offsetHeight + 6);
+  };
+  const ocupado = () => (lista ? atual.offsetHeight : meio.scrollHeight);
+  let escala = 1;
+  for (let k = 0; k < 4; k++) {
+    const d = disponivel();
+    const o = ocupado();
+    if (o <= d + 1 || escala <= 0.7) break;
+    // a altura cresce mais ou menos com o quadrado do tamanho da letra (mais linhas e linhas mais altas)
+    escala = Math.max(0.7, Math.floor(escala * Math.sqrt(d / o) * 100) / 100);
+    caixa.style.setProperty('--escala', String(escala));
+  }
+}
+
+function alternarModoLegenda() {
+  S.ajustes.modoLegenda = modoLista() ? 'uma' : 'lista';
+  salvar();
+  atualizarBotaoModoLegenda();
+  renderLegenda(true);
+  toast(modoLista() ? 'Lista: fala anterior, atual e próxima' : 'Uma fala por vez', 1200);
+}
+
+function atualizarBotaoModoLegenda() {
+  const lista = modoLista();
+  const b = $('#btn-modo-legenda');
+  b.setAttribute('aria-pressed', String(lista));
+  b.setAttribute('aria-label', lista ? 'Voltar a mostrar uma fala por vez' : 'Mostrar as falas em lista (anterior, atual e próxima)');
+  $('#caixa-legenda').classList.toggle('modo-lista', lista);
+}
+
+/** Toque na fala anterior ou na próxima (modo lista): vai até ela, como o gesto de arrastar. */
+function irParaVizinha(el) {
+  const i = Number(el.dataset.indice);
+  const p = S.player;
+  if (!p || !Number.isInteger(i) || !S.unidades[i] || el.dataset.indice === '') return;
+  S.memoriaNav = { indice: i, quando: performance.now() };
+  if (S.loop.ligado) S.loop.alvo = i;
+  irParaIndice(i);
+  if (p.estado() !== 1) {
+    if (S.primeiroPlay) p.tocar(); else tocarPrimeiraVez();
+  }
+  mostrarRetorno(i < S.exibida ? TEXTO_RETORNO.voltar : TEXTO_RETORNO.avancar);
+  vibrar();
 }
 
 function atualizarProgresso(forcar = false) {
@@ -1074,13 +1250,22 @@ function atualizarBotoesRepeticao() {
   ab.classList.toggle('meio', marcando);
   ab.textContent = marcando ? (S.marcandoAB === 'a' ? 'A?' : 'B?') : 'A–B';
   ab.setAttribute('aria-label', completo ? 'Parar o trecho A–B' : marcando ? 'Cancelar a marcação do trecho' : 'Repetir um trecho de A até B');
-  // Enquanto marca, a caixa da legenda fica destacada e mostra o que fazer.
+  // Enquanto marca, a caixa da legenda fica destacada (borda tracejada) e mostra o que fazer.
+  // Com o trecho repetindo, a legenda muda de estilo (borda cheia, fundo âmbar e selo com o trecho).
   const caixa = $('#caixa-legenda');
   caixa.classList.toggle('marcando-ab', marcando);
+  caixa.classList.toggle('loop-ab', completo);
+  $('#legenda-sobre').classList.toggle('loop-ab', completo);
   const dica = $('#dica-ab');
-  dica.hidden = !marcando;
+  dica.hidden = !marcando && !completo;
+  dica.classList.toggle('ativo', completo);
   if (S.marcandoAB === 'a') dica.textContent = 'Toque aqui na fala onde o trecho começa (A)';
   else if (S.marcandoAB === 'b') dica.textContent = `A em ${formatarTempo(S.unidades[a]?.s)} · vá até a fala final e toque aqui (B)`;
+  else if (completo) {
+    const n = b - a + 1;
+    dica.textContent = `⟲ Repetindo A–B · ${formatarTempo(S.unidades[a]?.s)} → ${formatarTempo(S.unidades[b]?.e)} · ${n} ${n === 1 ? 'fala' : 'falas'}`;
+  }
+  ajustarEscala();
 }
 
 function alternarLoop() {
@@ -1325,7 +1510,9 @@ function toqueNoVideo() {
 function toqueNaCaixa(alvo) {
   if (S.marcandoAB) { marcarPontoAB(); return; } // marcando o trecho: o toque marca A ou B
   if (!(alvo instanceof Element)) return;
-  if (alvo.classList.contains('palavra') && alvo.closest('#caixa-l1')) abrirCartao(alvo);
+  if (alvo.classList.contains('palavra') && alvo.closest('#caixa-l1')) { abrirCartao(alvo); return; }
+  const vizinha = alvo.closest('.fala.vizinha');
+  if (vizinha && !vizinha.hidden) irParaVizinha(vizinha);
 }
 
 // ============================================================ liberar o toque no vídeo (anúncios)
@@ -1368,6 +1555,7 @@ function atualizarImersivo() {
   document.body.classList.toggle('imersivo', im);
   if (!im) document.body.classList.remove('faixa-visivel');
   if (im && !antes) mostrarFaixa();
+  if (!im && antes) requestAnimationFrame(ajustarEscala); // a caixa da legenda voltou a aparecer
 }
 
 function mostrarFaixa() {
@@ -1502,6 +1690,7 @@ function aoTeclar(ev) {
   else if (k === 'l' || k === 'L') alternarLoop();
   else if (k === 'b' || k === 'B') (S.marcandoAB ? marcarPontoAB() : tocarAB());
   else if (k === 't' || k === 'T') ciclarModoTraducao();
+  else if (k === 'v' || k === 'V') alternarModoLegenda();
   else feito = false;
   if (feito) ev.preventDefault();
 }
@@ -1538,7 +1727,6 @@ function ligarEventos() {
   $('#arq-estudo').addEventListener('change', (ev) => { receberArquivos(ev.target.files, 'estudo'); ev.target.value = ''; });
   $('#arq-traducao').addEventListener('change', (ev) => { receberArquivos(ev.target.files, 'traducao'); ev.target.value = ''; });
   $('#arq-dupla').addEventListener('change', (ev) => { receberDupla(ev.target.files); ev.target.value = ''; });
-  $('#btn-trocar-papeis').addEventListener('click', trocarPapeis);
   $('#btn-abrir').addEventListener('click', abrirDoFormulario);
   const zona = $('#zona-arquivos');
   zona.addEventListener('dragover', (ev) => { ev.preventDefault(); zona.classList.add('arrastando'); });
@@ -1572,6 +1760,8 @@ function ligarEventos() {
   $('#btn-loop').addEventListener('click', alternarLoop);
   $('#btn-ab').addEventListener('click', tocarAB);
   $('#btn-traducao').addEventListener('click', (ev) => { ev.stopPropagation(); abrirMenuTraducao(); });
+  $('#btn-modo-legenda').addEventListener('click', alternarModoLegenda);
+  window.addEventListener('resize', () => ajustarEscala());
   for (const op of $$('#menu-traducao [data-modo]')) {
     op.addEventListener('click', (ev) => { ev.stopPropagation(); definirModoTraducao(op.dataset.modo); });
   }

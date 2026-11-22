@@ -11,6 +11,7 @@ import functools
 import http.server
 import json
 import os
+import re
 import shutil
 import socketserver
 import sys
@@ -151,13 +152,17 @@ def t_abrir(page, url, en, pt):
     page.fill('#campo-link', 'texto qualquer')
     expect(page.locator('#msg-link')).to_have_text('Não reconheci esse link do YouTube.')
     page.fill('#campo-link', f'Assista no YouTube: https://youtu.be/{ID}?si=abc')
+    assert page.locator('#btn-trocar-papeis').count() == 0  # não existe mais botão Trocar
     page.set_input_files('#arq-estudo', [pt, en])  # português primeiro: o app deve trocar sozinho
     expect(page.locator('#info-estudo')).to_contain_text('[English]')
-    expect(page.locator('#info-estudo')).to_contain_text('40 falas lidas')
+    expect(page.locator('#info-estudo')).to_contain_text('inglês · 40 falas lidas')
     expect(page.locator('#info-traducao')).to_contain_text('[Portuguese]')
-    page.click('#btn-trocar-papeis')
-    expect(page.locator('#info-estudo')).to_contain_text('[Portuguese]')
-    page.click('#btn-trocar-papeis')
+    expect(page.locator('#info-traducao')).to_contain_text('português')
+    # um arquivo por vez, nos botões "errados": o app reconhece o idioma e arruma sozinho
+    page.set_input_files('#arq-estudo', [pt])
+    page.set_input_files('#arq-traducao', [en])
+    expect(page.locator('#info-estudo')).to_contain_text('[English]')
+    expect(page.locator('#info-traducao')).to_contain_text('[Portuguese]')
     expect(page.locator('#btn-abrir')).to_be_enabled()
     page.click('#btn-abrir')
     expect(page.locator('#tela-assistir')).to_be_visible()
@@ -303,8 +308,8 @@ def t_repeticao(page):
     if estado(page) != 1:
         page.click('#btn-play')
     esperar(lambda: estado(page) == 1, msg='tocando')
-    # botões ao lado do play: loop, A–B e tradução; nada além disso
-    assert page.locator('.controles button').count() == 4
+    # botões ao lado do play: loop, A–B, tradução e modo lista; nada além disso
+    assert page.locator('.controles button').count() == 5
     page.evaluate('window.__ld.S.player.irPara(9.3)')  # fala 5 (8,9 a 10,9)
     esperar(lambda: exibida(page) == 4, msg='fala 5')
     page.click('#btn-loop')
@@ -332,7 +337,12 @@ def t_repeticao(page):
     esperar(lambda: exibida(page) == 6, limite=4, msg='chegou na fala 7')
     tocar_rapido(page, '#caixa-legenda')
     expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'true')
-    expect(page.locator('#dica-ab')).to_be_hidden()
+    # trecho repetindo: estilo próprio (borda cheia âmbar) e selo com o trecho
+    expect(page.locator('#caixa-legenda')).to_have_class(re.compile(r'\bloop-ab\b'))
+    expect(page.locator('#caixa-legenda')).not_to_have_class(re.compile(r'marcando-ab'))
+    expect(page.locator('#dica-ab')).to_be_visible()
+    expect(page.locator('#dica-ab')).to_contain_text('Repetindo A–B')
+    assert page.evaluate("getComputedStyle(document.querySelector('#caixa-legenda')).borderTopStyle") == 'solid'
     assert page.evaluate('[window.__ld.S.ab.a, window.__ld.S.ab.b]') == [5, 6]
     inicio_a = page.evaluate('window.__ld.S.unidades[5].s')
     voltou, ultimo, fim_t = False, tempo(page), time.time() + 6
@@ -347,6 +357,8 @@ def t_repeticao(page):
     assert voltou, 'o trecho A–B não repetiu'
     page.click('#btn-ab')
     expect(page.locator('#btn-ab')).to_have_attribute('aria-pressed', 'false')
+    expect(page.locator('#caixa-legenda')).not_to_have_class(re.compile(r'loop-ab'))
+    expect(page.locator('#dica-ab')).to_be_hidden()
     # menu da tradução
     l1_com = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#caixa-l1')).fontSize)")
     page.click('#btn-traducao')
@@ -371,6 +383,72 @@ def t_repeticao(page):
     page.keyboard.press('t')  # desativada -> sempre
     expect(page.locator('#caixa-l2')).to_be_visible()
     assert page.evaluate('window.__ld.S.ajustes.modoTraducao') == 'sempre'
+
+
+@caso('6c. Modo lista: anterior, atual e próxima; tamanhos com a tradução; toque na vizinha')
+def t_lista(page):
+    page.locator('#titulo-video').click()
+    expect(page.locator('#fala-ant')).to_be_hidden()
+    expect(page.locator('#fala-prox')).to_be_hidden()
+    page.click('#btn-modo-legenda')
+    expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#caixa-legenda')).to_have_class(re.compile(r'\bmodo-lista\b'))
+    if estado(page) == 1:
+        page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausado')
+    page.evaluate('window.__ld.S.player.irPara(11.2)')  # fala 6 (11,5 a 13,5) logo depois
+    page.evaluate('window.__ld.S.player.irPara(12)')
+    esperar(lambda: exibida(page) == 5, msg='fala 6')
+    expect(page.locator('#caixa-l1')).to_have_text('Line 6 of the test, with words.')
+    expect(page.locator('#fala-ant .l1')).to_have_text('Line 5 of the test, with words.')
+    expect(page.locator('#fala-prox .l1')).to_have_text('Line 7 of the test, with words.')
+    expect(page.locator('#fala-ant .l2')).to_have_text('Linha 5 do teste, com ação.')
+    op = lambda sel: float(page.evaluate(f"getComputedStyle(document.querySelector('{sel}')).opacity"))
+    assert op('#fala-ant') < 0.6 and op('#fala-prox') < 0.6 and op('#fala-atual') == 1
+    tam = lambda sel: page.evaluate(f"parseFloat(getComputedStyle(document.querySelector('{sel}')).fontSize)")
+    assert tam('#fala-ant .l1') < tam('#caixa-l1')
+    # a fala atual fica no meio da caixa
+    meio = page.evaluate('''() => {
+      const c = document.querySelector('#caixa-legenda').getBoundingClientRect();
+      const a = document.querySelector('#fala-atual').getBoundingClientRect();
+      return [c.top + c.height / 2, a.top + a.height / 2];
+    }''')
+    assert abs(meio[0] - meio[1]) < 30, meio
+    # tradução desativada: as três falas crescem juntas
+    l1_ant, l1_at = tam('#fala-ant .l1'), tam('#caixa-l1')
+    page.click('#btn-traducao')
+    page.click('#menu-traducao [data-modo="desligada"]')
+    expect(page.locator('#fala-ant .l2')).to_be_hidden()
+    assert tam('#fala-ant .l1') > l1_ant and tam('#caixa-l1') > l1_at
+    # só quando pausar: pausado mostra a tradução nas três e volta ao tamanho normal
+    page.click('#btn-traducao')
+    page.click('#menu-traducao [data-modo="pausado"]')
+    expect(page.locator('#fala-ant .l2')).to_be_visible()
+    assert tam('#caixa-l1') == l1_at and tam('#fala-ant .l1') == l1_ant
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando')
+    expect(page.locator('#fala-prox .l2')).to_be_hidden()
+    assert tam('#caixa-l1') > l1_at
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2, msg='pausado')
+    page.click('#btn-traducao')
+    page.click('#menu-traducao [data-modo="sempre"]')
+    # toque na próxima fala: vai até ela
+    i = exibida(page)
+    tocar_rapido(page, '#fala-prox')
+    esperar(lambda: exibida(page) == i + 1, msg='foi para a próxima')
+    if estado(page) == 1:
+        page.click('#btn-play')
+    # A–B no modo lista: a vizinha fora do trecho fica mais apagada
+    page.evaluate('window.__ld.S.ab = { a: window.__ld.S.exibida, b: window.__ld.S.exibida + 1 }')
+    expect(page.locator('#fala-ant')).to_have_class(re.compile(r'fora-ab'))
+    expect(page.locator('#fala-prox')).not_to_have_class(re.compile(r'fora-ab'))
+    page.evaluate('window.__ld.S.ab = { a: null, b: null }')
+    # tecla V volta para uma fala por vez
+    page.keyboard.press('v')
+    expect(page.locator('#btn-modo-legenda')).to_have_attribute('aria-pressed', 'false')
+    expect(page.locator('#fala-ant')).to_be_hidden()
+    expect(page.locator('#fala-prox')).to_be_hidden()
 
 
 @caso('8. Recarregar: vídeo na biblioteca, posição e ajustes mantidos')
@@ -567,8 +645,8 @@ def t_dupla(page, base, pasta):
     page.goto(base + '?mock=1')
     page.fill('#campo-link', 'https://youtu.be/DDDDDDDDDDD')
     page.set_input_files('#arq-dupla', [caminho])
-    expect(page.locator('#info-estudo')).to_contain_text('(idioma estudado) — 12 falas lidas')
-    expect(page.locator('#info-traducao')).to_contain_text('(tradução) — 12 falas lidas')
+    expect(page.locator('#info-estudo')).to_contain_text('(parte do idioma estudado) — inglês · 12 falas lidas')
+    expect(page.locator('#info-traducao')).to_contain_text('(parte da tradução) — português · 12 falas lidas')
     page.click('#btn-abrir')
     page.click('#btn-tocar-grande')
     esperar(lambda: estado(page) == 1, msg='tocando')
@@ -611,6 +689,22 @@ def t_capturas(browser, url, en, pt):
         page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-so-original.png'))
         page.click('#btn-traducao')
         page.click('#menu-traducao [data-modo="sempre"]')
+        if nome != 'celular-deitado-915':
+            page.click('#btn-modo-legenda')
+            time.sleep(0.3)
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista.png'))
+            page.click('#btn-ab')  # marca A e B na mesma fala, pelo fluxo real
+            tocar_rapido(page, '#caixa-legenda')
+            page.evaluate('window.__ld.S.player.pausar()')
+            time.sleep(0.2)
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista-ab-marcando.png'))
+            tocar_rapido(page, '#caixa-legenda')
+            time.sleep(0.3)
+            page.evaluate('window.__ld.S.player.pausar()')
+            time.sleep(0.3)
+            page.screenshot(path=os.path.join(CAPTURAS, f'{nome}-lista-ab-ativo.png'))
+            page.click('#btn-ab')
+            page.click('#btn-modo-legenda')
         if w < 900:
             page.click('#btn-ajustes')
             time.sleep(0.3)
@@ -649,6 +743,7 @@ def main():
         t_teclas(page)
         t_extras(page)
         t_repeticao(page)
+        t_lista(page)
         t_recarregar(page, url)
         t_backup(page, url, pasta)
         t_compartilhar(page, base)
