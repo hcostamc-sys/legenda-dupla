@@ -51,7 +51,7 @@ jobs:
           mkdir -p modelo
           if [ ! -s modelo/htdemucs_ft_vocals.onnx ]; then
             curl -sSL --retry 3 -o modelo/htdemucs_ft_vocals.onnx \
-              https://huggingface.co/StemSplitio/htdemucs-ft-vocals-onnx/resolve/main/htdemucs_ft_vocals.onnx
+              https://huggingface.co/StemSplitio/htdemucs-ft-vocals-onnx/resolve/2ef0d757d3e226d0da85fb8c71514f464fcabdd0/htdemucs_ft_vocals.onnx
           fi
           ls -l modelo; sha256sum modelo/htdemucs_ft_vocals.onnx
 
@@ -70,6 +70,7 @@ jobs:
         run: python3 tests/voz_java/sinal_teste.py avaliar fala.wav mistura.wav voz.wav mix.wav
 
       - name: YouTube (NewPipe Extractor) — só informativo
+        if: always()
         continue-on-error: true
         run: |
           android/voz-ci/build/install/voz-ci/bin/voz-ci youtube jNQXAC9IVRw baixar

@@ -6,7 +6,7 @@ RAIZ=$(cd "$(dirname "$0")/../.." && pwd)
 PASTA="$RAIZ/android/app/src/main/java/io/github/hcostamcsys/legendadupla/voz"
 SAIDA=$(mktemp -d)
 javac -encoding UTF-8 -d "$SAIDA" \
-  "$PASTA/ModeloSeparacao.java" "$PASTA/SeparadorVoz.java" "$PASTA/MixadorVoz.java" \
+  "$PASTA/ModeloSeparacao.java" "$PASTA/SeparadorVoz.java" "$PASTA/MixadorVoz.java" "$PASTA/Reamostrador.java" \
   "$RAIZ/tests/voz_java/TesteVoz.java"
 java -cp "$SAIDA" TesteVoz
 rm -rf "$SAIDA"

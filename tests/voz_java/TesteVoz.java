@@ -1,5 +1,6 @@
 import io.github.hcostamcsys.legendadupla.voz.MixadorVoz;
 import io.github.hcostamcsys.legendadupla.voz.ModeloSeparacao;
+import io.github.hcostamcsys.legendadupla.voz.Reamostrador;
 import io.github.hcostamcsys.legendadupla.voz.SeparadorVoz;
 
 import java.util.ArrayList;
@@ -238,7 +239,42 @@ public class TesteVoz {
         conferir(erro < 1e-5, "mistura com −20 dB: erro " + erro);
     }
 
+    static void testeReamostrador() {
+        // 1 s de seno de 1 kHz a 48 kHz → 44,1 kHz: mesma frequência, mesma amplitude, 44100 amostras.
+        int de = 48000, para = 44100;
+        Reamostrador r = new Reamostrador(de, para);
+        float[] x = new float[de];
+        for (int i = 0; i < de; i++) x[i] = (float) (0.5 * Math.sin(2 * Math.PI * 1000 * i / de));
+        float[] y = new float[para + 200];
+        int q = 0;
+        float[] buf = new float[4000];
+        for (int i = 0; i < de; i += 1000) {
+            int k = r.processar(x, i, Math.min(1000, de - i), buf);
+            System.arraycopy(buf, 0, y, q, k);
+            q += k;
+        }
+        int k = r.terminar(buf);
+        System.arraycopy(buf, 0, y, q, k);
+        q += k;
+        conferir(Math.abs(q - para) <= 1, "reamostrador: " + q + " amostras");
+        double erro = 0;
+        for (int i = 100; i < para - 100; i++) {
+            double esperado = 0.5 * Math.sin(2 * Math.PI * 1000 * i / (double) para);
+            erro = Math.max(erro, Math.abs(y[i] - esperado));
+        }
+        conferir(erro < 0.005, "reamostrador: erro " + erro);
+        // 20 kHz a 48 kHz (acima da metade de 44,1 kHz) tem de sumir, não virar outro som
+        Reamostrador r2 = new Reamostrador(de, para);
+        for (int i = 0; i < de; i++) x[i] = (float) (0.5 * Math.sin(2 * Math.PI * 23000 * i / de));
+        float[] y2 = new float[para + 200];
+        int q2 = r2.processar(x, 0, de, y2);
+        double pico = 0;
+        for (int i = 200; i < q2 - 200; i++) pico = Math.max(pico, Math.abs(y2[i]));
+        conferir(pico < 0.03, "reamostrador: 23 kHz deveria cair pelo menos 25 dB, sobrou " + pico); // faixa de transição do filtro
+    }
+
     public static void main(String[] a) throws Exception {
+        testeReamostrador();
         testeSeparadorExato();
         testeSeparadorPassagem();
         testeGanhos();

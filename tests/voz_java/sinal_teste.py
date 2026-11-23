@@ -75,8 +75,8 @@ def gerar(fala22, saida_fala, saida_mistura):
     mono = x[0]
     n = int(len(mono) * TAXA / taxa)
     fala = np.interp(np.arange(n) * taxa / TAXA, np.arange(len(mono)), mono)
-    # 1 s de silêncio antes e depois
-    fala = np.concatenate([np.zeros(TAXA), fala, np.zeros(TAXA)])
+    # 3 s só de música antes e depois da fala (ali o fundo não pode mudar)
+    fala = np.concatenate([np.zeros(3 * TAXA), fala, np.zeros(3 * TAXA)])
     fala = np.vstack([fala, fala])
     m = musica(fala.shape[1], np.random.default_rng(1))
     alvo_fala = -24.0
@@ -111,8 +111,10 @@ def avaliar(caminho_fala, caminho_mistura, caminho_voz, caminho_mix):
     ativo = env > 0.1 * np.max(env)
     sbr_antes = rms_db(fala[:, ativo]) - rms_db((mistura - fala)[:, ativo])
     sbr_depois = rms_db(fala[:, ativo]) - rms_db((mix - fala)[:, ativo])
-    # Onde não há fala, o fundo tem de continuar lá (não pode sumir)
-    calado = env < 1e-4 * np.max(env)
+    # Longe da fala (mais de 1,5 s de qualquer fala), o fundo tem de continuar como era
+    falando = np.flatnonzero(env > 1e-4 * np.max(env))
+    idx = np.arange(n)
+    calado = (idx < falando[0] - int(1.5 * TAXA)) | (idx > falando[-1] + int(1.5 * TAXA))
     fundo_antes = rms_db(mistura[:, calado])
     fundo_depois = rms_db(mix[:, calado])
     print(f'SDR da voz separada: {sdr_voz:.1f} dB (a mistura tinha {sdr_entrada:.1f} dB): melhora de {sdr_voz - sdr_entrada:.1f} dB')
