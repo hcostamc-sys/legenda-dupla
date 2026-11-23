@@ -115,12 +115,16 @@ import java.util.regex.Pattern;
  *      nova sobe 41 dp em 0,375 s na curva "fast out slow in", a partir do toque na aba (youtube.js);
  *    - o YouTube (tela inicial e player) no idioma do celular: o campo hl do cookie PREF passa a seguir o idioma
  *      do Android a cada abertura (antes ficava no idioma da primeira visita), e a primeira página leva ?hl=.
+ * 17) versão 17: troca de aba do YouTube corrigida (youtube.js). A 16 animava já no toque, mas o site só troca
+ *    a página 80 a 200 ms depois: a página ANTIGA descia e subia, com um quadro preto no começo, e a nova
+ *    entrava com a subida pela metade. Agora o toque só arma a troca e a subida (41 dp, 0,375 s, de 89% a
+ *    100%) começa no quadro em que a página nova aparece; até lá a antiga fica parada.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 16; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 17; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
