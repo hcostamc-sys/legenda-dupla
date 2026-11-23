@@ -123,12 +123,16 @@ import java.util.regex.Pattern;
  *    quadro depois, a foto do perfil 2 e as miniaturas ficavam cinza por 2 a 4 quadros, tudo no meio da
  *    subida. Agora ela espera invisível no ponto de partida (no máximo 120 ms) até as imagens à vista estarem
  *    carregadas e decodificadas e o YouTube passar um quadro sem pôr nada novo.
+ * 19) versão 24: "voz mais clara" (ServicoVoz): trata o áudio do vídeo no celular, em segundo plano (baixa o
+ *    áudio, separa a voz com um modelo de IA e abaixa o fundo só quando ele encobre a fala). A página manda os
+ *    pedidos (acao "voz..."), recebe o estado em window.ldVozEstado e toca o áudio tratado pelo endereço
+ *    ServicoVoz.PREFIXO (entregue aqui, com Range). O gancho v6 manda à página o relógio exato do vídeo.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 21; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 24; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -145,6 +149,8 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback fimTelaCheia;
     private String agenteUsuario = "";
     private final ExecutorService rede = Executors.newSingleThreadExecutor();
+    /** Pedidos da voz mais clara (rápidos, sem rede): fila própria, para não esperar o histórico do YouTube. */
+    private final ExecutorService vozExec = Executors.newSingleThreadExecutor();
     /** Pedido de download esperando a permissão de notificações (null: nenhum). */
     private String pedidoPendente;
     /** A página já mostrou "o Android não pergunta mais": o próximo toque abre as configurações. */
@@ -270,6 +276,7 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest pedido) {
                 String url = pedido.getUrl().toString();
                 if (url.startsWith(ServicoModelos.PREFIXO_LOCAL)) return ServicoModelos.responder(MainActivity.this, url);
+                if (url.startsWith(ServicoVoz.PREFIXO)) return ServicoVoz.responder(MainActivity.this, pedido);
                 if (url.contains("/api/timedtext")) {
                     runOnUiThread(() -> chamarPagina("ldNativoViu", url));
                 }
@@ -298,7 +305,9 @@ public class MainActivity extends Activity {
             ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(new ServiceWorkerClientCompat() {
                 @Override
                 public WebResourceResponse shouldInterceptRequest(WebResourceRequest pedido) {
-                    return ServicoModelos.responder(MainActivity.this, pedido.getUrl().toString());
+                    String url = pedido.getUrl().toString();
+                    if (url.startsWith(ServicoVoz.PREFIXO)) return ServicoVoz.responder(MainActivity.this, pedido);
+                    return ServicoModelos.responder(MainActivity.this, url);
                 }
             });
         }
@@ -307,6 +316,9 @@ public class MainActivity extends Activity {
 
         // Andamento do download dos pacotes: vai para a página.
         ServicoModelos.ouvinte = json -> runOnUiThread(() -> chamarPagina("ldModelosEstado", json));
+        // Voz mais clara: o estado vai para a página; trabalho que ficou pela metade continua.
+        ServicoVoz.ouvinte = json -> runOnUiThread(() -> chamarPagina("ldVozEstado", json));
+        vozExec.execute(() -> ServicoVoz.retomar(this));
 
         String versaoWebView = "?";
         PackageInfo pacote = WebViewCompat.getCurrentWebViewPackage(this);
@@ -921,6 +933,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         ServicoModelos.appVisivel = true;
+        ServicoVoz.appVisivel = true;
         appNaTela = true;
         // De volta ao app: confere a internet de novo e manda o estado atual à página (versão 14).
         if (conectividade != null) conferirInternet(true);
@@ -938,6 +951,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         ServicoModelos.appVisivel = false;
+        ServicoVoz.appVisivel = false;
         appNaTela = false;
         cancelarQuedaPendente();
         super.onPause();
@@ -1061,7 +1075,9 @@ public class MainActivity extends Activity {
             // nada
         }
         ServicoModelos.ouvinte = null;
+        ServicoVoz.ouvinte = null;
         rede.shutdownNow();
+        vozExec.shutdownNow();
         if (ytWeb != null) ytWeb.destroy();
         if (web != null) web.destroy();
         super.onDestroy();
@@ -1130,6 +1146,12 @@ public class MainActivity extends Activity {
             }
             if ("historico".equals(acao)) {
                 runOnUiThread(() -> registrarHistorico(o));
+                return;
+            }
+            if (acao.startsWith("voz")) {
+                // Voz mais clara: pede a permissão de notificações (o andamento aparece nelas), sem bloquear.
+                if (!"vozEstado".equals(acao) && !"vozMixar".equals(acao)) runOnUiThread(this::pedirNotificacaoUmaVez);
+                vozExec.execute(() -> ServicoVoz.pedido(this, o));
                 return;
             }
             if ("telaLigada".equals(o.optString("acao"))) {
@@ -1228,6 +1250,20 @@ public class MainActivity extends Activity {
                 && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS);
         avisouBloqueio = bloqueado;
         avisarPermissao(idDoPedido(pedido), "semPermissao", bloqueado);
+    }
+
+    /** Pergunta uma vez pela permissão de notificações (Android 13+). Sem ela o tratamento roda do mesmo jeito. */
+    private void pedirNotificacaoUmaVez() {
+        if (Build.VERSION.SDK_INT < 33 || notificacoesLiberadas()) return;
+        SharedPreferences pref = getSharedPreferences("ld", MODE_PRIVATE);
+        if (pref.getBoolean("notificacaoVozPedida", false)) return;
+        pref.edit().putBoolean("notificacaoVozPedida", true).apply();
+        if (pedidoPendente != null) return; // a pontuação já está perguntando
+        try {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, PEDIDO_NOTIFICACAO + 1);
+        } catch (Exception e) {
+            // nada
+        }
     }
 
     private void abrirConfiguracoesNotificacao() {

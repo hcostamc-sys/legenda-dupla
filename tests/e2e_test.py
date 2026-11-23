@@ -81,6 +81,42 @@ class Silencioso(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(corpo)
             return
+        # Como o app Android entrega o áudio tratado (ServicoVoz.responder): pedido com Range → 206. Sem isso
+        # o Chrome não consegue pular para outro ponto do áudio.
+        rng = self.headers.get('Range')
+        if rng and self.path.split('?')[0].endswith('.wav'):
+            import re as _re
+            caminho = self.translate_path(self.path.split('?')[0])
+            try:
+                with open(caminho, 'rb') as f:
+                    dados = f.read()
+            except OSError:
+                return super().do_GET()
+            m = _re.match(r'bytes=(\d*)-(\d*)', rng.strip())
+            tam = len(dados)
+            ini, fim = 0, tam - 1
+            if m and m.group(1):
+                ini = int(m.group(1))
+                if m.group(2):
+                    fim = min(tam - 1, int(m.group(2)))
+            elif m and m.group(2):
+                ini = max(0, tam - int(m.group(2)))
+            if ini >= tam:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{tam}')
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header('Content-Type', 'audio/wav')
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Content-Range', f'bytes {ini}-{fim}/{tam}')
+            self.send_header('Content-Length', str(fim - ini + 1))
+            self.end_headers()
+            try:
+                self.wfile.write(dados[ini:fim + 1])
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         return super().do_GET()
 
 
@@ -1242,6 +1278,7 @@ def t_app_novo(browser, base):
     assert 'falas' not in (page.locator('#toast').text_content() or '')  # sem aviso da quantidade de falas
     page.evaluate('window.ldMostrarBiblioteca()')
     expect(page.locator('#tela-biblioteca')).to_be_visible()
+    time.sleep(0.4)  # o painel de ajustes termina de descer (0,25 s)
     expect(page.locator('.item-bib')).to_have_count(2)
     # vídeo aberto pela lista: voltar volta para a lista, não para o YouTube
     n = len(msgs())
@@ -2115,6 +2152,136 @@ def t_ajustes_22_11_4(browser, base):
     ctx.close()
 
 
+def criar_wav_teste(caminho, segundos=90, taxa=8000):
+    """Áudio de teste (tom baixo) no lugar do áudio tratado pelo app: o Chrome toca WAV."""
+    import math
+    import struct
+    import wave
+    n = segundos * taxa
+    quadros = b''.join(struct.pack('<h', int(800 * math.sin(2 * math.pi * 440 * i / taxa))) for i in range(n))
+    with wave.open(caminho, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(taxa)
+        w.writeframes(quadros)
+
+
+@caso('21. Voz mais clara (APK 24): Ajustes, pedidos ao app, áudio tratado junto com o vídeo, anúncio, selo e apagar')
+def t_voz(browser, base, en, pt):
+    os.makedirs(CAPTURAS, exist_ok=True)
+    criar_wav_teste(os.path.join(CAPTURAS, 'voz-teste.wav'))
+    ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
+    ctx.add_init_script("window.__msgs = []; window.LDNativo = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };")
+    page = ctx.new_page()
+    erros = []
+    page.on('pageerror', lambda e: erros.append(str(e)))
+    # Um vídeo salvo (pelo site, com arquivos de legenda)
+    page.goto(base + '?mock=1')
+    page.fill('#campo-link', f'https://youtu.be/{ID}')
+    page.set_input_files('#arq-estudo', [en, pt])
+    page.click('#btn-abrir')
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    # Agora como app Android 24
+    page.goto(base + '?mock=1&app=android&apk=24&mockVozArquivo=/tests/capturas/voz-teste.wav')
+    msgs = lambda acao: [m for m in page.evaluate('window.__msgs') if m.get('acao') == acao]
+    esperar(lambda: msgs('vozEstado'), msg='pediu o estado da voz ao app')
+    page.evaluate(f"window.ldAbrirDoYoutube('https://m.youtube.com/watch?v={ID}')")
+    expect(page.locator('#tela-assistir')).to_be_visible()
+    esperar(lambda: estado(page) == 1, msg='vídeo tocando')
+
+    def estado_app(**kw):
+        page.evaluate('(e) => window.ldVozEstado(JSON.stringify(e))', {
+            'modelo': kw.get('modelo', {'estado': 'ausente'}), 'videos': kw.get('videos', {}), 'fila': [],
+            'usado': kw.get('usado', 0), 'livre': 5_000_000_000, 'segPorSeg': kw.get('segPorSeg', 0)})
+
+    estado_app()
+    page.click('#btn-ajustes')
+    expect(page.locator('#grupo-voz')).to_be_visible()
+    expect(page.locator('#voz-video .pm-texto')).to_contain_text('Leva mais ou menos o tempo do vídeo')
+    expect(page.locator('#voz-tratar')).to_be_visible()
+    expect(page.locator('#linha-voz-margem .chip.confirmada')).to_have_text('Médio')
+    page.locator('#grupo-voz').screenshot(path=os.path.join(CAPTURAS, 'android-voz-ajustes.png'))
+    # Tratar: o modelo ainda não está no celular → pergunta antes de baixar 316 MB
+    page.click('#voz-tratar')
+    expect(page.locator('#dialogo')).to_be_visible()
+    expect(page.locator('#dialogo-texto')).to_contain_text('316 MB')
+    page.click('#dialogo-ok')
+    esperar(lambda: msgs('vozTratar'), msg='pediu para tratar')
+    pedido = msgs('vozTratar')[-1]
+    assert pedido['id'] == ID and pedido['margem'] == 12, pedido
+    # Modelo baixando, vídeo na fila
+    estado_app(modelo={'estado': 'baixando', 'feitos': 158_000_000, 'total': 316_446_953},
+               videos={ID: {'estado': 'fila', 'titulo': 'Teste', 'progresso': 0}})
+    expect(page.locator('#voz-video .pm-texto')).to_have_text('Esperando o download do modelo de voz.')
+    expect(page.locator('#voz-modelo .pm-texto')).to_contain_text('Baixando… 158 de 316 MB')
+    expect(page.locator('#voz-cancelar')).to_be_visible()
+    # Separando
+    estado_app(modelo={'estado': 'pronto'}, videos={ID: {'estado': 'separando', 'titulo': 'Teste', 'progresso': 0.456, 'restante': 600}})
+    expect(page.locator('#voz-video .pm-texto')).to_have_text('Separando a voz do fundo… 45%, faltam cerca de 10 min')
+    expect(page.locator('#voz-video .pm-barra')).to_be_visible()
+    expect(page.locator('#dialogo')).to_be_hidden()
+    time.sleep(0.3)
+    page.locator('#grupo-voz').screenshot(path=os.path.join(CAPTURAS, 'android-voz-tratando.png'))
+    # Pronto: aviso, áudio tratado tocando junto com o vídeo, vídeo sem som
+    page.click('#btn-fechar-ajustes')
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando de novo')
+    pronto = {ID: {'estado': 'pronto', 'titulo': 'Teste', 'progresso': 1, 'margem': 12, 'arquivo': 'mix-12.m4a', 'bytes': 30_000_000}}
+    estado_app(modelo={'estado': 'pronto'}, videos=pronto, usado=30_000_000)
+    expect(page.locator('#toast')).to_contain_text('Áudio tratado pronto: voz mais clara ligada.')
+    audio = lambda: page.evaluate("""() => { const a = document.querySelector('#audio-voz'); const p = window.__ld.S.player;
+      return { src: a ? a.getAttribute('src') || '' : '', pausado: a ? a.paused : true, t: a ? a.currentTime : -1,
+               v: p ? p.tempo() : -1, mudo: p ? p.estaMudo() : false }; }""")
+    esperar(lambda: audio()['src'].endswith('voz-teste.wav'), msg='áudio tratado carregado')
+    esperar(lambda: audio()['mudo'], msg='vídeo sem som')
+    esperar(lambda: not audio()['pausado'] and abs(audio()['t'] - audio()['v']) < 0.15, limite=6, msg='áudio junto com o vídeo')
+    # Pausar o vídeo pausa o áudio
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 2 and audio()['pausado'], msg='pausou o áudio')
+    # Pular no vídeo: o áudio vai junto
+    page.evaluate('window.__ld.S.player.irPara(40)')
+    page.click('#btn-play')
+    esperar(lambda: not audio()['pausado'] and abs(audio()['t'] - audio()['v']) < 0.15 and audio()['v'] > 39, limite=6, msg='pulo')
+    # Anúncio: o som do vídeo volta e o áudio tratado para; depois do anúncio, volta o tratado
+    page.evaluate('window.__ld.S.anuncio.ativo = true')
+    esperar(lambda: audio()['pausado'] and not audio()['mudo'], msg='anúncio')
+    page.evaluate('window.__ld.S.anuncio.ativo = false')
+    esperar(lambda: not audio()['pausado'] and audio()['mudo'], msg='depois do anúncio')
+    # Desligar o áudio tratado neste vídeo (fica salvo no vídeo)
+    page.click('#btn-ajustes')
+    expect(page.locator('#voz-video .pm-estado')).to_have_text('Ligado')
+    page.uncheck('#voz-usar')
+    esperar(lambda: audio()['src'] == '' and not audio()['mudo'], msg='desligou: som original')
+    expect(page.locator('#voz-video .pm-estado')).to_have_text('Desligado')
+    page.check('#voz-usar')
+    # Quanto abaixar o fundo: vale para todos e refaz a mixagem deste vídeo
+    page.click('#linha-voz-margem .chip:has-text("Muito")')
+    esperar(lambda: msgs('vozMixar'), msg='pediu a mixagem nova')
+    assert msgs('vozMixar')[-1]['margem'] == 16
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).vozMargem") == 16
+    expect(page.locator('#voz-espaco')).to_contain_text('Áudios tratados: 1 vídeo, 30 MB')
+    page.locator('#grupo-voz').screenshot(path=os.path.join(CAPTURAS, 'android-voz-pronto.png'))
+    page.click('#btn-fechar-ajustes')
+    esperar(lambda: audio()['mudo'] and audio()['src'].endswith('voz-teste.wav'), msg='ligado de novo')
+    # Sair do vídeo: o áudio tratado para; Meus vídeos mostra o selo
+    page.evaluate('window.ldMostrarBiblioteca()')
+    expect(page.locator('#tela-biblioteca')).to_be_visible()
+    time.sleep(0.4)  # o painel de ajustes termina de descer (0,25 s)
+    esperar(lambda: audio()['src'] == '', msg='parou o áudio ao sair')
+    expect(page.locator(f'#lista-biblioteca [data-id="{ID}"] .selo-voz')).to_have_text('Voz clara')
+    estado_app(modelo={'estado': 'pronto'}, videos={ID: {'estado': 'separando', 'progresso': 0.3}})
+    expect(page.locator(f'#lista-biblioteca [data-id="{ID}"] .selo-voz')).to_have_text('Tratando 30%')
+    page.screenshot(path=os.path.join(CAPTURAS, 'android-voz-meus-videos.png'))
+    # Apagar o vídeo apaga o áudio tratado dele
+    page.click(f'#lista-biblioteca [data-id="{ID}"] .menu-item .btn-topo')
+    page.click('.menu-item-opcoes button:has-text("Apagar")')
+    page.click('#dialogo-ok')
+    esperar(lambda: msgs('vozApagar'), msg='apagou o áudio tratado junto')
+    assert msgs('vozApagar')[-1]['id'] == ID
+    assert not erros, erros
+    ctx.close()
+
+
 def main():
     srv, porta = subir_servidor()
     base = f'http://localhost:{porta}/'
@@ -2166,6 +2333,7 @@ def main():
         t_permissao_erros(browser, base)
         t_ajustes_22_11_3(browser, base, en, pt)
         t_ajustes_22_11_4(browser, base)
+        t_voz(browser, base, en, pt)
         browser.close()
     srv.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)

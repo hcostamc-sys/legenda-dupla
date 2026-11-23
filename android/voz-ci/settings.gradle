@@ -1,0 +1,9 @@
+// Prova da "voz mais clara" no GitHub Actions (sem Android): roda o modelo de verdade num áudio de teste e
+// testa o download do áudio do YouTube com o NewPipe Extractor. Usa os mesmos arquivos Java do app.
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+rootProject.name = 'voz-ci'

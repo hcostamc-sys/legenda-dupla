@@ -1,0 +1,88 @@
+# Prova da "voz mais clara" (sem Android): roda o modelo de separação de voz de verdade num áudio de teste
+# (fala sintetizada + música mais alta que ela) e confere a melhora; testa o download do áudio do YouTube
+# com o NewPipe Extractor. O ambiente do Claude Code não acessa o Hugging Face nem o YouTube; o GitHub sim.
+name: Voz mais clara (prova)
+
+on:
+  push:
+    branches: ['voz-*']
+    paths:
+      - 'android/app/src/main/java/io/github/hcostamcsys/legendadupla/voz/**'
+      - 'android/voz-ci/**'
+      - 'tests/voz_java/**'
+      - '.github/workflows/voz-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Testes do núcleo (sem modelo)
+        run: sh tests/voz_java/rodar.sh
+
+      - name: Compilar a prova
+        run: gradle -p android/voz-ci installDist --no-daemon --stacktrace
+
+      - name: Modelo no Hugging Face (versão e tamanho)
+        run: |
+          curl -sS https://huggingface.co/api/models/StemSplitio/htdemucs-ft-vocals-onnx?blobs=true \
+            | python3 -c "import json,sys; j=json.load(sys.stdin); print('sha', j.get('sha')); [print(s['rfilename'], s.get('size'), (s.get('lfs') or {}).get('sha256')) for s in j.get('siblings', [])]"
+
+      - name: Guardar o modelo entre execuções
+        uses: actions/cache@v4
+        with:
+          path: modelo
+          key: htdemucs-ft-vocals-onnx-v1
+
+      - name: Baixar o modelo
+        run: |
+          mkdir -p modelo
+          if [ ! -s modelo/htdemucs_ft_vocals.onnx ]; then
+            curl -sSL --retry 3 -o modelo/htdemucs_ft_vocals.onnx \
+              https://huggingface.co/StemSplitio/htdemucs-ft-vocals-onnx/resolve/2ef0d757d3e226d0da85fb8c71514f464fcabdd0/htdemucs_ft_vocals.onnx
+          fi
+          ls -l modelo; sha256sum modelo/htdemucs_ft_vocals.onnx
+
+      - name: Áudio de teste (fala do espeak-ng + música sintetizada)
+        run: |
+          sudo apt-get install -y -qq espeak-ng >/dev/null
+          pip install --quiet numpy
+          espeak-ng -v en-us -s 150 -w fala22.wav "Hello, and welcome to this short test. Today we are going to talk about electric motors and how a frequency inverter controls their speed. First, the inverter rectifies the alternating current into direct current. Then it switches transistors very fast to build a new alternating voltage. By changing the frequency, it changes the speed of the motor. Remember: always wait for the capacitors to discharge before opening the panel. Thank you for watching, and see you next time."
+          python3 tests/voz_java/sinal_teste.py gerar fala22.wav fala.wav mistura.wav
+
+      - name: Separar e mixar com o modelo de verdade
+        run: |
+          android/voz-ci/build/install/voz-ci/bin/voz-ci modelo modelo/htdemucs_ft_vocals.onnx mistura.wav voz.wav mix.wav 12
+
+      - name: Avaliar
+        run: python3 tests/voz_java/sinal_teste.py avaliar fala.wav mistura.wav voz.wav mix.wav
+
+      - name: YouTube (NewPipe Extractor) — só informativo
+        if: always()
+        continue-on-error: true
+        run: |
+          android/voz-ci/build/install/voz-ci/bin/voz-ci youtube jNQXAC9IVRw baixar
+          android/voz-ci/build/install/voz-ci/bin/voz-ci youtube arj7oStGLkU
+
+      - name: Guardar os áudios (para ouvir)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audios-voz
+          path: |
+            mistura.wav
+            voz.wav
+            mix.wav
+          if-no-files-found: ignore

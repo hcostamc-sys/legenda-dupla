@@ -1,0 +1,37 @@
+plugins {
+    id 'application'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src', '../app/src/main/java']
+            // Só as classes Java puras da voz (o resto do app depende do Android)
+            include 'ci/**'
+            include 'io/github/hcostamcsys/legendadupla/voz/ModeloSeparacao.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/ModeloOnnx.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/SeparadorVoz.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/MixadorVoz.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/BaixadorHttp.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/ObterAudio.java'
+        }
+    }
+}
+
+dependencies {
+    // Mesmas versões do app (android/app/build.gradle)
+    implementation 'com.microsoft.onnxruntime:onnxruntime:1.20.0'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.27.1'
+}
+
+application {
+    mainClass = 'ci.ProvaVoz'
+    applicationDefaultJvmArgs = ['-Xmx4g', '-Dfile.encoding=UTF-8']
+}

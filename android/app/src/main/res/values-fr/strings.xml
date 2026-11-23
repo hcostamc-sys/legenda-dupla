@@ -15,4 +15,17 @@
     <string name="modelos_pronto_texto">Touchez pour ouvrir l\'app et terminer l\'installation.</string>
     <string name="modelos_falhou">Échec du téléchargement</string>
     <string name="modelos_falhou_texto">Touchez pour ouvrir l\'app et réessayer.</string>
+    <!-- Voz mais clara (notificações, versão 24) -->
+    <string name="canal_voz">Voix plus claire</string>
+    <string name="voz_preparando">Préparation…</string>
+    <string name="voz_baixando_modelo">Téléchargement du modèle de voix</string>
+    <string name="voz_tratando">Traitement de l’audio : %1$s</string>
+    <string name="voz_tratando_sem_titulo">Traitement de l’audio</string>
+    <string name="voz_remixando">Réglage du volume du fond</string>
+    <string name="voz_progresso">%1$d %% · environ %2$d min restantes</string>
+    <string name="voz_pronto">Audio traité prêt : %1$s</string>
+    <string name="voz_pronto_texto">Touchez pour regarder.</string>
+    <string name="voz_falhou">Impossible de traiter l’audio : %1$s</string>
+    <string name="voz_falhou_texto">Touchez pour ouvrir l’app et voir pourquoi.</string>
+    <string name="voz_modelo_falhou">Échec du téléchargement du modèle de voix</string>
 </resources>

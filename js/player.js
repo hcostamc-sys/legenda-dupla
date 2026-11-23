@@ -8,7 +8,7 @@
 //
 // Legendas do próprio YouTube (só no app Android, PLANO.md 15.10):
 // manterLegendas(sim) faixasLegenda() pedirLegenda(faixa) esconderLegendas()
-// silenciar(sim) pularAnuncio() retangulo()
+// silenciar(sim) estaMudo() pularAnuncio() retangulo()
 // revelar(): mostra a imagem do player na hora (anúncio, por exemplo); ver carregar().
 
 class Emissor {
@@ -134,7 +134,14 @@ export class PlayerYouTube extends Emissor {
 
   /** Tira ou devolve o som (o vídeo toca sem som enquanto a legenda carrega). */
   silenciar(sim) {
+    this._mudo = !!sim;
     try { if (sim) this.yt?.mute(); else this.yt?.unMute(); } catch { /* nada */ }
+  }
+
+  /** O app pediu o vídeo sem som? (voz mais clara: o som vem do áudio tratado) */
+  estaMudo() {
+    try { if (this.yt?.isMuted) return !!this.yt.isMuted(); } catch { /* nada */ }
+    return !!this._mudo;
   }
 
   _paraGancho(msg) {
@@ -509,6 +516,7 @@ export class PlayerFalso extends Emissor {
   }
 
   silenciar(sim) { this.mudo = !!sim; }
+  estaMudo() { return !!this.mudo; }
 
   /** ?mockAnuncio=1 pula; ?mockAnuncio=teimoso ignora o clique por código (precisa do toque do app). */
   pularAnuncio() {

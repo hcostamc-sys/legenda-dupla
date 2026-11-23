@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // NewPipe Extractor (voz mais clara, versão 24) só é publicado pelo JitPack
+        maven { url 'https://jitpack.io' }
     }
 }
 rootProject.name = 'LegendaDupla'

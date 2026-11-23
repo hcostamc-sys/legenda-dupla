@@ -15,4 +15,17 @@
     <string name="modelos_pronto_texto">Toca para abrir la app y terminar la instalación.</string>
     <string name="modelos_falhou">La descarga falló</string>
     <string name="modelos_falhou_texto">Toca para abrir la app e intentarlo de nuevo.</string>
+    <!-- Voz mais clara (notificações, versão 24) -->
+    <string name="canal_voz">Voz más clara</string>
+    <string name="voz_preparando">Preparando…</string>
+    <string name="voz_baixando_modelo">Descargando el modelo de voz</string>
+    <string name="voz_tratando">Procesando el audio: %1$s</string>
+    <string name="voz_tratando_sem_titulo">Procesando el audio</string>
+    <string name="voz_remixando">Ajustando el volumen del fondo</string>
+    <string name="voz_progresso">%1$d%% · faltan unos %2$d min</string>
+    <string name="voz_pronto">Audio procesado listo: %1$s</string>
+    <string name="voz_pronto_texto">Toca para verlo.</string>
+    <string name="voz_falhou">No se pudo procesar el audio: %1$s</string>
+    <string name="voz_falhou_texto">Toca para abrir la app y ver el motivo.</string>
+    <string name="voz_modelo_falhou">Falló la descarga del modelo de voz</string>
 </resources>

@@ -19,6 +19,7 @@ import { criarPlayer, MSG_API } from './player.js';
 import { lerTimedText, infoUrl, faixaSugerida } from './timedtext.js';
 import { urlBusca, misturarFiltros, OPCOES_FILTROS } from './busca.js';
 import { ligarGestos } from './gestos.js';
+import { criarVoz } from './voz.js';
 import {
   carregarAjustes, salvarAjustes, salvarVideo, AJUSTES_PADRAO, obterVideo, listarVideos,
   apagarVideo, montarBackup, importarBackup, estaSoNaMemoria,
@@ -134,6 +135,27 @@ const S = {
   // anúncio do YouTube (avisado pelo gancho do app Android)
   anuncio: { ativo: false, pulavel: false, x: 0, y: 0, w: 0, h: 0 },
 };
+
+// Voz mais clara (app Android, versão 24): áudio tratado no celular tocando junto com o vídeo (js/voz.js).
+const PARAMS_VOZ = new URLSearchParams(location.search);
+const voz = criarVoz({
+  disponivel: () => (ANDROID && APK >= 24 && !!window.LDNativo) || (MOCK && PARAMS_VOZ.get('mockVoz') === '1'),
+  ajustes: () => S.ajustes,
+  salvar: () => salvar(),
+  player: () => S.player,
+  registro: () => S.registro,
+  salvarRegistro: (reg) => salvarVideo(reg),
+  anuncio: () => S.anuncio.ativo,
+  carregando: () => !!(S.yt.preparando || S.yt.fase),
+  velocidade: () => S.velConfirmada || 1,
+  mandar: (msg) => mandarAoApp(msg),
+  toast: (msg, ms) => toast(msg, ms),
+  dialogo: (op) => dialogo(op),
+  naTelaDoVideo: () => !$('#tela-assistir').hidden,
+  // Testes (?mock=1&mockVozArquivo=...): um arquivo de áudio qualquer no lugar do entregue pelo app.
+  urlArquivo: (id, arquivo) => (MOCK && PARAMS_VOZ.get('mockVozArquivo')) || new URL(`./__ld_voz/${id}/${arquivo}`, location.href).href,
+  diag: (texto) => diag(texto),
+});
 
 /**
  * fase: null | 'procurando' (vídeo toca sem som até o player informar as legendas) | 'escolhendo' |
@@ -653,6 +675,12 @@ async function renderBiblioteca() {
     let data = '';
     try { data = new Date(v.abertoEm).toLocaleDateString('pt-BR'); } catch { /* nada */ }
     detalhe.textContent = `parou em ${formatarTempo(v.posicao || 0)}${data ? ' · ' + data : ''}`;
+    // Voz mais clara: "Voz clara", "Tratando 45%" ou "Na fila" (atualizado quando o app manda o estado)
+    const seloVoz = document.createElement('span');
+    seloVoz.className = 'selo-voz';
+    seloVoz.textContent = voz.selo(v.id);
+    seloVoz.hidden = !seloVoz.textContent;
+    detalhe.appendChild(seloVoz);
     textos.append(titulo, detalhe);
     abrir.append(img, textos);
     abrir.addEventListener('click', async () => {
@@ -719,6 +747,7 @@ async function apagar(v) {
   const r = await dialogo({ texto: `Apagar “${v.titulo || 'Vídeo ' + v.id}” da biblioteca?`, ok: 'Apagar' });
   if (!r.ok) return;
   await apagarVideo(v.id);
+  if (voz.estado()?.videos?.[v.id]) voz.aoApagarVideo(v.id); // o áudio tratado dele também
   renderBiblioteca();
   toast('Vídeo apagado.');
 }
@@ -1063,6 +1092,7 @@ function mostrarPreparandoVideo(sim) {
 }
 
 function encerrarPlayer() {
+  voz.desligar();
   pararAceleracao();
   mostrarPreparandoVideo(false);
   salvarPosicao();
@@ -2161,6 +2191,9 @@ async function baixarPacoteNativo(id) {
   if (!ok) { S.download = { id, erro: 'O app não respondeu.' }; renderPacotes(); }
 }
 
+/** O app Android chama esta função com o estado da voz mais clara (ServicoVoz.estadoPublico). */
+window.ldVozEstado = (texto) => voz.aoEstado(texto);
+
 /** O app Android chama esta função com o estado do download: { id, estado, feitos, total, erro, arquivos }. */
 window.ldModelosEstado = (texto) => {
   let e;
@@ -2746,6 +2779,7 @@ function tique() {
     salvarPosicao();
     if (!S.anuncio.ativo) avisarHistorico('progresso');
   }
+  voz.tique();
 }
 
 /** Vai para o início de uma unidade, um pouco antes, dentro do silêncio que a separa da anterior. */
@@ -3749,6 +3783,7 @@ function sincronizarPainel() {
   montarLegendaAjustes();
   $('#grupo-pontuacao').hidden = !pontuacaoSuportada();
   renderPacotes();
+  voz.renderAjustes();
   if (reg) {
     for (const bloco of $$('.ajuste-sinc')) {
       const alvo = bloco.dataset.alvo;
@@ -4232,6 +4267,11 @@ function ligarEventos() {
   window.addEventListener('message', aoReceberAnuncio);
   window.addEventListener('message', aoReceberDoGancho);
   window.addEventListener('message', aoReceberVelocidade);
+  // Voz mais clara: relógio exato do vídeo, mandado pelo gancho (v6) de dentro do player
+  window.addEventListener('message', (ev) => {
+    if (ANDROID && ev.data && ev.data.ldTempo === true && deQuadroDoPlayer(ev)) voz.aoRelogio(ev.data);
+  });
+  voz.ligarEventos();
   $('#carregando-diag').addEventListener('click', copiarDiagnostico);
   $('#btn-pular').addEventListener('click', pularAnuncio);
   $('#carregando-pular').addEventListener('click', pularAnuncio);
@@ -4338,6 +4378,7 @@ function ligarEventos() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       soltarAceleracao(); // saiu do app segurando o dedo no vídeo: volta à velocidade normal
+      voz.desligar(); // o laço para: o áudio tratado também (volta ao tocar no app de novo)
       salvarPosicao();
       cancelAnimationFrame(S.raf);
       S.raf = 0;
@@ -4364,6 +4405,7 @@ async function iniciar() {
   mostrarBiblioteca();
   atualizarEstadoPacotes(); // sem esperar: só olha o cache do aparelho
   if (downloadNativo()) mandarAoApp({ acao: 'estadoModelos' }); // download do app em andamento ou terminado
+  voz.pedirEstado(); // voz mais clara: o que o app já tratou ou está tratando
   await renderBiblioteca();
   if (await estaSoNaMemoria()) $('#aviso-memoria').hidden = false;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
