@@ -112,3 +112,53 @@ test('outros idiomas: pontos, vírgulas e maiúsculas (sem regras de pergunta)',
   const out = processar({ estudo: { falas: r.falas, arquivo: '[French (auto-generated)] x', idioma: 'fr' } }, {});
   assert.equal(out.unidades.map((u) => u.texto).join(' '), 'Bonjour à tous. Aujourd’hui on parle de musique.');
 });
+
+// ---- Versão 23: pontuação melhorada sem o tempo de cada palavra ----
+import { palavrasParaPontuar } from '../js/legendas.js';
+
+/** Legenda automática em pedaços contíguos de ~2 s, SEM tempo por palavra (como no print de 23/11/2026). */
+function automaticaSemPalavras() {
+  const textos = ['at stroke stroke', 'no trifle you to try no', 'no but let let go once', 'in a while you are a loose', 'lily floating down'];
+  return textos.map((t, i) => ({ s: i * 2, e: i * 2 + 2, t }));
+}
+
+test('v23: legenda automática sem tempo por palavra vai para o modelo', () => {
+  const estudo = { falas: automaticaSemPalavras(), arquivo: '[English (auto-generated)] Black Books', idioma: 'en' };
+  assert.equal(temTempoDePalavra(estudo.falas), false);
+  const info = palavrasParaPontuar({ estudo }, { esconderMarcacoes: true });
+  assert.ok(info, 'antes da v23 voltava null e o modelo nunca rodava');
+  assert.equal(info.palavras.length, 25);
+});
+
+test('v23: resultado do modelo é aplicado mesmo sem tempo por palavra', () => {
+  const estudo = { falas: automaticaSemPalavras(), arquivo: '[English (auto-generated)] Black Books', idioma: 'en' };
+  const info = palavrasParaPontuar({ estudo }, { esconderMarcacoes: true });
+  // Simula a saída do modelo: maiúscula no começo e ponto no fim de cada fala.
+  const saida = info.palavras.slice();
+  saida[0] = 'At';
+  saida[saida.length - 1] = 'down.';
+  saida[2] = 'stroke.';
+  saida[3] = 'No';
+  estudo.pontuacaoModelo = { pacote: 'en', conferencia: info.conferencia, palavras: saida };
+  const r = processar({ estudo }, { modoFrases: 'auto', esconderMarcacoes: true });
+  assert.equal(r.pontuadaModelo, true);
+  const texto = r.unidades.map((u) => u.texto).join(' ');
+  assert.match(texto, /^At stroke stroke\. No trifle/);
+  assert.match(texto, /down\.$/);
+  // Desligado nos Ajustes: volta ao texto sem pontuação.
+  const sem = processar({ estudo }, { modoFrases: 'auto', esconderMarcacoes: true, usarModelo: false });
+  assert.equal(sem.pontuadaModelo, false);
+  assert.equal(sem.pontuada, false);
+});
+
+test('v23: com tempo por palavra, o modelo continua tendo prioridade sobre as pausas', () => {
+  const r = lerTimedText(json3([fala('so what do you think 0.8 i think it is fine')]));
+  const estudo = { falas: r.falas, arquivo: '[English (auto-generated)] teste', idioma: 'en' };
+  const info = palavrasParaPontuar({ estudo }, { esconderMarcacoes: true });
+  assert.ok(info);
+  const saida = ['So,', 'what', 'do', 'you', 'think?', 'I', 'think', 'it', 'is', 'fine.'];
+  estudo.pontuacaoModelo = { pacote: 'en', conferencia: info.conferencia, palavras: saida };
+  const out = processar({ estudo }, { modoFrases: 'auto', esconderMarcacoes: true });
+  assert.equal(out.pontuadaModelo, true);
+  assert.equal(out.unidades.map((u) => u.texto).join(' '), 'So, what do you think? I think it is fine.');
+});

@@ -1033,10 +1033,9 @@ export function montarFrasesInteiras(falas, opcoes = {}) {
   // 1) sequência de palavras e de limites (marcação de som, troca de quem fala: ">>")
   const itens = itensDasFalas(falas);
   opcoes.usouModelo = false;
-  if (opcoes.pontuar) {
-    if (opcoes.modelo && aplicarPontuacaoModelo(itens, opcoes.modelo)) opcoes.usouModelo = true;
-    else pontuarItens(itens, opcoes.idioma);
-  }
+  // Modelo primeiro (não depende do tempo de cada palavra); sem ele, as pausas (dependem).
+  if (opcoes.modelo && aplicarPontuacaoModelo(itens, opcoes.modelo)) opcoes.usouModelo = true;
+  else if (opcoes.pontuar) pontuarItens(itens, opcoes.idioma);
 
   // 2) frases
   const unidades = [];
@@ -1253,11 +1252,16 @@ export function processar(entrada, opcoes = {}) {
     // Pareia a tradução com a frase inteira e só depois quebra as duas no padrão de filme:
     // assim cada pedaço da tradução corresponde ao pedaço da frase original.
     // Legenda automática com o tempo de cada palavra e sem pontuação: o app pontua pelas pausas.
-    const pontuar = automatica && opcoes.pontuarAuto !== false && temTempoDePalavra(estudo) && !legendaPontuada(estudo);
-    const op = { pontuar, idioma: entrada.estudo?.idioma || '', modelo: opcoes.usarModelo === false ? null : entrada.estudo?.pontuacaoModelo };
+    // Versão 23: a pontuação melhorada (modelo) só precisa do texto. Ela vale também para a legenda
+    // automática que chega SEM o tempo de cada palavra (o player pode baixar a legenda assim, por
+    // exemplo sem conta Google conectada); nesse caso só a pontuação pelas pausas fica de fora.
+    const semPontuacao = automatica && !legendaPontuada(estudo);
+    const pontuar = semPontuacao && opcoes.pontuarAuto !== false && temTempoDePalavra(estudo);
+    const modelo = semPontuacao && opcoes.usarModelo !== false ? entrada.estudo?.pontuacaoModelo || null : null;
+    const op = { pontuar, idioma: entrada.estudo?.idioma || '', modelo };
     const inteiras = montarFrasesInteiras(estudo, op);
-    pontuada = pontuar;
     pontuadaModelo = op.usouModelo;
+    pontuada = pontuar || pontuadaModelo;
     if (trad.length) parearPorPalavra(inteiras, trad);
     const ritmo = temTempoDePalavra(estudo) ? ritmoDaFala(inteiras.filter((f) => f.ps).map((f) => f.ps)) : null;
     unidades = quebrarFrases(inteiras, { ritmo });
@@ -1276,14 +1280,15 @@ export function processar(entrada, opcoes = {}) {
 
 /**
  * Palavras que vão para o modelo de pontuação, na ordem em que processar() as usa.
- * Devolve null quando o modelo não se aplica (legenda feita por pessoa, já pontuada ou sem tempo por palavra).
+ * Devolve null quando o modelo não se aplica (legenda feita por pessoa ou já pontuada).
+ * Versão 23: não exige mais o tempo de cada palavra (o modelo só lê o texto).
  */
 export function palavrasParaPontuar(entrada, opcoes = {}) {
   const brutas = entrada.estudo?.falas || [];
   if (!ehAutomatica(brutas, entrada.estudo?.arquivo || '')) return null;
   let estudo = tirarTagsFalas(brutas);
   if (opcoes.esconderMarcacoes) estudo = esconderMarcacoes(estudo);
-  if (!temTempoDePalavra(estudo) || legendaPontuada(estudo)) return null;
+  if (legendaPontuada(estudo)) return null;
   const palavras = itensDasFalas(estudo).filter((it) => it.p).map((it) => it.p.w);
   return palavras.length ? { palavras, conferencia: conferenciaPalavras(palavras) } : null;
 }

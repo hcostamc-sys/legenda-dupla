@@ -1898,7 +1898,10 @@ function aoReceberLegenda(ev) {
   if (!r.falas?.length) { diag(`legenda ${nome} veio sem falas: ${r.erro || '?'} (${String(d.texto || '').length} letras, ${d.via || '?'})`); return; }
   const cap = { idioma: info.idioma, automatica: info.automatica, falas: r.falas };
   S.yt.capturas.set(chaveFaixa(info.idioma, info.automatica), cap);
-  diag(`legenda capturada: ${info.idioma}${info.automatica ? '/asr' : ''}, ${r.falas.length} falas (${d.via || '?'})`);
+  // Formato pedido pelo player (fmt) e quantas falas trazem o tempo de cada palavra: sem ele, a
+  // legenda automática não ganha a pontuação pelas pausas (só a melhorada, que lê o texto).
+  const comPalavras = r.falas.filter((x) => x.ps?.length).length;
+  diag(`legenda capturada: ${info.idioma}${info.automatica ? '/asr' : ''}, ${r.falas.length} falas, ${r.formato}${info.formato ? ` (fmt=${info.formato})` : ''}, tempo por palavra em ${comPalavras} (${d.via || '?'})`);
   const f = S.yt.faixa;
   if (S.yt.estado === 'pegando' && f && f.languageCode === info.idioma && (f.kind === 'asr') === info.automatica) {
     aplicarLegendaYoutube(cap);

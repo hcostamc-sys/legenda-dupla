@@ -70,6 +70,7 @@ A pontuação pelas pausas é uma aproximação. Para algo bem mais certo, o app
 - Com o pacote instalado, o vídeo novo mostra “Pontuando a legenda…” por alguns segundos antes de começar (há o botão **Usar a pontuação simples** para pular). Vídeos já salvos são pontuados ao abrir. Embaixo da legenda aparece “Pontuação melhorada (modelo no celular)”.
 - Modelos: “punctuation_fullstop_truecase” (english e romance), do autor 1-800-BAD-CODE no Hugging Face, licença Apache 2.0. Motor: onnxruntime-web (Microsoft, licença MIT), em `vendor/ort/`.
 - Também erra às vezes (principalmente vírgulas), mas entende o sentido da frase, o que as pausas não fazem.
+- Versão 23: vale também quando a legenda automática chega **sem o tempo de cada palavra** (o player do YouTube às vezes a entrega assim). Antes, nesse caso, nenhuma pontuação era feita e aparecia só “Frases montadas pelo app”; agora o modelo pontua (o texto só precisa das palavras). Sem o pacote, essa legenda continua sem pontuação, porque a pontuação simples depende das pausas entre as palavras. O diagnóstico mostra, em “legenda capturada”, o formato e em quantas falas veio o tempo de cada palavra.
 
 ### Passar a biblioteca para outro aparelho
 
