@@ -13,10 +13,13 @@
 //    ícone de pausa no meio, sugestões de vídeos. O app tem os próprios botões, tempo e barra.
 // 7) Velocidade exata (0,95×, 0,90×...): a API do iframe só aceita a lista do YouTube (0,25× em 0,25×).
 //    Aqui a velocidade vai direto no vídeo, e volta se o YouTube a trocar (menos durante anúncio).
+// 8) Relógio do vídeo (v6, voz mais clara): manda à página o tempo exato do vídeo várias vezes por segundo,
+//    com o instante da leitura (performance.timeOrigin + performance.now(), o mesmo relógio da página),
+//    para o áudio tratado tocar junto. A API do iframe só informa o tempo de vez em quando.
 (function () {
   if (window.__ldGancho) return;
   window.__ldGancho = true;
-  var VERSAO = 5; // 3: ao vivo; 4: idioma do áudio original e player sem os enfeites do YouTube; 5: velocidade exata
+  var VERSAO = 6; // 3: ao vivo; 4: idioma do áudio original e player sem os enfeites do YouTube; 5: velocidade exata; 6: relógio
   var noPlayer = window.top !== window && /^\/embed\//.test(location.pathname);
   var contagemLegendas = 0; // legendas vistas (para saber se o player já baixou)
 
@@ -457,6 +460,40 @@
       }
     } catch (e) { /* nada */ }
   }
+
+  // ---------------------------------------------------------------- relógio do vídeo (v6)
+
+  function enviarRelogio() {
+    if (!noPlayer) return;
+    var v = videoPrincipal();
+    if (!v) return;
+    try {
+      enviar({
+        ldTempo: true,
+        t: v.currentTime,
+        at: performance.timeOrigin + performance.now(),
+        taxa: v.playbackRate,
+        pausado: v.paused || v.ended,
+        esperando: !v.paused && (v.seeking || v.readyState < 3),
+        anuncio: emAnuncio(),
+      });
+    } catch (e) { /* nada */ }
+  }
+  // Na hora de cada mudança (tocar, pausar, pular, travar, velocidade) e a cada 100 ms tocando.
+  ['play', 'playing', 'pause', 'seeking', 'seeked', 'waiting', 'ratechange', 'ended'].forEach(function (nome) {
+    document.addEventListener(nome, function (ev) {
+      if (ev.target === videoPrincipal()) enviarRelogio();
+    }, true);
+  });
+  setInterval(function () {
+    var v = videoPrincipal();
+    if (v && !v.paused) enviarRelogio();
+  }, 100);
+  var relogioParado = 0;
+  setInterval(function () { // parado: de vez em quando, para a página saber que o relógio está vivo
+    var v = videoPrincipal();
+    if (v && v.paused && ++relogioParado % 2 === 0) enviarRelogio();
+  }, 500);
 
   var voltas = 0;
   setInterval(function () {

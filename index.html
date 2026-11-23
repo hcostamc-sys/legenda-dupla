@@ -349,6 +349,40 @@
       <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="pontuacaoModelo"> Usar a pontuação melhorada</label>
     </div>
 
+    <!-- Voz mais clara (app Android, versão 22): js/voz.js -->
+    <div id="grupo-voz" class="grupo" hidden>
+      <h3>Voz mais clara</h3>
+      <p class="dica">Para vídeos com música alta ou barulho por cima da fala. Um modelo de IA no celular separa a voz do fundo, e o fundo só abaixa enquanto alguém fala: no resto, o som fica como no original.</p>
+      <div id="voz-video" class="pm-bloco">
+        <div class="pm-topo"><strong>Este vídeo</strong><span class="pm-estado"></span></div>
+        <p class="pm-texto dica"></p>
+        <div class="pm-barra" hidden><div></div></div>
+        <div class="pm-botoes">
+          <button id="voz-tratar" type="button" class="btn">Tratar o áudio deste vídeo</button>
+          <button id="voz-cancelar" type="button" class="btn" hidden>Cancelar</button>
+          <button id="voz-apagar-video" type="button" class="btn" hidden>Apagar o áudio tratado</button>
+          <button id="voz-copiar" type="button" class="btn" hidden>Copiar diagnóstico</button>
+        </div>
+        <label id="voz-usar-linha" class="ajuste ajuste-check" hidden><input type="checkbox" id="voz-usar"> Usar o áudio tratado neste vídeo</label>
+      </div>
+      <h4 class="subtitulo">Quanto abaixar o fundo quando alguém fala</h4>
+      <div id="linha-voz-margem" class="linha-chips" role="group" aria-label="Quanto abaixar o fundo quando alguém fala"></div>
+      <p class="dica">Pouco: a música continua bem presente. Máximo: a música quase some enquanto alguém fala. Vale para todos os vídeos; num vídeo já tratado, o som muda em alguns segundos.</p>
+      <label class="ajuste ajuste-check"><input type="checkbox" id="voz-auto"> Tratar sozinho todo vídeo que eu abrir</label>
+      <div id="voz-modelo" class="pm-bloco">
+        <div class="pm-topo"><strong>Modelo de separação de voz</strong><span class="pm-estado"></span></div>
+        <p class="pm-texto dica"></p>
+        <div class="pm-barra" hidden><div></div></div>
+        <div class="pm-botoes">
+          <button id="voz-baixar-modelo" type="button" class="btn">Baixar</button>
+          <button id="voz-cancelar-modelo" type="button" class="btn" hidden>Cancelar download</button>
+          <button id="voz-apagar-modelo" type="button" class="btn" hidden>Apagar</button>
+        </div>
+      </div>
+      <p id="voz-espaco" class="dica"></p>
+      <button id="voz-apagar-todos" type="button" class="btn" hidden>Apagar todos os áudios tratados</button>
+    </div>
+
     <div class="grupo">
       <h3>Tela</h3>
       <label class="ajuste">Tamanho das letras: <b data-mostra="fonteL1"></b>

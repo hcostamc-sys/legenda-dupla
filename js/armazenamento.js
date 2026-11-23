@@ -30,6 +30,10 @@ export const AJUSTES_PADRAO = Object.freeze({
   pontuacaoModelo: true,
   // A explicação animada de como avançar e retroceder o vídeo (antes do vídeo) já foi marcada "não mostrar mais".
   gestosExplicados: false,
+  // Voz mais clara (app Android, versão 22): quanto o fundo fica abaixo da voz enquanto alguém fala (dB) e
+  // tratar sozinho todo vídeo novo.
+  vozMargem: 12,
+  vozAuto: false,
 });
 
 const OPCOES = {
@@ -38,6 +42,7 @@ const OPCOES = {
   modoTraducao: ['sempre', 'pausado', 'desligada'],
   modoLegenda: ['uma', 'lista'],
   folgaFala: [0.3, 0.45, 0.6, 0.8], // igual a FOLGAS_MAX (legendas.js)
+  vozMargem: [8, 12, 16, 22], // igual a MARGENS (voz.js)
 };
 const FAIXAS = {
   fonteL1: [14, 32],

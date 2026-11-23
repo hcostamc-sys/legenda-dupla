@@ -636,7 +636,7 @@ public class ServicoVoz extends Service {
             if (apagado) apagar(pv);
             avisar(this);
             if (!appVisivel && !apagado) notificarFim(id, titulo, null);
-        } catch (Exception e) {
+        } catch (Throwable e) { // inclui falta de memória (o modelo é grande)
             boolean cancelado = cancelarAtual || parar || e instanceof ObterAudio.Parado;
             if (cancelado && parar && !cancelarAtual) {
                 // Android pediu para parar (limite de tempo): fica na fila para continuar depois.
@@ -667,7 +667,7 @@ public class ServicoVoz extends Service {
 
     static final String MSG_ESPACO = "Falta espaço no celular. Apague fotos, vídeos ou apps que não usa, ou áudios tratados antigos (Ajustes), e tente de novo.";
 
-    private static String mensagem(Exception e) {
+    private static String mensagem(Throwable e) {
         if (e instanceof ObterAudio.Aviso) return e.getMessage();
         String m = String.valueOf(e.getMessage());
         if (m.contains("ENOSPC") || m.contains("No space")) return MSG_ESPACO;
