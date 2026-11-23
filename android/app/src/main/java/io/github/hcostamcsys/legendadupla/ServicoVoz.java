@@ -486,8 +486,10 @@ public class ServicoVoz extends Service {
 
     private void lacoSeparacao() {
         ModeloOnnx modelo = null;
+        boolean saiuNaTrava = false;
         try {
-            while (!parar) {
+            while (true) {
+                if (parar) break;
                 String proximo = null;
                 boolean precisaModelo;
                 synchronized (TRAVA) {
@@ -498,6 +500,13 @@ public class ServicoVoz extends Service {
                     precisaModelo = "fila".equals(em) || "baixando".equals(em) || "verificando".equals(em)
                             || (fila.length() > 0 && !"pronto".equals(em) && !"erro".equals(em) && !"ausente".equals(em));
                     if (!precisaModelo && "pronto".equals(em) && fila.length() > 0) proximo = fila.getString(0);
+                    if (!precisaModelo && proximo == null && fila.length() == 0) {
+                        // Nada a fazer: sai dentro da trava, para um pedido novo não se perder entre a
+                        // conferência da fila e o fim do laço (onStartCommand confere "separando" na mesma trava).
+                        separando = false;
+                        saiuNaTrava = true;
+                        break;
+                    }
                     if (!precisaModelo && proximo == null && fila.length() > 0 && !"pronto".equals(em)) {
                         // O modelo falhou ou foi cancelado: os vídeos da fila não têm como seguir.
                         String erro = "ausente".equals(em) ? "O modelo de voz não foi baixado." : m.optString("erro", "O modelo de voz não foi baixado.");
@@ -520,7 +529,7 @@ public class ServicoVoz extends Service {
                     baixarModelo();
                     continue;
                 }
-                if (proximo == null) break;
+                if (proximo == null) continue; // a fila foi esvaziada acima (modelo ausente ou com erro)
                 if (modelo == null) {
                     try {
                         modelo = new ModeloOnnx(arquivoModelo(this).getAbsolutePath(), THREADS);
@@ -536,8 +545,12 @@ public class ServicoVoz extends Service {
             // nada: o estado de cada vídeo já foi gravado
         } finally {
             if (modelo != null) modelo.close();
-            atual = "";
-            separando = false;
+            // Saindo pela trava, "separando" já é false e um laço novo pode ter começado: não mexe.
+            if (!saiuNaTrava) {
+                synchronized (TRAVA) {
+                    separando = false;
+                }
+            }
             avisar(this);
             encerrarSeOcioso();
         }
@@ -624,7 +637,15 @@ public class ServicoVoz extends Service {
                     v.put("margem", margem);
                     v.put("arquivo", "mix-" + margem + ".m4a");
                     v.put("bytes", tamanho(pv));
-                    v.put("tempoGasto", (SystemClock.elapsedRealtime() - t0) / 1000);
+                    long gasto = (SystemClock.elapsedRealtime() - t0) / 1000;
+                    v.put("tempoGasto", gasto);
+                    long dur = v.optLong("duracao", 0);
+                    if (dur > 60 && gasto > 0) {
+                        // Segundos de trabalho por segundo de vídeo neste celular (média com os anteriores)
+                        double spp = gasto / (double) dur;
+                        double antes = estado.optDouble("segPorSeg", 0);
+                        estado.put("segPorSeg", antes > 0 ? (antes + spp) / 2 : spp);
+                    }
                     v.put("prontoEm", System.currentTimeMillis());
                     v.remove("restante");
                     v.remove("erro");
@@ -847,6 +868,7 @@ public class ServicoVoz extends Service {
     // ------------------------------------------------------------------ laço da mixagem (trocar a margem)
 
     private void lacoMixagem() {
+        boolean saiuNaTrava = false;
         try {
             while (!parar) {
                 String id;
@@ -854,7 +876,11 @@ public class ServicoVoz extends Service {
                 synchronized (TRAVA) {
                     carregar(this);
                     JSONArray l = estado.getJSONArray("mixar");
-                    if (l.length() == 0) break;
+                    if (l.length() == 0) {
+                        mixando = false; // sai dentro da trava (ver lacoSeparacao)
+                        saiuNaTrava = true;
+                        break;
+                    }
                     JSONObject j = l.getJSONObject(0);
                     l.remove(0);
                     id = j.optString("id");
@@ -904,7 +930,11 @@ public class ServicoVoz extends Service {
         } catch (Exception e) {
             // nada
         } finally {
-            mixando = false;
+            if (!saiuNaTrava) {
+                synchronized (TRAVA) {
+                    mixando = false;
+                }
+            }
             avisar(this);
             encerrarSeOcioso();
         }

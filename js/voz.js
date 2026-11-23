@@ -213,6 +213,13 @@ export function criarVoz(ctx) {
     const p = ctx.player();
     if (!p || !usar()) {
       if (V.src || V.mutei) desligar();
+      // O YouTube guarda "sem som" no aparelho: se o app foi fechado com o áudio tratado tocando, o próximo
+      // vídeo começaria mudo. Fora da espera da legenda e do anúncio, o vídeo sem áudio tratado tem som.
+      if (p && ctx.disponivel() && !ctx.carregando() && !ctx.anuncio() && p.estaMudo?.()
+        && performance.now() - V.mudoEm > 1000) {
+        V.mudoEm = performance.now();
+        p.silenciar?.(false);
+      }
       pedirAuto();
       return;
     }
@@ -279,7 +286,7 @@ export function criarVoz(ctx) {
   /** Tratar sozinho (ajuste vozAuto) o vídeo aberto, uma vez, se o modelo já estiver no celular. */
   function pedirAuto() {
     const reg = ctx.registro();
-    if (!ctx.ajustes().vozAuto || !reg || !reg.estudo || !ctx.disponivel() || !V.estado) return;
+    if (!ctx.ajustes().vozAuto || !reg || !reg.estudo || reg.vozAutoNao || !ctx.disponivel() || !V.estado) return;
     if (V.autoPedido.has(reg.id) || videoAtual()) return;
     if (V.estado.modelo?.estado !== 'pronto') return;
     V.autoPedido.add(reg.id);
@@ -444,6 +451,10 @@ export function criarVoz(ctx) {
       });
       if (!r.ok) return;
     }
+    if (reg.vozAutoNao) {
+      reg.vozAutoNao = false;
+      await ctx.salvarRegistro(reg);
+    }
     ctx.mandar({ acao: 'vozTratar', id: reg.id, titulo: reg.titulo || '', margem: margem() });
     ctx.toast?.('O áudio deste vídeo entrou na fila. Pode continuar assistindo: o som muda sozinho quando ficar pronto.', 4000);
   }
@@ -501,9 +512,13 @@ export function criarVoz(ctx) {
 
   function ligarEventos() {
     $('#voz-tratar')?.addEventListener('click', tratarEste);
-    $('#voz-cancelar')?.addEventListener('click', () => {
+    $('#voz-cancelar')?.addEventListener('click', async () => {
       const reg = ctx.registro();
-      if (reg) ctx.mandar({ acao: 'vozCancelar', id: reg.id });
+      if (!reg) return;
+      ctx.mandar({ acao: 'vozCancelar', id: reg.id });
+      // Cancelado pela pessoa: o "tratar sozinho" não pede de novo para este vídeo.
+      reg.vozAutoNao = true;
+      await ctx.salvarRegistro(reg);
     });
     $('#voz-apagar-video')?.addEventListener('click', apagarEste);
     $('#voz-usar')?.addEventListener('change', async (ev) => {
