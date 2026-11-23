@@ -5,7 +5,8 @@ name: App Android (protótipo)
 
 on:
   push:
-    branches: [main]
+    # Em branches "voz-*" (testes) só compila, sem publicar o APK
+    branches: [main, 'voz-*']
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
@@ -36,6 +37,7 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk legenda-dupla-android.apk
 
       - name: Publicar o APK
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -46,7 +48,7 @@ jobs:
           gh release upload android-prototipo legenda-dupla-android.apk build.log --clobber
 
       - name: Guardar o registro da compilação (se falhar)
-        if: failure()
+        if: failure() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

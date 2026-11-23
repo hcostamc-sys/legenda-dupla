@@ -6,6 +6,8 @@
     <!-- Download dos pacotes de pontuação melhorada em segundo plano, com o andamento nas notificações -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Voz mais clara (versão 22): tratamento do áudio em segundo plano (Android 15+: tipo "processamento de mídia") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -36,5 +38,10 @@
             android:name=".ServicoModelos"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".ServicoVoz"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
     </application>
 </manifest>
