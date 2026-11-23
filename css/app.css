@@ -187,7 +187,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--ambar); out
 .item-bib .textos { min-width: 0; }
 .item-bib .titulo { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .item-bib .detalhe { font-size: 13px; color: var(--texto-2); }
-/* Voz mais clara (versão 22): selo do áudio tratado em Meus vídeos */
+/* Voz mais clara (versão 24): selo do áudio tratado em Meus vídeos */
 .item-bib .selo-voz { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 213, 79, 0.15); color: var(--ambar); font-size: 12px; font-weight: 600; white-space: nowrap; vertical-align: 1px; }
 .item-bib .selo-voz[hidden] { display: none; }
 .menu-item { position: relative; }
@@ -1771,6 +1771,6 @@ html[data-troca="volta"]::view-transition-old(root) { animation-name: vt-recua-d
   .dialogo, .dialogo > .dialogo-caixa, .tela-ab { transition: none; }
 }
 
-/* Voz mais clara (versão 22) */
+/* Voz mais clara (versão 24) */
 #grupo-voz .pm-bloco[data-estado="trabalhando"] .pm-estado { color: var(--ambar); }
 #grupo-voz #voz-apagar-todos { margin-top: 4px; }

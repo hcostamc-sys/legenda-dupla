@@ -30,7 +30,7 @@ export const AJUSTES_PADRAO = Object.freeze({
   pontuacaoModelo: true,
   // A explicação animada de como avançar e retroceder o vídeo (antes do vídeo) já foi marcada "não mostrar mais".
   gestosExplicados: false,
-  // Voz mais clara (app Android, versão 22): quanto o fundo fica abaixo da voz enquanto alguém fala (dB) e
+  // Voz mais clara (app Android, versão 24): quanto o fundo fica abaixo da voz enquanto alguém fala (dB) e
   // tratar sozinho todo vídeo novo.
   vozMargem: 12,
   vozAuto: false,

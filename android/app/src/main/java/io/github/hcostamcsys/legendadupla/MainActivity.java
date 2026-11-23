@@ -123,7 +123,7 @@ import java.util.regex.Pattern;
  *    quadro depois, a foto do perfil 2 e as miniaturas ficavam cinza por 2 a 4 quadros, tudo no meio da
  *    subida. Agora ela espera invisível no ponto de partida (no máximo 120 ms) até as imagens à vista estarem
  *    carregadas e decodificadas e o YouTube passar um quadro sem pôr nada novo.
- * 19) versão 22: "voz mais clara" (ServicoVoz): trata o áudio do vídeo no celular, em segundo plano (baixa o
+ * 19) versão 24: "voz mais clara" (ServicoVoz): trata o áudio do vídeo no celular, em segundo plano (baixa o
  *    áudio, separa a voz com um modelo de IA e abaixa o fundo só quando ele encobre a fala). A página manda os
  *    pedidos (acao "voz..."), recebe o estado em window.ldVozEstado e toca o áudio tratado pelo endereço
  *    ServicoVoz.PREFIXO (entregue aqui, com Range). O gancho v6 manda à página o relógio exato do vídeo.
@@ -132,7 +132,7 @@ public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 22; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 24; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 

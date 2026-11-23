@@ -46,7 +46,7 @@ import io.github.hcostamcsys.legendadupla.voz.ObterAudio;
 import io.github.hcostamcsys.legendadupla.voz.SeparadorVoz;
 
 /**
- * "Voz mais clara" (versão 22): trata o áudio de um vídeo no próprio celular, em segundo plano, com o andamento
+ * "Voz mais clara" (versão 24): trata o áudio de um vídeo no próprio celular, em segundo plano, com o andamento
  * nas notificações (dá para sair do app ou assistir outro vídeo enquanto isso).
  *
  * Para cada vídeo da fila:

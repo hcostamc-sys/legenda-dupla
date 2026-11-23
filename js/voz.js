@@ -1,4 +1,4 @@
-// voz.js — "Voz mais clara" (app Android, versão 22; PLANO.md seção 22).
+// voz.js — "Voz mais clara" (app Android, versão 24; PLANO.md seção 22).
 //
 // O app Android trata o áudio do vídeo em segundo plano (ServicoVoz.java): separa a voz do fundo com um modelo
 // de IA e abaixa o fundo só quando ele encobre a fala. Aqui a página:
@@ -124,7 +124,7 @@ const MB = (b) => Math.round((Number(b) || 0) / 1e6);
 
 /**
  * ctx: {
- *   disponivel(): o app sabe tratar o áudio (APK 22+ com a ponte);
+ *   disponivel(): o app sabe tratar o áudio (APK 24+ com a ponte);
  *   ajustes(): objeto dos ajustes (vozMargem, vozAuto); salvar(): grava os ajustes;
  *   player(), registro(), salvarRegistro(reg), anuncio(), carregando(): o vídeo está na espera da legenda;
  *   velocidade(): velocidade confirmada do vídeo; mandar(msg): para o app; toast(msg, ms); dialogo(op);

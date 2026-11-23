@@ -15,7 +15,7 @@
     <string name="modelos_pronto_texto">Toque para abrir o app e terminar a instalação.</string>
     <string name="modelos_falhou">O download falhou</string>
     <string name="modelos_falhou_texto">Toque para abrir o app e tentar de novo.</string>
-    <!-- Voz mais clara (notificações, versão 22) -->
+    <!-- Voz mais clara (notificações, versão 24) -->
     <string name="canal_voz">Voz mais clara</string>
     <string name="voz_preparando">Preparando…</string>
     <string name="voz_baixando_modelo">Baixando o modelo de voz</string>

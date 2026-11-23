@@ -2166,7 +2166,7 @@ def criar_wav_teste(caminho, segundos=90, taxa=8000):
         w.writeframes(quadros)
 
 
-@caso('21. Voz mais clara (APK 22): Ajustes, pedidos ao app, áudio tratado junto com o vídeo, anúncio, selo e apagar')
+@caso('21. Voz mais clara (APK 24): Ajustes, pedidos ao app, áudio tratado junto com o vídeo, anúncio, selo e apagar')
 def t_voz(browser, base, en, pt):
     os.makedirs(CAPTURAS, exist_ok=True)
     criar_wav_teste(os.path.join(CAPTURAS, 'voz-teste.wav'))
@@ -2181,8 +2181,8 @@ def t_voz(browser, base, en, pt):
     page.set_input_files('#arq-estudo', [en, pt])
     page.click('#btn-abrir')
     expect(page.locator('#tela-assistir')).to_be_visible()
-    # Agora como app Android 22
-    page.goto(base + '?mock=1&app=android&apk=22&mockVozArquivo=/tests/capturas/voz-teste.wav')
+    # Agora como app Android 24
+    page.goto(base + '?mock=1&app=android&apk=24&mockVozArquivo=/tests/capturas/voz-teste.wav')
     msgs = lambda acao: [m for m in page.evaluate('window.__msgs') if m.get('acao') == acao]
     esperar(lambda: msgs('vozEstado'), msg='pediu o estado da voz ao app')
     page.evaluate(f"window.ldAbrirDoYoutube('https://m.youtube.com/watch?v={ID}')")

@@ -136,10 +136,10 @@ const S = {
   anuncio: { ativo: false, pulavel: false, x: 0, y: 0, w: 0, h: 0 },
 };
 
-// Voz mais clara (app Android, versão 22): áudio tratado no celular tocando junto com o vídeo (js/voz.js).
+// Voz mais clara (app Android, versão 24): áudio tratado no celular tocando junto com o vídeo (js/voz.js).
 const PARAMS_VOZ = new URLSearchParams(location.search);
 const voz = criarVoz({
-  disponivel: () => (ANDROID && APK >= 22 && !!window.LDNativo) || (MOCK && PARAMS_VOZ.get('mockVoz') === '1'),
+  disponivel: () => (ANDROID && APK >= 24 && !!window.LDNativo) || (MOCK && PARAMS_VOZ.get('mockVoz') === '1'),
   ajustes: () => S.ajustes,
   salvar: () => salvar(),
   player: () => S.player,

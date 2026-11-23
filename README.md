@@ -72,7 +72,7 @@ A pontuação pelas pausas é uma aproximação. Para algo bem mais certo, o app
 - Também erra às vezes (principalmente vírgulas), mas entende o sentido da frase, o que as pausas não fazem.
 - Versão 23: vale também quando a legenda automática chega **sem o tempo de cada palavra** (o player do YouTube às vezes a entrega assim). Antes, nesse caso, nenhuma pontuação era feita e aparecia só “Frases montadas pelo app”; agora o modelo pontua (o texto só precisa das palavras). Sem o pacote, essa legenda continua sem pontuação, porque a pontuação simples depende das pausas entre as palavras. O diagnóstico mostra, em “legenda capturada”, o formato e em quantas falas veio o tempo de cada palavra.
 
-### Voz mais clara (app Android, versão 22; recurso extra, baixado à parte)
+### Voz mais clara (app Android, versão 24; recurso extra, baixado à parte)
 
 Para vídeos com música alta, efeitos ou barulho por cima da fala. Um modelo de IA no celular separa a voz do fundo, e o fundo **só abaixa enquanto alguém fala**, o bastante para a voz ficar acima dele; no resto, o som fica como no original (a música não some).
 
@@ -136,7 +136,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Versão 17:** troca de abas do YouTube **corrigida**: na 16 a animação começava no toque, antes de o YouTube trocar a página, então a página antiga descia e subia (com uma piscada preta) e a nova entrava com a subida pela metade. Agora a página antiga fica parada até a nova aparecer, e a nova entra 41 dp abaixo e sobe em 0,375 s, como no app oficial.
 - **Versão 18:** na troca de abas do YouTube, nada mais surge no meio da subida (engrenagem, foto do perfil, miniaturas cinza): a página nova espera invisível, no máximo 120 ms, até estar completa, e só então sobe, como no app oficial.
 - **Versão 19:** na aba **Início**, a fileira de chips (bússola, Tudo, Podcasts, Notícias…) sobe junto com o resto da página; antes ela pulava fora de sincronia na troca de aba. Agora sobe tudo o que está na tela, menos a barra de abas de baixo, e as animações próprias do YouTube ficam desligadas durante a troca.
-- **Versão 22:** **Voz mais clara** (veja acima): o app trata o áudio do vídeo no celular, em segundo plano, e abaixa a música e o barulho só quando eles encobrem a fala. O APK passou de ~1,3 MB para ~17 MB (o motor do modelo e o leitor do YouTube ficam dentro dele; o modelo, 316 MB, é baixado à parte).
+- **Versão 24:** **Voz mais clara** (veja acima): o app trata o áudio do vídeo no celular, em segundo plano, e abaixa a música e o barulho só quando eles encobrem a fala. O APK passou de ~1,3 MB para ~17 MB (o motor do modelo e o leitor do YouTube ficam dentro dele; o modelo, 316 MB, é baixado à parte).
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 

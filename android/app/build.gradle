@@ -10,9 +10,9 @@ android {
         applicationId 'io.github.hcostamcsys.legendadupla'
         minSdk 26
         targetSdk 35
-        versionCode 22
-        versionName '0.22'
-        // Voz mais clara (versão 22): o motor do modelo (onnxruntime) tem partes nativas. Só os celulares
+        versionCode 24
+        versionName '0.24'
+        // Voz mais clara (versão 24): o motor do modelo (onnxruntime) tem partes nativas. Só os celulares
         // ARM (praticamente todos), para o APK não crescer à toa com as versões de computador (x86).
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a'
@@ -61,7 +61,7 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
     // Puxar para atualizar o YouTube da tela inicial (versão 13)
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-    // Voz mais clara (versão 22): motor do modelo de separação de voz (Microsoft, licença MIT)
+    // Voz mais clara (versão 24): motor do modelo de separação de voz (Microsoft, licença MIT)
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
     // Voz mais clara: endereço do áudio do vídeo (o mesmo do app NewPipe; licença GPL-3.0). Mesma versão do NewPipe 0.29.3.
     implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.27.1'
