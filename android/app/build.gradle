@@ -42,6 +42,11 @@ android {
     }
 
     packaging {
+        // Partes nativas do onnxruntime comprimidas dentro do APK (o Android extrai na instalação):
+        // o APK baixado fica bem menor.
+        jniLibs {
+            useLegacyPackaging true
+        }
         resources {
             // Arquivos de licença e de módulos repetidos nas bibliotecas Java (NewPipe Extractor, Rhino, jsoup)
             excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/LICENSE.md',
