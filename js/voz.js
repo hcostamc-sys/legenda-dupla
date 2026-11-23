@@ -145,6 +145,7 @@ export function criarVoz(ctx) {
     avisadoErro: new Set(),
     anterior: {}, // estado anterior de cada vídeo (para avisar quando fica pronto)
     mudoEm: 0,
+    falhouEm: '', // arquivo que já falhou (para não repetir o aviso)
   };
 
   function elementoAudio() {
@@ -157,7 +158,10 @@ export function criarVoz(ctx) {
     a.addEventListener('error', () => {
       if (!V.src) return;
       ctx.diag?.(`voz: o áudio tratado não tocou (${a.error?.code ?? '?'})`);
-      falhar('Não consegui tocar o áudio tratado. O vídeo continua com o som original.');
+      // Avisa uma vez por arquivo (a cada 15 s o app tenta de novo, em silêncio).
+      const primeira = V.falhouEm !== V.src;
+      V.falhouEm = V.src;
+      falhar(primeira ? 'Não consegui tocar o áudio tratado. O vídeo continua com o som original.' : '');
     });
     document.body.appendChild(a);
     V.audio = a;
