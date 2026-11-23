@@ -3,7 +3,7 @@
 
 import {
   tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, lerArquivoLegendaDupla, sugerirPapeis,
-  processar, falaNoTempo, navegar, tempoDestino, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
+  processar, falaNoTempo, navegar, JANELA_NAVEGACAO_MS, tempoDestinoFolga, FOLGA_MIN, FOLGA_MIN_ESTIMADA, FOLGAS_MAX, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
   MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS, palavrasParaPontuar,
 } from './legendas.js';
 import {
@@ -59,8 +59,8 @@ const APP_NOVO = ANDROID && APK >= 4;
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 // Valores fixos (antes eram ajustes; saíram do menu para deixá-lo simples).
-const PRE_ROLAGEM = 0.15; // segundos antes do início da fala, ao navegar
-const PRE_ROLAGEM_FRASES = 0.3;
+// Ao avançar, retroceder ou repetir, a folga antes da fala acompanha o silêncio antes dela
+// (tempoDestinoFolga, em legendas.js; versão 20). Só a folga máxima é ajuste.
 // Descrições de sons ([Music], [Applause], [Música]...) sempre saem, de qualquer legenda e da tradução.
 const OPCOES_PROCESSAR = { modoFrases: 'auto', esconderMarcacoes: true };
 const opcoesProcessar = () => ({ ...OPCOES_PROCESSAR, usarModelo: S.ajustes.pontuacaoModelo });
@@ -90,6 +90,7 @@ const S = {
   automatica: false,
   pontuada: false,
   pontuadaModelo: false, // a legenda na tela usa a pontuação melhorada (modelo)
+  inicioEstimado: false, // frases montadas sem o tempo real de cada palavra (folga mínima maior)
   // pontuação melhorada: { reg, ctrl, feitas, total } enquanto o modelo trabalha
   modelo: null,
   pacotes: {}, // estado de cada pacote: 'pronto' | 'ausente'
@@ -912,6 +913,7 @@ function reprocessar() {
   S.automatica = r.automatica;
   S.pontuada = r.pontuada;
   S.pontuadaModelo = r.pontuadaModelo;
+  S.inicioEstimado = !!r.inicioEstimado;
   S.memoriaNav = null;
   S.alvoNav = null;
   if (S.ab.a !== null || S.loop.alvo !== null) zerarRepeticao(); // os índices das falas mudaram
@@ -2744,16 +2746,15 @@ function tique() {
   }
 }
 
-function preRolagem() {
-  return S.frases ? PRE_ROLAGEM_FRASES : PRE_ROLAGEM;
-}
-
-/** Vai para o início de uma unidade, com pré-rolagem. */
+/** Vai para o início de uma unidade, um pouco antes, dentro do silêncio que a separa da anterior. */
 function irParaIndice(i) {
   const p = S.player;
   const u = S.unidades[i];
   if (!p || !u) return;
-  p.irPara(tempoDestino(u, preRolagem()));
+  p.irPara(tempoDestinoFolga(S.unidades, i, {
+    max: S.ajustes.folgaFala,
+    min: S.inicioEstimado ? FOLGA_MIN_ESTIMADA : FOLGA_MIN,
+  }));
   S.saltoEm = performance.now();
   S.alvoNav = i;
   renderLegenda(true);
@@ -3304,7 +3305,14 @@ function navegarAcao(acao) {
   const U = S.unidades;
   if (!p || !U.length) return;
   const agora = performance.now();
-  const r = navegar(U, p.tempo(), acao, S.memoriaNav, agora);
+  // Depois de um salto, o vídeo fica um pouco antes da fala de destino (no silêncio). Até chegar nela,
+  // a fala atual é a de destino (a que está na tela), e não a anterior: senão, com o vídeo pausado,
+  // avançar iria de novo para a mesma fala.
+  let memoria = S.memoriaNav;
+  if (S.alvoNav !== null && U[S.alvoNav] && !(memoria && agora - memoria.quando < JANELA_NAVEGACAO_MS)) {
+    memoria = { indice: S.alvoNav, quando: agora };
+  }
+  const r = navegar(U, p.tempo(), acao, memoria, agora);
   if (r.indice === null) {
     if (r.aviso) mostrarRetorno(r.aviso);
     return;
@@ -3416,6 +3424,24 @@ function montarVelocidades() {
     b.className = 'chip' + (Math.abs(v - S.velConfirmada) < 1e-3 ? ' confirmada' : '');
     b.textContent = `${rotuloVelocidade(v)}×`;
     b.addEventListener('click', () => pedirVelocidade(v));
+    linha.appendChild(b);
+  }
+}
+
+function montarFolgas() {
+  const linha = $('#linha-folga');
+  if (!linha) return;
+  linha.textContent = '';
+  for (const v of FOLGAS_MAX) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (Math.abs(v - S.ajustes.folgaFala) < 1e-3 ? ' confirmada' : '');
+    b.textContent = `${formatarNumero(v, 2)} s`;
+    b.addEventListener('click', () => {
+      S.ajustes.folgaFala = v;
+      salvar();
+      montarFolgas();
+    });
     linha.appendChild(b);
   }
 }
@@ -3652,6 +3678,7 @@ function sincronizarPainel() {
     mostrarValor(k);
   }
   montarVelocidades();
+  montarFolgas();
   const reg = S.registro;
   $('#grupo-sincronia').hidden = !reg;
   montarLegendaAjustes();

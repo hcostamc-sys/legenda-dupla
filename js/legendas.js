@@ -1235,7 +1235,9 @@ export function processar(entrada, opcoes = {}) {
     if (trad.length) parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
   }
   unidades.forEach((u, i) => { u.i = i; if (typeof u.trad !== 'string') u.trad = ''; });
-  return { unidades, frases, automatica, pontuada, pontuadaModelo };
+  // Início das frases estimado (sem o tempo real de cada palavra): a folga mínima antes da fala é maior.
+  const inicioEstimado = frases && !temTempoDePalavra(estudo);
+  return { unidades, frases, automatica, pontuada, pontuadaModelo, inicioEstimado };
 }
 
 /**
@@ -1300,6 +1302,40 @@ export function navegar(unidades, t, acao, memoria = null, agora = 0) {
 /** Tempo de destino com pré-rolagem, nunca abaixo de 0. */
 export function tempoDestino(unidade, preRolagem) {
   return Math.max(0, unidade.s - (Number(preRolagem) || 0));
+}
+
+// ---------------------------------------------------------------------------
+// Folga antes da fala (versão 20): ao avançar, retroceder ou repetir, o vídeo vai para um ponto do
+// silêncio que separa a fala de destino da fala anterior, e não para um tempo fixo antes dela.
+//   silêncio = início da fala de destino − fim da fala anterior
+//   folga    = silêncio − FOLGA_MARGEM, presa entre a folga mínima e a máxima (ajuste)
+// Silêncio curto: vai para logo depois do fim da fala anterior (sem ouvir o finalzinho dela).
+// Silêncio longo: vai só até a folga máxima antes da fala (sem esperar à toa).
+// O app não tem acesso ao áudio do YouTube: o fim da fala anterior é estimado pela legenda (na
+// automática, pelo tempo de cada palavra). Por isso a margem e a folga mínima.
+// ---------------------------------------------------------------------------
+
+export const FOLGA_MARGEM = 0.08; // segundos depois do fim estimado da fala anterior
+export const FOLGA_MIN = 0.12; // nunca menos: cobre o atraso do YouTube para soltar o som depois do salto
+export const FOLGA_MIN_ESTIMADA = 0.3; // frases montadas sem o tempo real de cada palavra (início estimado)
+export const FOLGAS_MAX = [0.3, 0.45, 0.6, 0.8];
+export const FOLGA_MAX_PADRAO = 0.45;
+
+/**
+ * Tempo de destino ao ir para a unidade i, dentro do silêncio antes dela.
+ * opcoes.max: folga máxima (ajuste); opcoes.min: folga mínima.
+ * Fala sobreposta à anterior (silêncio negativo): usa a folga mínima. A primeira fala usa o
+ * silêncio desde o começo do vídeo. Nunca abaixo de 0.
+ */
+export function tempoDestinoFolga(unidades, i, opcoes = {}) {
+  const u = unidades?.[i];
+  if (!u) return 0;
+  const min = Number.isFinite(opcoes.min) ? Math.max(0, opcoes.min) : FOLGA_MIN;
+  const max = Math.max(min, Number.isFinite(opcoes.max) ? opcoes.max : FOLGA_MAX_PADRAO);
+  const fimAnterior = i > 0 ? unidades[i - 1].e : 0;
+  const silencio = u.s - fimAnterior;
+  const folga = Math.min(max, Math.max(min, silencio - FOLGA_MARGEM));
+  return arred(Math.max(0, u.s - folga));
 }
 
 // ---------------------------------------------------------------------------

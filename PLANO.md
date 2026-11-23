@@ -344,7 +344,8 @@ Regras exatas, usando falaNoTempo:
 
 - **Toques e arrastos rápidos em sequência:** guardar o índice de destino da última navegação por 800 ms. Dentro desse prazo, a próxima navegação parte desse índice, e não do tempo do player (que ainda pode estar atrasado). Três arrastos rápidos para a esquerda voltam exatamente três falas.
 
-- **Pré-rolagem:** o destino é início da fala − pré-rolagem, nunca abaixo de 0 s. Padrão: 0,15 s para falas originais e 0,30 s para frases montadas pelo modo frases, cujo início é estimado. As duas são ajustáveis de 0 a 0,5 s. Isso evita cortar a primeira sílaba.
+- **Folga antes da fala (versão 20, 23/11/2026; substitui a pré-rolagem fixa de 0,15 s / 0,30 s):** o destino fica no silêncio entre a fala anterior e a de destino. silêncio = início da fala − fim da fala anterior (na 1ª fala, desde 0 s); folga = silêncio − 0,08 s, presa entre a folga mínima (0,12 s; 0,30 s em frases montadas sem o tempo real de cada palavra, cujo início é estimado) e a máxima (Ajustes: 0,3, 0,45, 0,6 ou 0,8 s; padrão 0,45 s); destino = início − folga, nunca abaixo de 0 s. Silêncio curto: vai para logo depois do fim da fala anterior, sem ouvir o finalzinho dela. Silêncio longo: só a folga máxima, sem espera à toa. A folga mínima cobre o atraso do YouTube para soltar o som depois do salto. O app não tem o áudio (o player do YouTube não entrega): o fim da fala anterior vem da legenda (na automática, do tempo de cada palavra; o fim de cada palavra é estimado). Vale também para o loop da fala e o A–B.
+- **Fala atual depois de um salto:** até o vídeo chegar ao início da fala de destino, ela é a fala atual da navegação (a que está na tela). Antes da versão 20, com o vídeo pausado no ponto antes da fala, avançar depois de 0,8 s ia de novo para a mesma fala.
 
 - **Tocar ao navegar** (padrão: ligado): se estava pausado, chamar tocar() depois de irPara(). Desligado: mantém o estado.
 
@@ -354,7 +355,7 @@ Regras exatas, usando falaNoTempo:
 
 - **Pausa automática no fim de cada fala:** com o estado 1 e tempo() ≥ fim da fala − antecedência (padrão 0,10 s, ajustável de 0 a 0,3 s), pausar uma vez por fala. Ao tocar de novo, segue para a próxima.
 
-- **Repetir a fala em loop:** quando tempo() ≥ fim − 0,05, voltar para início − pré-rolagem. Contador de vezes: 1, 2, 3, 5 ou ∞ (padrão ∞). Ao completar, desligar o loop e seguir. Pausa entre repetições: 0, 0,5, 1 ou 2 s (padrão 0).
+- **Repetir a fala em loop:** quando tempo() ≥ fim − 0,05, voltar para início − folga antes da fala (7.4). Contador de vezes: 1, 2, 3, 5 ou ∞ (padrão ∞). Ao completar, desligar o loop e seguir. Pausa entre repetições: 0, 0,5, 1 ou 2 s (padrão 0).
 
 - Com loop e pausa automática ligados ao mesmo tempo, o loop manda; a pausa automática age só quando o contador acaba.
 
@@ -469,7 +470,7 @@ Esta é a lista fechada do que o app faz. Nada a mais, nada a menos. As regras d
 | Pular 5 s                        | Botões − 5 s e + 5 s, Shift + ←/→               | —                              | 10      |
 | Barra de progresso               | Arrastar                                        | —                              | 8.2     |
 | Tocar ao navegar                 | Ajustes                                         | Ligado                         | 7.4     |
-| Pré-rolagem antes da fala        | Ajustes, 0 a 0,5 s                              | 0,15 s (0,30 s no modo frases) | 7.4     |
+| Folga antes da fala (máxima)     | Ajustes, 0,3 / 0,45 / 0,6 / 0,8 s               | 0,45 s (v20)                   | 7.4     |
 | Velocidade                       | Botão de velocidade, teclas \[ e \]             | 1× (lembra a última)           | 7.6     |
 | Tela cheia com giro para deitado | Botão ⛶, tecla F                                | —                              | 7.8     |
 | Tela sempre ligada enquanto toca | Automático                                      | Ligado                         | 7.8     |

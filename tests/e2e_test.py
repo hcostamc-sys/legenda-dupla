@@ -345,6 +345,41 @@ def t_teclas(page):
     page.click('#btn-fechar-ajustes')
 
 
+@caso('5b. Folga antes da fala (v20): destino no silêncio; pausado, avançar devagar não repete a fala; ajuste no menu')
+def t_folga(page):
+    page.locator('#titulo-video').click()  # tira o foco de campos
+    if estado(page) != 2:
+        page.keyboard.press('Space')
+        esperar(lambda: estado(page) == 2, msg='pausa')
+    U = page.evaluate('window.__ld.S.unidades.map((u) => [u.s, u.e])')
+    i = exibida(page)
+    # pausado, com mais de 0,8 s entre um toque e outro: cada → vai para a fala seguinte
+    for k in (1, 2, 3):
+        page.keyboard.press('ArrowRight')
+        esperar(lambda: exibida(page) == i + k, msg=f'→ nº {k} avança uma fala')
+        s, _ = U[i + k]
+        e_ant = U[i + k - 1][1]
+        # falas de teste: 0,2 s de silêncio → folga = mínima (0,12 s), depois do fim da fala anterior
+        esperar(lambda: abs(tempo(page) - (s - 0.12)) < 0.02, msg=f'destino {s - 0.12:.2f} s')
+        assert tempo(page) > e_ant, 'destino dentro da fala anterior'
+        assert estado(page) == 2, 'continua pausado'
+        time.sleep(0.9)
+    page.keyboard.press('ArrowLeft')
+    esperar(lambda: exibida(page) == i + 2, msg='← volta uma fala')
+    # ajuste: folga máxima 0,45 s (padrão); escolher 0,8 s salva
+    page.click('#btn-ajustes')
+    controles = page.locator('.grupo', has=page.locator('h3', has_text='Controles'))
+    assert controles.locator('#linha-folga').count() == 1
+    expect(page.locator('#linha-folga .chip')).to_have_text(['0,3 s', '0,45 s', '0,6 s', '0,8 s'])
+    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,45 s')
+    page.locator('#linha-folga .chip', has_text='0,8 s').click()
+    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,8 s')
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).folgaFala") == 0.8
+    page.locator('#linha-folga .chip', has_text='0,45 s').click()
+    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,45 s')
+    page.click('#btn-fechar-ajustes')
+
+
 @caso('6. Cartão da palavra')
 def t_extras(page):
     def significado(route):
@@ -2080,6 +2115,7 @@ def main():
         t_arrastar(page)
         t_toque(page)
         t_teclas(page)
+        t_folga(page)
         t_extras(page)
         t_repeticao(page)
         t_lista(page)

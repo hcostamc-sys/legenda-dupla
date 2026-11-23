@@ -23,6 +23,9 @@ export const AJUSTES_PADRAO = Object.freeze({
   modoLegenda: 'lista', // lista (anterior, atual e próxima) | uma (uma fala por vez)
   fonteL1: 19, // a linha 2 usa 85% deste tamanho
   velocidade: 1,
+  // Folga máxima (s) antes da fala ao avançar, retroceder ou repetir (versão 20). Com silêncio curto
+  // antes da fala, a folga é menor (vai para logo depois do fim da fala anterior).
+  folgaFala: 0.45,
   // Pontuação melhorada (modelo baixado à parte): usar quando o pacote do idioma estiver no aparelho.
   pontuacaoModelo: true,
   // A explicação animada de como avançar e retroceder o vídeo (antes do vídeo) já foi marcada "não mostrar mais".
@@ -34,6 +37,7 @@ const OPCOES = {
   destino: [...IDIOMAS_TRADUCAO, 'nao'],
   modoTraducao: ['sempre', 'pausado', 'desligada'],
   modoLegenda: ['uma', 'lista'],
+  folgaFala: [0.3, 0.45, 0.6, 0.8], // igual a FOLGAS_MAX (legendas.js)
 };
 const FAIXAS = {
   fonteL1: [14, 32],

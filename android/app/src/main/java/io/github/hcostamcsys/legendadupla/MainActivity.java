@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 19; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 20; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
