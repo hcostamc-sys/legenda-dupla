@@ -1,58 +1,39 @@
-// Folga antes da fala (versão 20): ao avançar, retroceder ou repetir, o destino fica no silêncio
-// antes da fala, com margem depois do fim da fala anterior, entre a folga mínima e a máxima.
+// Folga antes da fala (versão 22): ao avançar, retroceder ou repetir, o destino é o início da fala
+// menos a folga escolhida nos Ajustes, qualquer que seja o silêncio antes dela.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  tempoDestinoFolga, navegar, processar, lerArquivoLegenda, FOLGA_MARGEM, FOLGA_MIN, FOLGA_MIN_FRASES, FOLGAS_MAX, FOLGA_MAX_PADRAO,
+  tempoDestinoFolga, navegar, processar, lerArquivoLegenda, FOLGA_MIN_FRASES, FOLGAS_MAX, FOLGA_MAX_PADRAO,
 } from '../js/legendas.js';
 import { lerTimedText } from '../js/timedtext.js';
 import { misturarAjustes, AJUSTES_PADRAO } from '../js/armazenamento.js';
 
 const quase = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
 
-test('silêncio curto: logo depois do fim da fala anterior (margem de 0,08 s)', () => {
-  // fala anterior termina em 9,7; a de destino começa em 10 → silêncio 0,3 → folga 0,22
-  const un = [{ s: 8, e: 9.7 }, { s: 10, e: 12 }];
-  quase(tempoDestinoFolga(un, 1), 9.7 + FOLGA_MARGEM);
+test('versão 22: o destino é sempre o início da fala menos a folga escolhida', () => {
+  // silêncio curto, longo, quase nulo e fala sobreposta: o ajuste vale em todos
+  for (const ant of [{ s: 8, e: 9.7 }, { s: 2, e: 4 }, { s: 8, e: 9.95 }, { s: 8, e: 10.4 }]) {
+    const un = [ant, { s: 10, e: 12 }];
+    quase(tempoDestinoFolga(un, 1), 10 - FOLGA_MAX_PADRAO);
+    for (const max of FOLGAS_MAX) quase(tempoDestinoFolga(un, 1, { max, min: FOLGA_MIN_FRASES }), 10 - max);
+  }
 });
 
-test('silêncio longo: só a folga máxima antes da fala', () => {
-  const un = [{ s: 2, e: 4 }, { s: 10, e: 12 }];
-  quase(tempoDestinoFolga(un, 1), 10 - FOLGA_MAX_PADRAO);
-  quase(tempoDestinoFolga(un, 1, { max: 0.8 }), 9.2);
-  quase(tempoDestinoFolga(un, 1, { max: 0.3 }), 9.7);
+test('cada valor do ajuste dá um destino diferente, mesmo com pausa curta (caso do usuário)', () => {
+  const un = [{ s: 8, e: 9.9 }, { s: 10, e: 12 }]; // 0,1 s de silêncio
+  const destinos = FOLGAS_MAX.map((max) => tempoDestinoFolga(un, 1, { max, min: FOLGA_MIN_FRASES }));
+  assert.equal(new Set(destinos).size, FOLGAS_MAX.length, destinos.join(' '));
 });
 
-test('silêncio quase nulo ou fala sobreposta: folga mínima', () => {
-  quase(tempoDestinoFolga([{ s: 8, e: 9.95 }, { s: 10, e: 12 }], 1), 10 - FOLGA_MIN);
-  quase(tempoDestinoFolga([{ s: 8, e: 10.4 }, { s: 10, e: 12 }], 1), 10 - FOLGA_MIN); // legenda feita por pessoa, encostada
-});
-
-test('frases montadas (legenda automática): folga mínima maior', () => {
-  const un = [{ s: 8, e: 10 }, { s: 10, e: 12 }];
-  quase(tempoDestinoFolga(un, 1, { min: FOLGA_MIN_FRASES }), 10 - FOLGA_MIN_FRASES);
-  // a máxima nunca fica abaixo da mínima
+test('a folga nunca fica abaixo da mínima', () => {
   quase(tempoDestinoFolga([{ s: 2, e: 4 }, { s: 10, e: 12 }], 1, { min: 0.3, max: 0.1 }), 9.7);
 });
 
-test('primeira fala: silêncio desde o começo do vídeo, nunca abaixo de 0', () => {
+test('primeira fala e começo do vídeo: nunca abaixo de 0', () => {
   quase(tempoDestinoFolga([{ s: 5, e: 6 }], 0), 5 - FOLGA_MAX_PADRAO);
-  quase(tempoDestinoFolga([{ s: 0.3, e: 1 }], 0), 0.3 - (0.3 - FOLGA_MARGEM));
-  assert.equal(tempoDestinoFolga([{ s: 0.05, e: 1 }], 0), 0);
+  assert.equal(tempoDestinoFolga([{ s: 0.3, e: 1 }], 0, { max: 0.8 }), 0);
   assert.equal(tempoDestinoFolga([], 0), 0);
-});
-
-test('o destino nunca cai dentro da fala anterior quando há silêncio maior que margem + mínima', () => {
-  for (let sil = FOLGA_MARGEM + FOLGA_MIN; sil < 3; sil += 0.01) {
-    const un = [{ s: 0, e: 5 }, { s: 5 + sil, e: 9 }];
-    for (const max of FOLGAS_MAX) {
-      const d = tempoDestinoFolga(un, 1, { max });
-      assert.ok(d >= 5 + FOLGA_MARGEM - 1e-9, `silêncio ${sil}, máx ${max}: destino ${d}`);
-      assert.ok(d <= un[1].s - FOLGA_MIN + 1e-9);
-      assert.ok(un[1].s - d <= max + 1e-9);
-    }
-  }
 });
 
 test('navegação a partir do destino (no silêncio, antes da fala): com a fala na tela como atual', () => {
@@ -88,13 +69,7 @@ test('legenda automática: o silêncio é medido pelo fim estimado da fala, não
   assert.ok(ant.fimFala >= fimReal, `fim estimado ${ant.fimFala} antes do fim real ${fimReal}`);
   assert.ok(ant.fimFala < ant.e, 'mais justo que o fim da legenda');
   const u = r.unidades[i];
-  for (const max of FOLGAS_MAX) {
-    const d = tempoDestinoFolga(r.unidades, i, { max, min: FOLGA_MIN_FRASES });
-    assert.ok(d >= fimReal, `máx ${max}: destino ${d} dentro de "mystery"`);
-    assert.ok(u.s - d >= Math.min(max, 0.4) - 1e-9, `máx ${max}: folga ${u.s - d} curta demais`);
-  }
-  // a máxima escolhida faz diferença quando há silêncio
-  assert.ok(tempoDestinoFolga(r.unidades, i, { max: 0.6, min: FOLGA_MIN_FRASES }) < tempoDestinoFolga(r.unidades, i, { max: 0.3, min: FOLGA_MIN_FRASES }));
+  for (const max of FOLGAS_MAX) quase(tempoDestinoFolga(r.unidades, i, { max, min: FOLGA_MIN_FRASES }), Math.round((u.s - max) * 1000) / 1000);
 });
 
 test('sem o tempo de cada palavra não há fimFala (usa o fim da legenda)', () => {

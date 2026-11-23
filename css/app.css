@@ -1131,6 +1131,46 @@ body.imersivo:not(.faixa-visivel) .barra-botoes { opacity: 0; pointer-events: no
 .linha-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .linha-chips .chip { min-height: 40px; min-width: 52px; padding: 0 12px; }
 .linha-chips .chip.confirmada { background: var(--ambar); color: #111; border-color: var(--ambar); }
+
+/* Barra de velocidade (versão 22) */
+.caixa-vel {
+  background: var(--fundo-2); border: 1px solid var(--borda); border-radius: 14px;
+  padding: 10px 16px 12px; margin-top: 4px;
+}
+.vel-topo { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.vel-ponta { color: var(--texto-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.vel-valor {
+  color: var(--ambar); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+.barra-vel {
+  --pct: 0%;
+  -webkit-appearance: none; appearance: none; display: block;
+  width: 100%; height: 36px; margin: 0; background: transparent; touch-action: none; cursor: pointer;
+}
+.barra-vel:focus { outline: none; }
+.barra-vel::-webkit-slider-runnable-track {
+  height: 8px; border-radius: 999px;
+  background: linear-gradient(to right, var(--ambar) 0 var(--pct), var(--fundo-3) var(--pct) 100%);
+}
+.barra-vel::-moz-range-track { height: 8px; border-radius: 999px; background: var(--fundo-3); }
+.barra-vel::-moz-range-progress { height: 8px; border-radius: 999px; background: var(--ambar); }
+.barra-vel::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; margin-top: -9px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--ambar);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition: transform 0.12s;
+}
+.barra-vel::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--ambar); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.barra-vel:active::-webkit-slider-thumb { transform: scale(1.18); }
+.barra-vel:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(255, 213, 79, 0.35); }
+.vel-marcas { display: flex; justify-content: space-between; padding: 0 12px; margin-top: -4px; }
+.vel-marcas i { width: 2px; height: 6px; border-radius: 1px; background: var(--borda); }
+.vel-marcas i.um { height: 10px; background: var(--texto-2); }
 .lista-gestos { margin: 4px 0; padding-left: 20px; color: var(--texto-2); font-size: 14px; }
 .lista-gestos li { margin: 4px 0; }
 

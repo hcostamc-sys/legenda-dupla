@@ -111,6 +111,7 @@ const S = {
   abHistorico: false, // a tela do A–B pôs uma entrada no histórico (para o voltar do celular)
   velConfirmada: 1,
   velPedida: null,
+  velArrastando: false, // dedo na barra de velocidade (versão 22)
   rapido: null, // segurando o dedo no vídeo: { pausarAoSoltar } enquanto anda em 2×
   velFina: false, // gancho v5 do app Android: velocidades de 0,05 em 0,05
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
@@ -3413,17 +3414,80 @@ function pedirVelocidade(v) {
   else p.definirVelocidade(v);
 }
 
+// Barra de velocidade (versão 22): mesmos valores dos antigos botões (listaVelocidades), um por passo.
+// Enquanto arrasta, só o número muda; ao soltar, pede a velocidade. Não refaz a barra durante o arraste.
+function posVelocidade(vels, v) {
+  let k = 0;
+  vels.forEach((x, j) => { if (Math.abs(x - v) < Math.abs(vels[k] - v)) k = j; });
+  return k;
+}
+
+function pintarVelocidade(barra, vels, k) {
+  const pct = vels.length > 1 ? (k / (vels.length - 1)) * 100 : 0;
+  barra.style.setProperty('--pct', `${pct}%`);
+  const rot = `${rotuloVelocidade(vels[k])}×`;
+  barra.setAttribute('aria-valuetext', rot);
+  $('#valor-velocidade').textContent = rot;
+}
+
 function montarVelocidades() {
-  const linha = $('#linha-velocidade');
-  linha.textContent = '';
-  for (const v of listaVelocidades()) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip' + (Math.abs(v - S.velConfirmada) < 1e-3 ? ' confirmada' : '');
-    b.textContent = `${rotuloVelocidade(v)}×`;
-    b.addEventListener('click', () => pedirVelocidade(v));
-    linha.appendChild(b);
+  const caixa = $('#linha-velocidade');
+  const vels = listaVelocidades();
+  const assinatura = vels.join(',');
+  let barra = caixa.querySelector('input.barra-vel');
+  if (barra && barra.dataset.vels === assinatura) {
+    if (!S.velArrastando) {
+      barra.value = String(posVelocidade(vels, S.velConfirmada));
+      pintarVelocidade(barra, vels, Number(barra.value));
+    }
+    return;
   }
+  caixa.textContent = '';
+  const topo = document.createElement('div');
+  topo.className = 'vel-topo';
+  const menos = document.createElement('span');
+  menos.className = 'vel-ponta';
+  menos.textContent = `${rotuloVelocidade(vels[0])}×`;
+  const valor = document.createElement('output');
+  valor.id = 'valor-velocidade';
+  valor.className = 'vel-valor';
+  const mais = document.createElement('span');
+  mais.className = 'vel-ponta';
+  mais.textContent = `${rotuloVelocidade(vels[vels.length - 1])}×`;
+  topo.append(menos, valor, mais);
+  barra = document.createElement('input');
+  barra.type = 'range';
+  barra.className = 'barra-vel';
+  barra.min = '0';
+  barra.max = String(Math.max(0, vels.length - 1));
+  barra.step = '1';
+  barra.dataset.vels = assinatura;
+  barra.setAttribute('aria-label', 'Velocidade');
+  barra.value = String(posVelocidade(vels, S.velConfirmada));
+  const marcas = document.createElement('div');
+  marcas.className = 'vel-marcas';
+  marcas.setAttribute('aria-hidden', 'true');
+  vels.forEach((v) => {
+    const m = document.createElement('i');
+    if (Math.abs(v - 1) < 1e-6) m.className = 'um';
+    marcas.appendChild(m);
+  });
+  barra.addEventListener('input', () => {
+    S.velArrastando = true;
+    pintarVelocidade(barra, vels, Number(barra.value));
+  });
+  // Soltou sem mudar de valor: não há 'change'; só libera a barra para as atualizações.
+  const soltar = () => { S.velArrastando = false; };
+  barra.addEventListener('pointerup', soltar);
+  barra.addEventListener('pointercancel', soltar);
+  barra.addEventListener('blur', soltar);
+  barra.addEventListener('change', () => {
+    S.velArrastando = false;
+    pintarVelocidade(barra, vels, Number(barra.value));
+    pedirVelocidade(vels[Number(barra.value)]);
+  });
+  caixa.append(topo, barra, marcas);
+  pintarVelocidade(barra, vels, Number(barra.value));
 }
 
 function montarFolgas() {
@@ -4197,6 +4261,11 @@ function ligarEventos() {
     S.player?.irPara(x, false);
     $('#tempo-atual').textContent = formatarTempo(x);
   });
+  // Soltou sem mudar de valor: não há 'change'; só libera a barra para as atualizações.
+  const soltar = () => { S.velArrastando = false; };
+  barra.addEventListener('pointerup', soltar);
+  barra.addEventListener('pointercancel', soltar);
+  barra.addEventListener('blur', soltar);
   barra.addEventListener('change', () => {
     const x = Number(barra.value);
     S.player?.irPara(x, true);

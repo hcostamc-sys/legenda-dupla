@@ -141,6 +141,20 @@ def tocar_rapido(page, seletor):
 resultados = []
 
 
+def vel_lista(page):
+    """Rótulos da barra de velocidade (versão 22), na ordem dos passos."""
+    return page.evaluate("""() => document.querySelector('#linha-velocidade input.barra-vel').dataset.vels
+        .split(',').map(Number).map((v) => (v < 1 - 1e-6 ? v.toFixed(2).replace('.', ',') : String(v).replace('.', ',')) + '×')""")
+
+
+def vel_escolher(page, rotulo):
+    """Arrasta a barra até o passo do rótulo e solta (input + change)."""
+    k = vel_lista(page).index(rotulo)
+    page.evaluate("""(k) => { const b = document.querySelector('#linha-velocidade input.barra-vel');
+        b.value = String(k); b.dispatchEvent(new Event('input', { bubbles: true }));
+        b.dispatchEvent(new Event('change', { bubbles: true })); }""", k)
+
+
 def caso(nome):
     def deco(fn):
         def rodar(*a, **k):
@@ -296,11 +310,13 @@ def t_teclas(page):
     esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1, msg='[ volta')
     # velocidade pelo painel de ajustes
     page.click('#btn-ajustes')
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1×')
-    page.locator('#linha-velocidade .chip', has_text='1,5×').click()
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1,5×')
-    page.locator('#linha-velocidade .chip', has_text='1×').first.click()
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1×')
+    expect(page.locator('#valor-velocidade')).to_have_text('1×')
+    vel_escolher(page, '1,5×')
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1.5, msg='barra 1,5×')
+    expect(page.locator('#valor-velocidade')).to_have_text('1,5×')
+    vel_escolher(page, '1×')
+    esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == 1, msg='barra 1×')
+    expect(page.locator('#valor-velocidade')).to_have_text('1×')
     # menu enxuto: nada de pausa automática, loop, pré-rolagem, opacidade...
     for k in ['pausaAuto', 'loopVezes', 'preRolagem', 'opacidadeFundo', 'modoFrases', 'linha1']:
         assert page.locator(f'[data-ajuste="{k}"]').count() == 0, k
@@ -345,7 +361,7 @@ def t_teclas(page):
     page.click('#btn-fechar-ajustes')
 
 
-@caso('5b. Folga antes da fala (v20/21): destino no silêncio; pausado, avançar devagar não repete a fala; ajuste no menu')
+@caso('5b. Folga antes da fala (v22): destino = início − folga do ajuste; pausado, avançar devagar não repete a fala; ajuste no menu')
 def t_folga(page):
     page.locator('#titulo-video').click()  # tira o foco de campos
     if estado(page) != 2:
@@ -358,10 +374,8 @@ def t_folga(page):
         page.keyboard.press('ArrowRight')
         esperar(lambda: exibida(page) == i + k, msg=f'→ nº {k} avança uma fala')
         s, _ = U[i + k]
-        e_ant = U[i + k - 1][1]
-        # falas de teste: 0,2 s de silêncio → 0,12 s; vale a mínima (0,15 s, legenda feita por pessoa)
-        esperar(lambda: abs(tempo(page) - (s - 0.15)) < 0.02, msg=f'destino {s - 0.15:.2f} s')
-        assert tempo(page) > e_ant, 'destino dentro da fala anterior'
+        # versão 22: destino = início da fala − folga do ajuste (0,45 s, padrão), qualquer que seja o silêncio
+        esperar(lambda: abs(tempo(page) - (s - 0.45)) < 0.02, msg=f'destino {s - 0.45:.2f} s')
         assert estado(page) == 2, 'continua pausado'
         time.sleep(0.9)
     page.keyboard.press('ArrowLeft')
@@ -375,6 +389,15 @@ def t_folga(page):
     page.locator('#linha-folga .chip', has_text='0,8 s').click()
     expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,8 s')
     assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).folgaFala") == 0.8
+    # o ajuste muda o destino de verdade (era o defeito da v21)
+    page.click('#btn-fechar-ajustes')
+    page.locator('#titulo-video').click()
+    j = exibida(page)
+    page.keyboard.press('ArrowRight')
+    esperar(lambda: exibida(page) == j + 1, msg='→ com 0,8 s')
+    s8 = U[j + 1][0]
+    esperar(lambda: abs(tempo(page) - (s8 - 0.8)) < 0.02, msg=f'destino {s8 - 0.8:.2f} s com folga 0,8 s')
+    page.click('#btn-ajustes')
     page.locator('#linha-folga .chip', has_text='0,45 s').click()
     expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,45 s')
     page.click('#btn-fechar-ajustes')
@@ -1269,16 +1292,14 @@ def t_velocidade_fina(browser, base):
     page.click('#idioma-ok')
     esperar(lambda: estado(page) == 1, msg='tocando')
     page.click('#btn-ajustes')
-    chips = page.locator('#linha-velocidade .chip').all_text_contents()
+    chips = vel_lista(page)
     lentas = [f'0,{k:02d}×' for k in range(60, 100, 5)]  # nada abaixo de 0,60×
     assert chips == lentas + ['1×', '1,25×', '1,5×', '1,75×', '2×'], chips
-    page.locator('#linha-velocidade .chip', has_text='0,95×').click()
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('0,95×')
-    assert page.evaluate('window.__ld.S.ajustes.velocidade') == 0.95
-    page.locator('#linha-velocidade .chip', has_text='0,70×').click()
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('0,70×')
-    page.locator('#linha-velocidade .chip', has_text='1,5×').click()
-    expect(page.locator('#linha-velocidade .chip.confirmada')).to_have_text('1,5×')
+    for r, v in (('0,95×', 0.95), ('0,70×', 0.7), ('1,5×', 1.5)):
+        vel_escolher(page, r)
+        esperar(lambda: page.evaluate('window.__ld.S.velConfirmada') == v, msg=f'barra {r}')
+        expect(page.locator('#valor-velocidade')).to_have_text(r)
+    assert page.evaluate('window.__ld.S.ajustes.velocidade') == 1.5
     assert not erros, erros
     ctx.close()
 
@@ -1724,7 +1745,7 @@ def t_ajustes_22_11(browser, base, en, pt):
     # Abrir os Ajustes pausa na hora; velocidades lentas só até 0,60×
     page.click('#btn-ajustes')
     esperar(lambda: estado(page) == 2, msg='Ajustes pausou')
-    chips = page.locator('#linha-velocidade .chip').all_text_contents()
+    chips = vel_lista(page)
     assert all(not c.startswith(('0,25', '0,5×', '0,50', '0,55')) for c in chips), chips
     # "Ver como avançar e retroceder o vídeo" nos Ajustes; marcar "não mostrar mais"
     expect(page.locator('#btn-ver-gestos')).to_have_text('Ver como avançar e retroceder o vídeo')

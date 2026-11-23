@@ -1339,16 +1339,14 @@ export function tempoDestino(unidade, preRolagem) {
 }
 
 // ---------------------------------------------------------------------------
-// Folga antes da fala (versão 20): ao avançar, retroceder ou repetir, o vídeo vai para um ponto do
-// silêncio que separa a fala de destino da fala anterior, e não para um tempo fixo antes dela.
-//   silêncio = início da fala de destino − fim da fala anterior
-//   folga    = silêncio − FOLGA_MARGEM, presa entre a folga mínima e a máxima (ajuste)
-// Silêncio curto: vai para logo depois do fim da fala anterior (sem ouvir o finalzinho dela).
-// Silêncio longo: vai só até a folga máxima antes da fala (sem esperar à toa).
-// O app não tem acesso ao áudio do YouTube: o fim da fala anterior é estimado pela legenda (na
-// automática, pelo ritmo da pessoa: fimFala, em quebrarFrases). Por isso a margem e a folga mínima.
-// Versão 21: as mínimas voltaram aos valores fixos da versão 19 (0,15 s; 0,30 s nas frases montadas da
-// legenda automática). Com 0,12 s o começo de algumas falas ("However") era comido.
+// Folga antes da fala (versão 22): ao avançar, retroceder ou repetir, o vídeo vai para
+//   destino = início da fala − folga escolhida nos Ajustes (0,30 / 0,45 / 0,60 / 0,80 s)
+// sempre, qualquer que seja o silêncio antes dela.
+// Por que mudou: na v20/v21 a folga era presa pelo fim (estimado) da fala anterior. Na fala corrida
+// o silêncio entre falas quase sempre é menor que 0,38 s, então a folga caía na mínima e trocar o
+// ajuste de 0,3 para 0,8 s não mudava nada (teste do usuário, 23/11/2026). Agora o ajuste manda.
+// Preço: com pausa curta, ouve-se o finalzinho da fala anterior; com 0,30 s, o mínimo.
+// FOLGA_MARGEM e fimFala ficam só como referência (não entram mais no cálculo).
 // ---------------------------------------------------------------------------
 
 export const FOLGA_MARGEM = 0.08; // segundos depois do fim estimado da fala anterior
@@ -1358,20 +1356,14 @@ export const FOLGAS_MAX = [0.3, 0.45, 0.6, 0.8];
 export const FOLGA_MAX_PADRAO = 0.45;
 
 /**
- * Tempo de destino ao ir para a unidade i, dentro do silêncio antes dela.
- * opcoes.max: folga máxima (ajuste); opcoes.min: folga mínima.
- * Fala sobreposta à anterior (silêncio negativo): usa a folga mínima. A primeira fala usa o
- * silêncio desde o começo do vídeo. Nunca abaixo de 0.
+ * Tempo de destino ao ir para a unidade i: início dela menos a folga (opcoes.max, o ajuste),
+ * nunca menor que opcoes.min. Não depende da fala anterior. Nunca abaixo de 0.
  */
 export function tempoDestinoFolga(unidades, i, opcoes = {}) {
   const u = unidades?.[i];
   if (!u) return 0;
   const min = Number.isFinite(opcoes.min) ? Math.max(0, opcoes.min) : FOLGA_MIN;
-  const max = Math.max(min, Number.isFinite(opcoes.max) ? opcoes.max : FOLGA_MAX_PADRAO);
-  const ant = i > 0 ? unidades[i - 1] : null;
-  const fimAnterior = ant ? (Number.isFinite(ant.fimFala) ? ant.fimFala : ant.e) : 0;
-  const silencio = u.s - fimAnterior;
-  const folga = Math.min(max, Math.max(min, silencio - FOLGA_MARGEM));
+  const folga = Math.max(min, Number.isFinite(opcoes.max) ? opcoes.max : FOLGA_MAX_PADRAO);
   return arred(Math.max(0, u.s - folga));
 }
 
