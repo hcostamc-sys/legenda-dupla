@@ -304,11 +304,44 @@ def t_teclas(page):
     # menu enxuto: nada de pausa automática, loop, pré-rolagem, opacidade...
     for k in ['pausaAuto', 'loopVezes', 'preRolagem', 'opacidadeFundo', 'modoFrases', 'linha1']:
         assert page.locator(f'[data-ajuste="{k}"]').count() == 0, k
-    # tamanho das letras muda as duas linhas
+    # bloco Controles (versão 15): inverter, velocidade e sincronia juntos
+    controles = page.locator('.grupo', has=page.locator('h3', has_text='Controles'))
+    assert controles.locator('[data-ajuste="inverterArraste"]').count() == 1
+    assert controles.locator('#linha-velocidade').count() == 1
+    assert controles.locator('#grupo-sincronia').count() == 1
+    expect(controles).to_contain_text('Inverter sentido de deslizamento para avançar e retroceder')
+    expect(page.locator('[data-mostra="fonteL1"]')).to_have_text('19 px (padrão)')
+    # tamanho das letras: pergunta antes de trocar; "Alterar" muda as duas linhas e salva
     page.locator('[data-ajuste="fonteL1"]').fill('24')
+    expect(page.locator('#dialogo')).to_be_visible()
+    expect(page.locator('#dialogo-texto')).to_contain_text('de 19\u00a0px para 24\u00a0px')
+    page.click('#dialogo-ok')
+    expect(page.locator('#dialogo')).to_be_hidden()
     assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l1')).fontSize") == '24px'
     assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l2')).fontSize") == '20px'
-    page.locator('[data-ajuste="fonteL1"]').fill('19')
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).fonteL1") == 24
+    expect(page.locator('[data-mostra="fonteL1"]')).to_have_text('24 px (padrão: 19 px)')
+    # "Cancelar" volta ao tamanho de antes
+    page.locator('[data-ajuste="fonteL1"]').fill('30')
+    expect(page.locator('#dialogo')).to_be_visible()
+    page.click('#dialogo-cancelar')
+    assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l1')).fontSize") == '24px'
+    assert page.locator('[data-ajuste="fonteL1"]').input_value() == '24'
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).fonteL1") == 24
+    # Restaurar ajustes padrão: pergunta; "Cancelar" não muda nada; "Restaurar" volta tudo ao padrão
+    page.locator('[data-ajuste="inverterArraste"]').check()
+    page.click('#btn-restaurar-padrao')
+    expect(page.locator('#dialogo')).to_be_visible()
+    page.click('#dialogo-cancelar')
+    assert page.evaluate('window.__ld.S.ajustes.inverterArraste') is True
+    page.click('#btn-restaurar-padrao')
+    page.click('#dialogo-ok')
+    expect(page.locator('#dialogo')).to_be_hidden()
+    esperar(lambda: page.evaluate('window.__ld.S.ajustes.fonteL1') == 19, msg='letras no padrão')
+    assert page.evaluate('window.__ld.S.ajustes.inverterArraste') is False
+    assert page.locator('[data-ajuste="inverterArraste"]').is_checked() is False
+    assert page.evaluate("getComputedStyle(document.querySelector('#caixa-l1')).fontSize") == '19px'
+    expect(page.locator('[data-mostra="fonteL1"]')).to_have_text('19 px (padrão)')
     page.click('#btn-fechar-ajustes')
 
 
@@ -1963,7 +1996,7 @@ def t_capturas(browser, url, en, pt):
         ctx.close()
 
 
-@caso('20. Ajustes de 22/11 (4): toque no vídeo avisa o app sem o YouTube navegar; abas deslizam no sentido certo; 1 s entre as janelas')
+@caso('20. Ajustes de 22/11 (4): toque no vídeo avisa o app sem o YouTube navegar; abas sem animação (v15); 1 s entre as janelas')
 def t_ajustes_22_11_4(browser, base):
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'youtube.js')
     ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
@@ -1989,22 +2022,14 @@ def t_ajustes_22_11_4(browser, base):
     page.click('#local')  # endereço fora do YouTube: não conta como vídeo
     assert len(page.evaluate('window.__yt')) == 1
     assert page.evaluate('window.__navegou') == 3
-    # Abas: Início → Você (à direita) vem da direita; Você → Início vem da esquerda; voltar vem da esquerda
+    # Abas (versão 15): trocam sem animação do app, como no app oficial do YouTube (a animação antiga piscava)
     page.evaluate("history.replaceState(null, '', '/')")
-    time.sleep(0.4)
-    page.evaluate("history.pushState(null, '', '/feed/you')")
-    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '1', msg='aba à direita')
-    time.sleep(1)
-    page.evaluate("history.pushState(null, '', '/')")
-    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '-1', msg='aba à esquerda')
-    time.sleep(1)
-    page.evaluate("history.pushState(null, '', '/feed/history')")
-    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '1', msg='página mais funda')
-    time.sleep(1)
-    page.evaluate("history.back()")
-    esperar(lambda: page.evaluate("document.documentElement.style.getPropertyValue('--ld-dir')") == '-1', msg='voltar')
-    esperar(lambda: not page.evaluate("document.documentElement.classList.contains('ld-saindo') || document.documentElement.classList.contains('ld-entrando')"),
-            msg='transição termina')
+    for caminho in ['/feed/you', '/', '/feed/history']:
+        page.evaluate(f"history.pushState(null, '', '{caminho}')")
+        for _ in range(4):
+            time.sleep(0.1)
+            assert page.evaluate("getComputedStyle(document.querySelector('ytm-browse')).opacity") == '1', caminho
+            assert not page.evaluate("document.documentElement.classList.contains('ld-saindo') || document.documentElement.classList.contains('ld-entrando')")
     ctx.close()
 
     # App Android, vídeo novo: a explicação dos gestos só aparece 1 s depois de a janela do idioma sair

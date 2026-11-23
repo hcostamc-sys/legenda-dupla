@@ -20,7 +20,7 @@ import { lerTimedText, infoUrl, faixaSugerida } from './timedtext.js';
 import { urlBusca, misturarFiltros, OPCOES_FILTROS } from './busca.js';
 import { ligarGestos } from './gestos.js';
 import {
-  carregarAjustes, salvarAjustes, salvarVideo, obterVideo, listarVideos,
+  carregarAjustes, salvarAjustes, salvarVideo, AJUSTES_PADRAO, obterVideo, listarVideos,
   apagarVideo, montarBackup, importarBackup, estaSoNaMemoria,
 } from './armazenamento.js';
 
@@ -319,9 +319,21 @@ function dialogo({ texto, ok = 'OK', cancelar = 'Cancelar', campo = null, caixa 
 
 // ============================================================ aparência
 
+/**
+ * Tamanho das letras enquanto a barra do Ajustes está sendo arrastada (versão 15): a legenda já mostra o
+ * tamanho novo, mas ele só é salvo depois de a pessoa confirmar na janela de pergunta. null = sem prévia.
+ */
+let fontePrevia = null;
+/** Tamanho salvo antes de começar a arrastar a barra (para voltar a ele se a pessoa cancelar). */
+let fonteAntesDaPrevia = null;
+
+function fonteAtual() {
+  return fontePrevia ?? S.ajustes.fonteL1;
+}
+
 function aplicarAparencia() {
   const raiz = document.documentElement.style;
-  const f = S.ajustes.fonteL1;
+  const f = fonteAtual();
   raiz.setProperty('--fonte-l1', `${f}px`);
   raiz.setProperty('--fonte-l2', `${Math.round(f * 0.85)}px`);
   ajustarEscala();
@@ -775,10 +787,11 @@ async function aoEscolherBackup(file) {
 
 // ============================================================ telas e histórico
 
-// Troca entre Meus vídeos e o vídeo sem "piscada escura" (versão 14). Antes a tela nova surgia do
-// transparente e o fundo escuro aparecia por um instante. Agora:
-// - dentro da página: a tela antiga se dissolve na nova (as duas juntas, sem passar pelo fundo vazio), pela
-//   View Transitions do Chrome; onde ela não existir, a troca é na hora;
+// Troca entre Meus vídeos e o vídeo sem "piscada escura" (versão 14) e sem tela "fantasma" (versão 15):
+// - dentro da página: a tela nova entra deslizando, inteira, por cima da antiga (View Transitions do Chrome;
+//   css: vt-entra-direita). Abrir o vídeo: entra pela direita; voltar: Meus vídeos entra pela esquerda.
+//   Na versão 14 as duas se dissolviam e a tela do vídeo aparecia meio transparente sobre a lista. Onde a
+//   View Transitions não existir, a troca é na hora;
 // - vindo do YouTube do app (abrir um vídeo, Meus vídeos): a troca aqui é na hora e quem anima é o app, que
 //   espera o aviso "telaPronta" para a página já estar com a tela nova desenhada.
 
@@ -800,13 +813,18 @@ function trocarTela(mudar, destino, naHora) {
     return;
   }
   telaACaminho = destino;
+  const raiz = document.documentElement;
+  raiz.dataset.troca = destino === 'assistir' ? 'avanca' : 'volta';
+  const limpar = () => { if (!telaACaminho) delete raiz.dataset.troca; };
   try {
-    document.startViewTransition(() => {
+    const vt = document.startViewTransition(() => {
       if (telaACaminho === destino) telaACaminho = null;
       mudar();
     });
+    vt.finished.then(limpar, limpar);
   } catch {
     telaACaminho = null;
+    delete raiz.dataset.troca;
     mudar();
   }
 }
@@ -3613,7 +3631,11 @@ async function alternarTelaCheia() {
 
 function mostrarValor(chave) {
   const el = document.querySelector(`[data-mostra="${chave}"]`);
-  if (el && chave === 'fonteL1') el.textContent = `${S.ajustes.fonteL1} px`;
+  if (el && chave === 'fonteL1') {
+    const f = fonteAtual();
+    const padrao = AJUSTES_PADRAO.fonteL1;
+    el.textContent = f === padrao ? `${f} px (padrão)` : `${f} px (padrão: ${padrao} px)`;
+  }
 }
 
 function sincronizarPainel() {
@@ -3726,6 +3748,87 @@ function fecharPaineis() {
   esconderComAnimacao($('#fundo-painel'), 250);
   esconderComAnimacao($('#painel-ajustes'), 250);
   esconderComAnimacao($('#ajuda'), 250);
+}
+
+/** Barra do tamanho das letras sendo arrastada: só mostra o tamanho novo (ainda não salva). */
+function previaFonte(el) {
+  if (fonteAntesDaPrevia === null) fonteAntesDaPrevia = S.ajustes.fonteL1;
+  fontePrevia = Number(el.value);
+  mostrarValor('fonteL1');
+  aplicarAparencia();
+  renderLegenda(true);
+}
+
+/** Dedo solto da barra: pergunta antes de trocar o tamanho das letras; "Cancelar" volta ao de antes. */
+async function confirmarFonte(el) {
+  const antes = fonteAntesDaPrevia ?? S.ajustes.fonteL1;
+  const novo = Number(el.value);
+  fonteAntesDaPrevia = null;
+  if (novo === antes) {
+    fontePrevia = null;
+    mostrarValor('fonteL1');
+    aplicarAparencia();
+    return;
+  }
+  const r = await dialogo({
+    texto: `Alterar o tamanho das letras da legenda de ${antes}\u00a0px para ${novo}\u00a0px?`,
+    ok: 'Alterar',
+    cancelar: 'Cancelar',
+  });
+  fontePrevia = null;
+  if (r.ok) {
+    S.ajustes.fonteL1 = novo;
+    salvar();
+  } else {
+    S.ajustes.fonteL1 = antes;
+  }
+  el.value = String(S.ajustes.fonteL1);
+  mostrarValor('fonteL1');
+  aplicarAparencia();
+  renderLegenda(true);
+}
+
+/**
+ * Botão "Restaurar ajustes padrão" (versão 15): depois de confirmar, todos os ajustes voltam ao padrão de
+ * quem acabou de instalar. Não mexe nos vídeos salvos (nem na sincronia de cada vídeo), nos pacotes de
+ * pontuação baixados nem na explicação dos gestos já marcada "não mostrar mais".
+ */
+async function restaurarAjustesPadrao() {
+  const r = await dialogo({
+    texto: 'Restaurar todos os ajustes ao padrão? Velocidade 1×, letras de 19\u00a0px, sentido de deslizamento '
+      + 'normal, tradução para o idioma do celular e mostrada sempre, e falas em lista. Seus vídeos, as '
+      + 'legendas salvas e os pacotes de pontuação baixados continuam como estão.',
+    ok: 'Restaurar',
+    cancelar: 'Cancelar',
+  });
+  if (!r.ok) return;
+  const antes = { ...S.ajustes };
+  const novo = { ...AJUSTES_PADRAO, gestosExplicados: antes.gestosExplicados };
+  novo.destino = IDIOMA_SISTEMA; // sem escolha manual, a tradução segue o idioma do celular
+  Object.assign(S.ajustes, novo);
+  fontePrevia = null;
+  fonteAntesDaPrevia = null;
+  salvar();
+  aplicarAparencia();
+  atualizarBotaoTraducao();
+  atualizarBotaoModoLegenda();
+  aplicarVelocidadeSalva();
+  const reg = S.registro;
+  if (reg) {
+    const mudouIdioma = antes.idioma !== S.ajustes.idioma;
+    const refazer = mudouIdioma || antes.destino !== S.ajustes.destino || antes.pontuacaoModelo !== S.ajustes.pontuacaoModelo;
+    if (refazer) {
+      if (mudouIdioma && traducaoAutomaticaAtiva()) reg.traducaoAuto = null;
+      cancelarTraducaoAuto();
+      reprocessar();
+      pontuarAoFundo();
+    } else {
+      renderLegenda(true);
+    }
+  }
+  mostrarAmbas();
+  sincronizarPainel();
+  toast('Ajustes restaurados ao padrão.');
 }
 
 function aoMudarAjuste(el) {
@@ -4104,8 +4207,15 @@ function ligarEventos() {
 
   // ajustes
   for (const el of $$('[data-ajuste]')) {
+    if (el.dataset.ajuste === 'fonteL1') {
+      // Tamanho das letras: prévia enquanto arrasta; ao soltar, pergunta antes de salvar (versão 15).
+      el.addEventListener('input', () => previaFonte(el));
+      el.addEventListener('change', () => confirmarFonte(el));
+      continue;
+    }
     el.addEventListener(el.type === 'range' ? 'input' : 'change', () => aoMudarAjuste(el));
   }
+  $('#btn-restaurar-padrao').addEventListener('click', restaurarAjustesPadrao);
   for (const bloco of $$('.ajuste-sinc')) {
     bloco.addEventListener('click', (ev) => {
       const b = ev.target.closest('button[data-d]');

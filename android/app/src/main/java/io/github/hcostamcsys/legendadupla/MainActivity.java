@@ -87,7 +87,7 @@ import java.util.regex.Pattern;
  * 11) internet (versão 11): o Android avisa a página quando a internet cai ou volta (ldRede), para o aviso
  *    "Tentando reconectar à Internet…" e para o vídeo continuar sozinho.
  * 12) transições (versão 12): o YouTube da tela inicial entra e sai com animação suave (0,3 s / 0,24 s) e as
- *    abas do próprio YouTube trocam com esmaecimento (assets/youtube.js).
+ *    abas do próprio YouTube trocavam com esmaecimento (assets/youtube.js; retirado na versão 15).
  *    Versão 13: eixo horizontal compartilhado (Material Design): abrir um vídeo empurra o YouTube para a
  *    esquerda e a página entra pela direita; voltar faz o contrário. As abas do YouTube deslizam no sentido
  *    da aba tocada (youtube.js).
@@ -107,12 +107,15 @@ import java.util.regex.Pattern;
  *      tinha caído e não percebia a volta (o desbloqueio não chama onCapabilitiesChanged). Agora vale a rede e as
  *      capacidades que o próprio aviso do Android traz, a queda só é avisada depois de 2 s confirmada e com o
  *      app na tela, e ao voltar ao app o estado é conferido e mandado de novo.
+ * 15) versão 15: troca entre o YouTube e a página sem tela meio transparente: a tela nova desliza inteira
+ *    (opaca) por cima da antiga, que só recua um pouco. As abas do YouTube trocam sem animação do app
+ *    (youtube.js), como no app oficial: a animação antiga piscava (conteúdo, escuro, conteúdo).
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 14; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 15; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -164,6 +167,10 @@ public class MainActivity extends Activity {
     private int geracaoTransicao = 0;
     private static final long LIMITE_ESPERA_TELA_MS = 450;
     private static final PathInterpolator CURVA_PADRAO = new PathInterpolator(0.2f, 0f, 0f, 1f);
+    /** Troca entre o YouTube e a página (versão 15): a tela nova desliza inteira por cima da antiga. */
+    private static final long DURACAO_TROCA_MS = 360;
+    /** Quanto a tela de baixo recua enquanto a nova entra (fração da largura). */
+    private static final float RECUO = 0.25f;
 
     @Override
     protected void onCreate(Bundle salvo) {
@@ -576,9 +583,9 @@ public class MainActivity extends Activity {
             recarregarYoutube(true);
         }
         // A página inicial do YouTube fica exatamente como estava: sem recarregar (só puxando para baixo).
-        // Transição (eixo horizontal, voltando): o YouTube entra pela esquerda, POR CIMA da página, que fica
-        // inteira por baixo e só desliza um pouco para a direita. Nunca há um instante com as duas telas
-        // apagadas (era a "piscada escura": o fundo do app aparecia entre uma e outra).
+        // Transição (voltando, versão 15): o YouTube entra deslizando pela esquerda, INTEIRO (opaco), POR CIMA
+        // da página, que fica inteira por baixo e só recua um pouco para a direita. Nunca há duas telas
+        // apagadas (a "piscada escura" da versão 13) nem uma tela meio transparente sobre a outra (versão 14).
         geracaoTransicao++;
         esperandoTela = false;
         boolean escondido = painelYt.getVisibility() != View.VISIBLE;
@@ -586,25 +593,31 @@ public class MainActivity extends Activity {
         ytFechando = false;
         painelYt.setTranslationZ(dp(2));
         if (web != null) web.setTranslationZ(0f);
-        float d = dp(40);
+        float largura = larguraTela();
         if (escondido) {
-            painelYt.setAlpha(0f);
-            painelYt.setTranslationX(-d);
+            painelYt.setAlpha(1f);
+            painelYt.setTranslationX(-largura);
             painelYt.setTranslationY(0f);
             painelYt.setVisibility(View.VISIBLE);
             if (web != null) {
                 web.animate().cancel();
                 web.setAlpha(1f);
-                web.animate().translationX(dp(28)).setStartDelay(0).setDuration(420)
-                        .setInterpolator(CURVA_PADRAO).start();
+                web.animate().translationX(largura * RECUO).setStartDelay(0).setDuration(DURACAO_TROCA_MS)
+                        .setInterpolator(CURVA_ENTRA).start();
             }
         }
         if (painelYt.getAlpha() < 1f || painelYt.getTranslationX() != 0f) {
-            painelYt.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(380)
+            painelYt.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(DURACAO_TROCA_MS)
                     .setInterpolator(CURVA_ENTRA).withEndAction(this::restaurarPagina).start();
         } else {
             restaurarPagina();
         }
+    }
+
+    /** Largura da tela do app (para as telas entrarem inteiras pela borda). */
+    private float larguraTela() {
+        int w = raiz != null ? raiz.getWidth() : 0;
+        return w > 0 ? w : getResources().getDisplayMetrics().widthPixels;
     }
 
     /** A página por baixo do YouTube volta ao lugar (fica pronta para a próxima vez). */
@@ -736,12 +749,14 @@ public class MainActivity extends Activity {
     private void animarSaidaYoutube(int g) {
         esperandoTela = false;
         if (g != geracaoTransicao || !ytFechando) return;
-        float d = dp(40);
-        // A página passa para cima do YouTube (Z), entra apagada e clareia sobre ele.
+        float largura = larguraTela();
+        // A página passa para cima do YouTube (Z) e entra deslizando pela direita, INTEIRA (opaca): nada de
+        // tela meio transparente por cima da lista (versão 15). O YouTube, por baixo, só recua um pouco.
         painelYt.setTranslationZ(0f);
         painelYt.animate().cancel();
         painelYt.setAlpha(1f);
-        painelYt.animate().translationX(-dp(28)).setStartDelay(0).setDuration(420).setInterpolator(CURVA_PADRAO)
+        painelYt.animate().translationX(-largura * RECUO).setStartDelay(0).setDuration(DURACAO_TROCA_MS)
+                .setInterpolator(CURVA_ENTRA)
                 .withEndAction(() -> {
                     if (!ytFechando || g != geracaoTransicao) return; // voltou a aparecer no meio da animação
                     ytFechando = false;
@@ -753,9 +768,10 @@ public class MainActivity extends Activity {
         if (web != null) {
             web.animate().cancel();
             web.setTranslationZ(dp(2));
-            web.setAlpha(0f);
-            web.setTranslationX(d);
-            web.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(380).setInterpolator(CURVA_ENTRA).start();
+            web.setAlpha(1f);
+            web.setTranslationX(largura);
+            web.animate().translationX(0f).setStartDelay(0).setDuration(DURACAO_TROCA_MS)
+                    .setInterpolator(CURVA_ENTRA).start();
         }
     }
 

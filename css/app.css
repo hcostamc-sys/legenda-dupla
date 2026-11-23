@@ -1106,6 +1106,12 @@ body.imersivo:not(.faixa-visivel) .barra-botoes { opacity: 0; pointer-events: no
 .grupo { border-bottom: 1px solid var(--borda); padding: 8px 0 12px; }
 .grupo:last-child { border-bottom: 0; }
 .grupo h3 { font-size: 15px; color: var(--ambar); margin: 6px 0; }
+/* bloco Controles (versão 15): partes dentro do mesmo bloco */
+.grupo .subtitulo { font-size: 14px; font-weight: 600; color: var(--texto); margin: 14px 0 6px; }
+.subgrupo { margin-top: 4px; }
+.subgrupo[hidden] { display: none; }
+/* Restaurar ajustes padrão: largura toda, contorno âmbar (ação importante, mas não a principal) */
+.btn-restaurar { width: 100%; margin-top: 6px; border-color: var(--ambar); color: var(--ambar); font-weight: 600; }
 .ajuste { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .ajuste select {
   min-height: var(--toque);
@@ -1644,14 +1650,25 @@ html.i18n-carregando body { visibility: hidden; }
 /* saindo: o toque já passa para o que está embaixo */
 .saindo { pointer-events: none !important; }
 
-/* Troca entre Meus vídeos e o vídeo (versão 14): a tela antiga se dissolve na nova, as duas ao mesmo tempo
-   (View Transitions; app.js: trocarTela). Antes a tela nova surgia do transparente sobre o fundo vazio, e isso
-   parecia uma "piscada escura". A dissolução padrão do Chrome soma as duas imagens (plus-lighter): o fundo
-   nunca aparece sozinho. Sem deslocamento de propósito: com as duas imagens deslocadas, a borda escurecia. */
+/* Troca entre Meus vídeos e o vídeo (versão 15; app.js: trocarTela, View Transitions). A tela nova entra
+   deslizando, INTEIRA (opaca), por cima da antiga, que só recua um pouco: nunca há duas telas misturadas.
+   Na versão 14 as duas se dissolviam uma na outra e a tela do vídeo aparecia meio transparente por cima de
+   Meus vídeos (o botão ▶ amarelo surgia "fantasma" no fundo). Abrir um vídeo: entra pela direita; voltar:
+   Meus vídeos entra pela esquerda. As imagens se cobrem sem buraco, então o fundo nunca aparece sozinho. */
 ::view-transition-old(root), ::view-transition-new(root) {
-  animation-duration: 0.28s;
-  animation-timing-function: var(--curva-padrao);
+  animation-duration: 0.36s;
+  animation-timing-function: var(--curva-entra);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
 }
+::view-transition-new(root) { animation-name: vt-entra-direita; }
+::view-transition-old(root) { animation-name: vt-recua-esquerda; }
+html[data-troca="volta"]::view-transition-new(root) { animation-name: vt-entra-esquerda; }
+html[data-troca="volta"]::view-transition-old(root) { animation-name: vt-recua-direita; }
+@keyframes vt-entra-direita { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes vt-entra-esquerda { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes vt-recua-esquerda { from { transform: none; } to { transform: translateX(-25%); } }
+@keyframes vt-recua-direita { from { transform: none; } to { transform: translateX(25%); } }
 
 /* ---- janelas (escolha do idioma, explicação dos gestos, carregando, avisos) ---- */
 .dialogo {

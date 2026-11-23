@@ -275,12 +275,12 @@
   <div class="painel-conteudo">
 
     <div class="grupo">
-      <h3>Velocidade</h3>
+      <h3>Controles</h3>
+      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterArraste"> Inverter sentido de deslizamento para avançar e retroceder</label>
+      <h4 class="subtitulo">Velocidade</h4>
       <div id="linha-velocidade" class="linha-chips" role="group" aria-label="Velocidade"></div>
-    </div>
-
-    <div id="grupo-sincronia" class="grupo">
-      <h3>Sincronia (só deste vídeo)</h3>
+      <div id="grupo-sincronia" class="subgrupo">
+      <h4 class="subtitulo">Sincronia (só deste vídeo)</h4>
       <div class="ajuste-sinc" data-alvo="ajusteEstudo">
         <span>Legenda estudada: <b class="valor-sinc">0 s</b></span>
         <div class="linha-chips">
@@ -302,6 +302,7 @@
         </div>
       </div>
       <p class="dica">Use “−” se a legenda aparece atrasada e “+” se aparece adiantada.</p>
+      </div>
     </div>
 
     <div class="grupo">
@@ -350,7 +351,11 @@
       <label class="ajuste">Tamanho das letras: <b data-mostra="fonteL1"></b>
         <input type="range" min="14" max="32" step="1" data-ajuste="fonteL1">
       </label>
-      <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterArraste"> Inverter direção do arraste</label>
+    </div>
+
+    <div class="grupo grupo-restaurar">
+      <button id="btn-restaurar-padrao" type="button" class="btn btn-restaurar">Restaurar ajustes padrão</button>
+      <p class="dica">Volta todos os ajustes acima ao padrão de quem acabou de instalar. Seus vídeos não são apagados.</p>
     </div>
 
     <div class="grupo">

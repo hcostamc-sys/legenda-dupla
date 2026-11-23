@@ -62,6 +62,8 @@ export class PlayerYouTube extends Emissor {
     this._base = 0; // ultimoTempo (base da interpolação)
     this._marca = 0;
     this._seek = null; // { alvo, quando, lidoAntes }
+    // Vídeo aberto no ponto salvo (parâmetro start): { alvo, desde } até o player chegar lá (versão 15).
+    this._aguardaInicio = null;
     this._legendasDesligadas = false;
     this._congelado = false; // pausa pedida, ainda sem confirmação do player
     this._token = 0;
@@ -141,6 +143,7 @@ export class PlayerYouTube extends Emissor {
     this.iframe = iframe;
     this._base = inicio;
     this._marca = performance.now();
+    this._aguardaInicio = inicio >= 2 ? { alvo: inicio, desde: 0 } : null;
     return new Promise((resolve) => {
       this.yt = new window.YT.Player(iframe, {
         events: {
@@ -187,6 +190,24 @@ export class PlayerYouTube extends Emissor {
   _ler() {
     let atual = null;
     try { atual = this.yt?.getCurrentTime?.(); } catch { /* nada */ }
+    if (typeof atual === 'number' && this._aguardaInicio) {
+      // Vídeo aberto no ponto salvo: até ir de fato para lá, o player do YouTube informa 0 s. Antes a barra
+      // do tempo e a legenda iam para 00:00 por um instante e voltavam ao ponto salvo (versão 15). Agora
+      // essas leituras são ignoradas e vale o ponto salvo. Se o player tocar 4 s sem chegar lá (start
+      // ignorado), passa a valer o que ele informa.
+      const ag = this._aguardaInicio;
+      if (atual >= ag.alvo - 1.5) {
+        this._aguardaInicio = null;
+      } else {
+        if (this._estado === 1 && !ag.desde) ag.desde = performance.now();
+        if (!ag.desde || performance.now() - ag.desde < 4000) {
+          this._base = ag.alvo;
+          this._marca = performance.now();
+          return ag.alvo;
+        }
+        this._aguardaInicio = null;
+      }
+    }
     if (typeof atual === 'number' && atual !== this._lido) {
       const primeiro = this._lido === null;
       this._lido = atual;
@@ -239,6 +260,7 @@ export class PlayerYouTube extends Emissor {
 
   irPara(seg, buscar = true) {
     const alvo = Math.max(0, Number(seg) || 0);
+    this._aguardaInicio = null; // a pessoa (ou o app) escolheu outro ponto
     try { this.yt?.seekTo(alvo, buscar); } catch { /* nada */ }
     this._base = alvo;
     this._marca = performance.now();
@@ -301,6 +323,7 @@ export class PlayerYouTube extends Emissor {
     this._estado = -1;
     this._lido = null;
     this._seek = null;
+    this._aguardaInicio = null;
     this._legendasDesligadas = false;
   }
 }
