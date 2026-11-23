@@ -119,6 +119,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Versão 16:** troca de abas do YouTube (Início, Inscrições, Você) **igual à do app oficial**, medida quadro a quadro numa gravação de tela dele: a página nova aparece na hora e sobe 41 dp até o lugar em 0,375 s, desacelerando (curva padrão do Android), a partir do toque na aba; nunca pisca. O **YouTube do app no idioma do celular** (tela inicial e player): antes ele ficava no idioma da primeira vez que foi aberto; agora acompanha o idioma do Android a cada abertura do app. **Vídeo salvo abre direto no ponto salvo**: o player já nasce tocando e a imagem só aparece com o vídeo andando no ponto certo (antes aparecia a capa do vídeo, o tempo ia a 0:00 por um instante e só então o vídeo surgia no ponto salvo); durante anúncio a imagem aparece na hora.
 - **Versão 17:** troca de abas do YouTube **corrigida**: na 16 a animação começava no toque, antes de o YouTube trocar a página, então a página antiga descia e subia (com uma piscada preta) e a nova entrava com a subida pela metade. Agora a página antiga fica parada até a nova aparecer, e a nova entra 41 dp abaixo e sobe em 0,375 s, como no app oficial.
 - **Versão 18:** na troca de abas do YouTube, nada mais surge no meio da subida (engrenagem, foto do perfil, miniaturas cinza): a página nova espera invisível, no máximo 120 ms, até estar completa, e só então sobe, como no app oficial.
+- **Versão 19:** na aba **Início**, a fileira de chips (bússola, Tudo, Podcasts, Notícias…) sobe junto com o resto da página; antes ela pulava fora de sincronia na troca de aba. Agora sobe tudo o que está na tela, menos a barra de abas de baixo, e as animações próprias do YouTube ficam desligadas durante a troca.
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
@@ -140,6 +141,8 @@ Ao mudar qualquer arquivo, troque o nome do cache em `sw.js` (`ld-v1` → `ld-v2
 ```bash
 node --test                      # lógica das legendas, legenda dupla e tradução (tests/*.test.mjs)
 python3 tests/e2e_test.py        # interface com Playwright e o player de teste
+python3 tests/youtube_aba_test.py         # troca de aba do YouTube (curva do app oficial)
+python3 tests/youtube_aba_inicio_test.py  # aba Início: chips sobem junto com a página
 ```
 
 O teste de interface salva capturas de tela em `tests/capturas/` (não vão para o repositório).
