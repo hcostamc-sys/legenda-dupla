@@ -2191,10 +2191,10 @@ async function baixarPacoteNativo(id) {
   if (!ok) { S.download = { id, erro: 'O app não respondeu.' }; renderPacotes(); }
 }
 
-/** O app Android chama esta função com o estado do download: { id, estado, feitos, total, erro, arquivos }. */
 /** O app Android chama esta função com o estado da voz mais clara (ServicoVoz.estadoPublico). */
 window.ldVozEstado = (texto) => voz.aoEstado(texto);
 
+/** O app Android chama esta função com o estado do download: { id, estado, feitos, total, erro, arquivos }. */
 window.ldModelosEstado = (texto) => {
   let e;
   try { e = JSON.parse(texto); } catch { return; }
