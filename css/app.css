@@ -493,6 +493,37 @@ body.android .tela-ab { padding-top: 0; }
 .retorno-icone { display: inline-grid; place-items: center; }
 .retorno-icone svg { width: 26px; height: 26px; fill: var(--ambar); }
 
+/* Segurando o dedo no vídeo: selo "2× ▶▶" no topo do vídeo (como no app do YouTube, no estilo dos selos do app) */
+.selo-rapido {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 10px;
+  transform: translate(-50%, -6px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 16px;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.85);
+  border: 1px solid rgba(255, 213, 79, 0.55);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  color: var(--texto);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
+.selo-rapido.visivel { opacity: 1; transform: translate(-50%, 0); }
+.selo-rapido-icone { width: 26px; height: 16px; }
+.sr-seta { fill: var(--ambar); animation: sr-seta 0.9s ease-in-out infinite; }
+.sr-seta-2 { animation-delay: 0.2s; }
+@keyframes sr-seta { 0%, 100% { opacity: 0.3; } 40%, 60% { opacity: 1; } }
+.imersivo .selo-rapido { top: calc(10px + env(safe-area-inset-top)); }
+@media (prefers-reduced-motion: reduce) { .selo-rapido { transition: none; } .sr-seta { animation: none; } }
+
 .erro-player {
   position: absolute;
   z-index: 6;
@@ -1260,7 +1291,7 @@ html.i18n-carregando body { visibility: hidden; }
 .caixa-gestos .lista-gestos-demo { margin: 0 0 10px; font-size: 15px; color: var(--texto); }
 .caixa-gestos .ajuste-check { font-size: 15px; margin: 4px 0 10px; }
 .caixa-gestos .dialogo-botoes .btn { width: 100%; min-height: 50px; font-size: 16px; }
-.btn#btn-ver-gestos { margin-top: 6px; }
+.btn#btn-ver-gestos { margin: 4px 0 8px 20px; } /* nas Dicas, logo abaixo da dica de deslizar */
 
 .caixa-gestos .dica-pequena { font-size: 13px; margin-top: -4px; }
 
@@ -1613,8 +1644,14 @@ html.i18n-carregando body { visibility: hidden; }
 /* saindo: o toque já passa para o que está embaixo */
 .saindo { pointer-events: none !important; }
 
-/* Troca entre Meus vídeos e o vídeo (só opacidade: não mexe na posição de nada que é fixo na tela) */
-#tela-biblioteca, #tela-assistir { animation: tr-aparece 0.3s var(--curva-padrao); }
+/* Troca entre Meus vídeos e o vídeo (versão 14): a tela antiga se dissolve na nova, as duas ao mesmo tempo
+   (View Transitions; app.js: trocarTela). Antes a tela nova surgia do transparente sobre o fundo vazio, e isso
+   parecia uma "piscada escura". A dissolução padrão do Chrome soma as duas imagens (plus-lighter): o fundo
+   nunca aparece sozinho. Sem deslocamento de propósito: com as duas imagens deslocadas, a borda escurecia. */
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: 0.28s;
+  animation-timing-function: var(--curva-padrao);
+}
 
 /* ---- janelas (escolha do idioma, explicação dos gestos, carregando, avisos) ---- */
 .dialogo {
@@ -1666,7 +1703,8 @@ html.i18n-carregando body { visibility: hidden; }
 .menu-traducao.saindo > * { animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  #tela-biblioteca, #tela-assistir, .fundo-painel, .painel-ajustes, .menu-traducao, .menu-traducao > *,
+  ::view-transition-old(root), ::view-transition-new(root),
+  .fundo-painel, .painel-ajustes, .menu-traducao, .menu-traducao > *,
   .dialogo, .dialogo > .dialogo-caixa, .dialogo > .dialogo-caixa > :not(.roda), .tela-ab,
   .fundo-painel.saindo, .painel-ajustes.saindo, .menu-traducao.saindo,
   .dialogo-gestos > .caixa-gestos, .dialogo-bloqueio > .caixa-bloqueio { animation: none; }

@@ -8,7 +8,8 @@ const ARRASTE_MAX_MS = 800;
 
 /**
  * Liga os gestos num elemento.
- * acoes: { arrastar(dir: 'esquerda'|'direita'), toque(alvo, evento), segurar(alvo) }
+ * acoes: { arrastar(dir: 'esquerda'|'direita'), toque(alvo, evento), segurar(alvo), soltar() }
+ * soltar(): o dedo que estava segurando saiu da tela (ou o toque foi cancelado pelo sistema).
  * Devolve uma função que desliga tudo.
  */
 export function ligarGestos(elemento, acoes) {
@@ -49,18 +50,19 @@ export function ligarGestos(elemento, acoes) {
     const g = ativo;
     limpar();
     try { elemento.releasePointerCapture(ev.pointerId); } catch { /* nada */ }
+    // a) segurar: a ação já aconteceu no disparo do temporizador; agora avisa que soltou (antes do arraste:
+    //    segurar e depois mexer o dedo não pode virar arraste e deixar o "segurando" sem fim)
+    if (g.segurou) { acoes.soltar?.(); return; }
     const dx = ev.clientX - g.x;
     const dy = ev.clientY - g.y;
     const dur = performance.now() - g.t;
     const largura = elemento.getBoundingClientRect().width || 0;
     const minimo = Math.max(40, 0.08 * largura);
-    // a) arraste
+    // b) arraste
     if (Math.abs(dx) >= minimo && Math.abs(dx) >= 1.5 * Math.abs(dy) && dur <= ARRASTE_MAX_MS) {
       acoes.arrastar?.(dx < 0 ? 'esquerda' : 'direita');
       return;
     }
-    // b) segurar: a ação já aconteceu no disparo do temporizador
-    if (g.segurou) return;
     // c) toque
     if (Math.hypot(dx, dy) < TOLERANCIA_PX && dur < TOQUE_MAX_MS) {
       acoes.toque?.(g.alvo, ev);
@@ -69,7 +71,10 @@ export function ligarGestos(elemento, acoes) {
   };
 
   const aoCancelar = (ev) => {
-    if (ativo && ev.pointerId === ativo.id) limpar();
+    if (!ativo || ev.pointerId !== ativo.id) return;
+    const segurou = ativo.segurou;
+    limpar();
+    if (segurou) acoes.soltar?.();
   };
 
   elemento.addEventListener('pointerdown', aoDescer);
@@ -80,6 +85,7 @@ export function ligarGestos(elemento, acoes) {
   elemento.addEventListener('contextmenu', semMenu);
 
   return () => {
+    if (ativo?.segurou) acoes.soltar?.();
     limpar();
     elemento.removeEventListener('pointerdown', aoDescer);
     elemento.removeEventListener('pointermove', aoMover);

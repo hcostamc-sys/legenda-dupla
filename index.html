@@ -139,6 +139,14 @@
       <p id="aviso-rede-texto" class="aviso-rede-texto">O vídeo continua sozinho quando a conexão voltar.</p>
     </div>
     <div id="retorno-gesto" class="retorno-gesto" aria-live="polite"></div>
+    <!-- Segurando o dedo no vídeo: anda em 2× (selo no topo do vídeo, como no app do YouTube) -->
+    <div id="selo-rapido" class="selo-rapido" hidden role="status" aria-live="polite">
+      <span class="selo-rapido-texto">2×</span>
+      <svg class="selo-rapido-icone" viewBox="0 0 26 16" aria-hidden="true">
+        <path class="sr-seta sr-seta-1" d="M1 1.5l10 6.5-10 6.5z"/>
+        <path class="sr-seta sr-seta-2" d="M14 1.5l10 6.5-10 6.5z"/>
+      </svg>
+    </div>
     <!-- Selo dos botões de controle (loop, A–B, tradução, lista, velocidade) -->
     <div id="selo-controle" class="selo-controle" role="status" aria-live="polite"><span class="selo-icone" hidden></span><span class="selo-texto"></span></div>
     <!-- Anúncio do YouTube (app Android): aviso e botão para pular -->
@@ -343,15 +351,16 @@
         <input type="range" min="14" max="32" step="1" data-ajuste="fonteL1">
       </label>
       <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="inverterArraste"> Inverter direção do arraste</label>
-      <button id="btn-ver-gestos" type="button" class="btn">Ver como avançar e retroceder o vídeo</button>
     </div>
 
     <div class="grupo">
       <h3>Dicas</h3>
       <ul class="lista-gestos">
         <li>Deslizar para a <b>esquerda</b> no vídeo ou na legenda: <b>avança</b> o vídeo (até a próxima fala). Para a <b>direita</b>: <b>retrocede</b> o vídeo (até a fala anterior).</li>
-        <li><b>Segurar</b> o dedo no vídeo: repete a fala. <b>Tocar</b> no vídeo: toca ou pausa.</li>
-        <li>Com o vídeo <b>pausado</b>, avançar ou retroceder não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Abrir os Ajustes também pausa o vídeo.</li>
+      </ul>
+      <button id="btn-ver-gestos" type="button" class="btn">Ver como avançar e retroceder o vídeo</button>
+      <ul class="lista-gestos">
+        <li><b>Segurar</b> o dedo no vídeo: o vídeo anda em <b>2×</b> enquanto o dedo estiver na tela; ao soltar, volta à velocidade de antes. <b>Tocar</b> no vídeo: toca ou pausa.</li>
         <li>Tocar numa <b>palavra</b> da legenda: mostra o significado dela, com os botões <b>Copiar</b>, <b>Copiar frase</b> e <b>Dicionário</b> (abre o dicionário para ver mais detalhes).</li>
         <li>Para ir a qualquer ponto: arraste a barra do tempo.</li>
         <li><b>Loop</b> (setas com 1): repete a fala atual até você desligar.</li>
@@ -360,7 +369,6 @@
         <li><b>Lista</b> (três barras): mostra a fala anterior, a atual no meio e a próxima. Toque na anterior ou na próxima para ir até ela.</li>
         <li>Ao abrir um vídeo, a legenda já vem escolhida pelo <b>idioma do áudio original</b> e a tradução no <b>idioma do seu celular</b>. Dá para trocar nas listas antes de tocar em Começar, ou depois em <b>Idioma do vídeo</b> (aqui nos Ajustes).</li>
         <li>A tradução pode ser para qualquer idioma do tradutor do Google: escolha em <b>Tradução automática</b>, acima. Se o vídeo já estiver no idioma da tradução, a segunda linha não aparece.</li>
-        <li>O app aparece no idioma do seu celular.</li>
       </ul>
     </div>
   </div>

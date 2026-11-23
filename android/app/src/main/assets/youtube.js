@@ -27,6 +27,8 @@
     'ytm-rich-section-renderer:has(ytm-shorts-lockup-view-model) { display: none !important; }',
     'ytm-rich-section-renderer:has(ytm-reel-shelf-renderer) { display: none !important; }',
     'grid-shelf-view-model:has(ytm-shorts-lockup-view-model) { display: none !important; }',
+    // Shorts soltos no meio de outras listas (o resumo "Histórico" da aba Você, por exemplo): ver esconderShorts()
+    '.ld-short-escondido { display: none !important; }',
     // transição entre abas (eixo horizontal): saída de 0,14 s acelerando; entrada de 0,4 s desacelerando
     // (curvas "enfatizadas" do Material 3). --ld-dir: 1 = a página nova vem da direita; -1 = da esquerda.
     'html.ld-saindo :is(' + CONTEUDO + ') { opacity: 0 !important;' +
@@ -53,6 +55,67 @@
   if (!por()) document.addEventListener('DOMContentLoaded', por);
   // O site troca de página sem recarregar e pode refazer o <head>: confere de vez em quando.
   setInterval(por, 2000);
+
+  // ------------------------------------------------------------------ Shorts soltos (versão 14)
+  // A página Histórico ("Ver tudo") junta os Shorts numa prateleira, que fica escondida; mas o resumo
+  // "Histórico" da aba Você mistura os Shorts com os vídeos normais. Por isso as duas listas não batiam
+  // (o resumo mostrava Shorts que o "Ver tudo" não mostrava). Agora todo cartão que leva a um Shorts some,
+  // em qualquer lista: as duas mostram os mesmos vídeos, e o app não abre Shorts mesmo.
+  var ITENS = 'ytm-shorts-lockup-view-model, ytm-shorts-lockup-view-model-v2, ytm-reel-item-renderer,' +
+    ' ytm-compact-video-renderer, ytm-video-with-context-renderer, ytm-media-item, ytm-video-card-renderer,' +
+    ' ytm-rich-item-renderer, ytm-playlist-video-renderer, ytm-grid-video-renderer, yt-lockup-view-model';
+  var PAREDES = 'body, ytm-app, ytm-browse, ytm-search, ytm-section-list-renderer, ytm-item-section-renderer,' +
+    ' ytm-shelf-renderer, ytm-horizontal-card-list-renderer, ytm-rich-grid-renderer';
+
+  function caminhoDe(a) { return (a.getAttribute('href') || '').split(/[?#]/)[0]; }
+
+  /** O cartão inteiro do Shorts (miniatura, título e menu), e não só o link. */
+  function cartaoDoShort(a) {
+    var conhecido = a.closest(ITENS);
+    if (conhecido) return conhecido;
+    // Nome de elemento desconhecido: sobe enquanto o elemento de cima só tiver links para este mesmo Shorts.
+    var caminho = caminhoDe(a);
+    var el = a;
+    for (var n = 0; n < 10; n++) {
+      var pai = el.parentElement;
+      if (!pai || pai.matches(PAREDES)) break;
+      var links = pai.querySelectorAll('a[href]');
+      var so = true;
+      for (var j = 0; j < links.length; j++) {
+        if (caminhoDe(links[j]) !== caminho) { so = false; break; }
+      }
+      if (!so) break;
+      el = pai;
+    }
+    return el;
+  }
+
+  function esconderShorts() {
+    if (!document.body) return;
+    var alvos = [];
+    var links = document.querySelectorAll('a[href^="/shorts/"], a[href*="youtube.com/shorts/"]');
+    for (var i = 0; i < links.length; i++) alvos.push(cartaoDoShort(links[i]));
+    // O YouTube reaproveita elementos: o que deixou de ser Shorts volta a aparecer.
+    var marcados = document.querySelectorAll('.ld-short-escondido');
+    for (var k = 0; k < marcados.length; k++) {
+      if (alvos.indexOf(marcados[k]) < 0) marcados[k].classList.remove('ld-short-escondido');
+    }
+    for (var m = 0; m < alvos.length; m++) alvos[m].classList.add('ld-short-escondido');
+  }
+
+  var tShorts = 0;
+  function agendarShorts() {
+    if (tShorts) return;
+    tShorts = setTimeout(function () { tShorts = 0; esconderShorts(); }, 60);
+  }
+  function vigiarShorts() {
+    if (!document.body) return false;
+    try { new MutationObserver(agendarShorts).observe(document.body, { childList: true, subtree: true }); } catch (e) { /* nada */ }
+    esconderShorts();
+    return true;
+  }
+  if (!vigiarShorts()) document.addEventListener('DOMContentLoaded', vigiarShorts);
+  setInterval(esconderShorts, 1500); // reforço
 
   // ------------------------------------------------------------------ toque num vídeo
   function enderecoDeVideo(href) {

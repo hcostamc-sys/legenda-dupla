@@ -97,12 +97,22 @@ import java.util.regex.Pattern;
  *    Nas páginas de histórico (Você, Histórico, playlists) a recarga depois de um vídeo continua, sob a capa.
  *    O toque num vídeo é pego antes de o YouTube abrir a página dele (youtube.js + LDYoutube): a lista
  *    fica exatamente como estava, sem ir e voltar.
+ * 14) versão 14:
+ *    - transição sem "piscada escura": antes as duas telas apagavam ao mesmo tempo e o fundo escuro do app
+ *      aparecia por um instante. Agora a tela que sai fica inteira por baixo (só desliza um pouco) e a que entra
+ *      aparece por cima dela. Ao abrir um vídeo, a animação só começa quando a página já desenhou a tela do
+ *      vídeo (mensagem "telaPronta"), para não aparecer a tela antiga dela.
+ *    - internet: o aviso "Tentando reconectar" aparecia ao sair do app e voltar, com o Wi-Fi perfeito. Em segundo
+ *      plano, o Android bloqueia a rede do app e getActiveNetwork() devolve null: o app achava que a internet
+ *      tinha caído e não percebia a volta (o desbloqueio não chama onCapabilitiesChanged). Agora vale a rede e as
+ *      capacidades que o próprio aviso do Android traz, a queda só é avisada depois de 2 s confirmada e com o
+ *      app na tela, e ao voltar ao app o estado é conferido e mandado de novo.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 13; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 14; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -129,7 +139,6 @@ public class MainActivity extends Activity {
     private boolean ytFechando = false;
     // Curvas "enfatizadas" do Material Design 3: entrar desacelerando bem no fim, sair acelerando.
     private static final PathInterpolator CURVA_ENTRA = new PathInterpolator(0.05f, 0.7f, 0.1f, 1f);
-    private static final PathInterpolator CURVA_SAI = new PathInterpolator(0.3f, 0f, 0.8f, 0.15f);
     /** Atualizar puxando para baixo (envolve o YouTube da tela inicial). */
     private SwipeRefreshLayout atualizadorYt;
     /** Capa por cima do YouTube enquanto ele recarrega: a lista antiga nunca aparece. */
@@ -143,6 +152,18 @@ public class MainActivity extends Activity {
     private ConnectivityManager conectividade;
     private ConnectivityManager.NetworkCallback ouvinteRede;
     private Boolean ultimoOnline;
+    /** Rede padrão e capacidades dela, como o aviso do Android trouxe (não depende do bloqueio em segundo plano). */
+    private Network redePadrao;
+    private NetworkCapabilities capsPadrao;
+    private boolean appNaTela = false;
+    /** Queda da internet esperando confirmação (2 s): um tremido da rede não vira aviso. */
+    private Runnable quedaPendente;
+    private static final long CONFIRMAR_QUEDA_MS = 2000;
+    /** Abrindo um vídeo: o YouTube só sai quando a página avisa que desenhou a tela nova (ou no limite). */
+    private boolean esperandoTela = false;
+    private int geracaoTransicao = 0;
+    private static final long LIMITE_ESPERA_TELA_MS = 450;
+    private static final PathInterpolator CURVA_PADRAO = new PathInterpolator(0.2f, 0f, 0f, 1f);
 
     @Override
     protected void onCreate(Bundle salvo) {
@@ -153,6 +174,7 @@ public class MainActivity extends Activity {
         raiz.setBackgroundColor(Color.parseColor("#111111"));
         raiz.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        web.setOutlineProvider(null); // a ordem das telas muda pelo Z, sem sombra
         setContentView(raiz);
         // Android 15 desenha atrás das barras do sistema: afasta o conteúdo delas e do teclado.
         raiz.setOnApplyWindowInsetsListener((v, ins) -> {
@@ -354,6 +376,7 @@ public class MainActivity extends Activity {
 
     private void criarPainelYoutube() {
         painelYt = new LinearLayout(this);
+        painelYt.setOutlineProvider(null); // a ordem das telas muda pelo Z, sem sombra
         painelYt.setOrientation(LinearLayout.VERTICAL);
         painelYt.setBackgroundColor(Color.parseColor("#111111"));
 
@@ -519,7 +542,7 @@ public class MainActivity extends Activity {
 
     /** "Meus vídeos": esconde o YouTube e mostra a lista de vídeos do Legenda Dupla. */
     private void abrirMeusVideos() {
-        fecharYoutube();
+        fecharYoutube(true);
         chamarPagina("ldMostrarBiblioteca", "");
     }
 
@@ -553,10 +576,16 @@ public class MainActivity extends Activity {
             recarregarYoutube(true);
         }
         // A página inicial do YouTube fica exatamente como estava: sem recarregar (só puxando para baixo).
-        // Transição (eixo horizontal, voltando): o YouTube entra pela esquerda e a página sai pela direita.
+        // Transição (eixo horizontal, voltando): o YouTube entra pela esquerda, POR CIMA da página, que fica
+        // inteira por baixo e só desliza um pouco para a direita. Nunca há um instante com as duas telas
+        // apagadas (era a "piscada escura": o fundo do app aparecia entre uma e outra).
+        geracaoTransicao++;
+        esperandoTela = false;
         boolean escondido = painelYt.getVisibility() != View.VISIBLE;
         painelYt.animate().cancel();
         ytFechando = false;
+        painelYt.setTranslationZ(dp(2));
+        if (web != null) web.setTranslationZ(0f);
         float d = dp(40);
         if (escondido) {
             painelYt.setAlpha(0f);
@@ -565,12 +594,13 @@ public class MainActivity extends Activity {
             painelYt.setVisibility(View.VISIBLE);
             if (web != null) {
                 web.animate().cancel();
-                web.animate().alpha(0f).translationX(d).setStartDelay(0).setDuration(200)
-                        .setInterpolator(CURVA_SAI).start();
+                web.setAlpha(1f);
+                web.animate().translationX(dp(28)).setStartDelay(0).setDuration(420)
+                        .setInterpolator(CURVA_PADRAO).start();
             }
         }
         if (painelYt.getAlpha() < 1f || painelYt.getTranslationX() != 0f) {
-            painelYt.animate().alpha(1f).translationX(0f).setStartDelay(escondido ? 50 : 0).setDuration(420)
+            painelYt.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(380)
                     .setInterpolator(CURVA_ENTRA).withEndAction(this::restaurarPagina).start();
         } else {
             restaurarPagina();
@@ -664,19 +694,56 @@ public class MainActivity extends Activity {
         return painelYt != null && painelYt.getVisibility() == View.VISIBLE && !ytFechando;
     }
 
-    /**
-     * Esconde o YouTube com a transição de eixo horizontal (avançando): o YouTube sai para a esquerda,
-     * apagando rápido (0,2 s), e a página entra pela direita, desacelerando (0,4 s).
-     */
     private void fecharYoutube() {
+        fecharYoutube(false);
+    }
+
+    /**
+     * Esconde o YouTube com a transição de eixo horizontal (avançando): a página entra pela direita, POR CIMA
+     * do YouTube, que fica inteiro por baixo e só desliza um pouco para a esquerda (sem "piscada escura").
+     * esperarPagina: a página está trocando de tela (abrir um vídeo, Meus vídeos): a animação espera ela avisar
+     * que a tela nova já está desenhada (telaPronta), no máximo 0,45 s. Enquanto isso o YouTube fica como está
+     * e o toque não vai mais para ele.
+     */
+    private void fecharYoutube(boolean esperarPagina) {
         if (!youtubeNaTela()) return;
         pausarYoutube();
         ytFechando = true;
+        final int g = ++geracaoTransicao;
+        if (esperarPagina && web != null) {
+            esperandoTela = true;
+            raiz.postDelayed(() -> {
+                if (g == geracaoTransicao && esperandoTela) animarSaidaYoutube(g);
+            }, LIMITE_ESPERA_TELA_MS);
+        } else {
+            animarSaidaYoutube(g);
+        }
+    }
+
+    /** A página avisou que desenhou a tela nova: espera esse quadro chegar à tela e começa a animação. */
+    private void aoTelaPronta() {
+        if (!esperandoTela || web == null) return;
+        final int g = geracaoTransicao;
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.VISUAL_STATE_CALLBACK)) {
+            WebViewCompat.postVisualStateCallback(web, g, id -> {
+                if (g == geracaoTransicao && esperandoTela) animarSaidaYoutube(g);
+            });
+        } else {
+            animarSaidaYoutube(g);
+        }
+    }
+
+    private void animarSaidaYoutube(int g) {
+        esperandoTela = false;
+        if (g != geracaoTransicao || !ytFechando) return;
         float d = dp(40);
+        // A página passa para cima do YouTube (Z), entra apagada e clareia sobre ele.
+        painelYt.setTranslationZ(0f);
         painelYt.animate().cancel();
-        painelYt.animate().alpha(0f).translationX(-d).setStartDelay(0).setDuration(200).setInterpolator(CURVA_SAI)
+        painelYt.setAlpha(1f);
+        painelYt.animate().translationX(-dp(28)).setStartDelay(0).setDuration(420).setInterpolator(CURVA_PADRAO)
                 .withEndAction(() -> {
-                    if (!ytFechando) return; // voltou a aparecer no meio da animação
+                    if (!ytFechando || g != geracaoTransicao) return; // voltou a aparecer no meio da animação
                     ytFechando = false;
                     painelYt.setVisibility(View.GONE);
                     painelYt.setAlpha(1f);
@@ -685,9 +752,10 @@ public class MainActivity extends Activity {
                 }).start();
         if (web != null) {
             web.animate().cancel();
+            web.setTranslationZ(dp(2));
             web.setAlpha(0f);
             web.setTranslationX(d);
-            web.animate().alpha(1f).translationX(0f).setStartDelay(60).setDuration(400).setInterpolator(CURVA_ENTRA).start();
+            web.animate().alpha(1f).translationX(0f).setStartDelay(0).setDuration(380).setInterpolator(CURVA_ENTRA).start();
         }
     }
 
@@ -701,7 +769,7 @@ public class MainActivity extends Activity {
             pausarYoutube();
             if (ytWeb.canGoBack()) ytWeb.goBack(); // volta para a lista, para a próxima busca
         }
-        fecharYoutube();
+        fecharYoutube(true);
         chamarPagina("ldAbrirDoYoutube", url);
     }
 
@@ -745,6 +813,9 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         ServicoModelos.appVisivel = true;
+        appNaTela = true;
+        // De volta ao app: confere a internet de novo e manda o estado atual à página (versão 14).
+        if (conectividade != null) conferirInternet(true);
         // De volta ao app: o aviso de "download concluído" já não precisa ficar nas notificações.
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) nm.cancel(ServicoModelos.NOTIF_FIM);
@@ -759,6 +830,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         ServicoModelos.appVisivel = false;
+        appNaTela = false;
+        cancelarQuedaPendente();
         super.onPause();
     }
 
@@ -766,7 +839,9 @@ public class MainActivity extends Activity {
 
     /**
      * Avisa a página quando a internet cai ou volta (e a WebView, que repassa os eventos online/offline).
-     * "Com internet" = o Android confirmou que a rede atual chega à internet (VALIDATED).
+     * "Com internet" = a rede padrão chega à internet e o Android confirmou (VALIDATED).
+     * Versão 14: usa a rede e as capacidades que o próprio aviso do Android traz. getActiveNetwork() devolve null
+     * quando o Android bloqueia a rede do app em segundo plano (economia de bateria), e isso não é internet caída.
      */
     private void vigiarInternet() {
         try {
@@ -774,45 +849,104 @@ public class MainActivity extends Activity {
             if (conectividade == null) return;
             ouvinteRede = new ConnectivityManager.NetworkCallback() {
                 @Override
-                public void onAvailable(Network n) { conferirInternet(); }
+                public void onAvailable(Network n) {
+                    runOnUiThread(() -> {
+                        if (!n.equals(redePadrao)) capsPadrao = null;
+                        redePadrao = n;
+                        conferirInternet(false);
+                    });
+                }
 
                 @Override
-                public void onLost(Network n) { conferirInternet(); }
+                public void onLost(Network n) {
+                    runOnUiThread(() -> {
+                        if (n.equals(redePadrao)) {
+                            redePadrao = null;
+                            capsPadrao = null;
+                        }
+                        conferirInternet(false);
+                    });
+                }
 
                 @Override
-                public void onCapabilitiesChanged(Network n, NetworkCapabilities c) { conferirInternet(); }
+                public void onCapabilitiesChanged(Network n, NetworkCapabilities c) {
+                    runOnUiThread(() -> {
+                        redePadrao = n;
+                        capsPadrao = c;
+                        conferirInternet(false);
+                    });
+                }
+
+                @Override
+                public void onBlockedStatusChanged(Network n, boolean bloqueada) {
+                    // Bloqueio em segundo plano não é internet caída; ao desbloquear, confere de novo.
+                    if (!bloqueada) runOnUiThread(() -> conferirInternet(false));
+                }
             };
             conectividade.registerDefaultNetworkCallback(ouvinteRede);
-            conferirInternet();
+            conferirInternet(true);
         } catch (Exception e) {
             ouvinteRede = null; // sem o aviso do Android, a página ainda percebe o vídeo travado
         }
     }
 
-    private void conferirInternet() {
-        boolean online = false;
+    /** Internet chegando agora? Pelo aviso do Android; sem ele, pela rede ativa (pode ser null se bloqueada). */
+    private boolean internetAgora() {
         try {
-            Network n = conectividade.getActiveNetwork();
-            NetworkCapabilities c = n == null ? null : conectividade.getNetworkCapabilities(n);
-            online = c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            Network n = redePadrao;
+            NetworkCapabilities c = capsPadrao;
+            if (n != null && c == null) c = conectividade.getNetworkCapabilities(n);
+            if (n == null) {
+                n = conectividade.getActiveNetwork();
+                c = n == null ? null : conectividade.getNetworkCapabilities(n);
+            }
+            return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
         } catch (Exception e) {
+            return ultimoOnline == null || ultimoOnline; // na dúvida, não avisa queda
+        }
+    }
+
+    /**
+     * Confere a internet e avisa a página se mudou. A volta é avisada na hora; a queda só depois de 2 s
+     * confirmada e com o app na tela. forcar: manda o estado mesmo sem mudança (ao abrir e ao voltar ao app).
+     */
+    private void conferirInternet(boolean forcar) {
+        if (conectividade == null) return;
+        boolean online = internetAgora();
+        if (online) {
+            cancelarQuedaPendente();
+            enviarInternet(true, forcar);
             return;
         }
-        final boolean valor = online;
-        runOnUiThread(() -> {
-            if (ultimoOnline != null && ultimoOnline == valor) return;
-            ultimoOnline = valor;
-            if (web != null) {
-                web.setNetworkAvailable(valor);
-                chamarPagina("ldRede", valor ? "1" : "0");
-            }
-            if (ytWeb != null) ytWeb.setNetworkAvailable(valor);
-        });
+        if (ultimoOnline == null) { enviarInternet(false, true); return; } // abrindo o app sem internet
+        if (!ultimoOnline) { if (forcar) enviarInternet(false, true); return; }
+        if (!appNaTela || quedaPendente != null) return; // em segundo plano não avisa; ao voltar, confere
+        quedaPendente = () -> {
+            quedaPendente = null;
+            if (appNaTela && !internetAgora()) enviarInternet(false, false);
+        };
+        raiz.postDelayed(quedaPendente, CONFIRMAR_QUEDA_MS);
+    }
+
+    private void cancelarQuedaPendente() {
+        if (quedaPendente != null && raiz != null) raiz.removeCallbacks(quedaPendente);
+        quedaPendente = null;
+    }
+
+    private void enviarInternet(boolean valor, boolean forcar) {
+        if (!forcar && ultimoOnline != null && ultimoOnline == valor) return;
+        ultimoOnline = valor;
+        if (web != null) {
+            web.setNetworkAvailable(valor);
+            chamarPagina("ldRede", valor ? "1" : "0");
+        }
+        if (ytWeb != null) ytWeb.setNetworkAvailable(valor);
     }
 
     @Override
     protected void onDestroy() {
+        cancelarQuedaPendente();
         try {
             if (conectividade != null && ouvinteRede != null) conectividade.unregisterNetworkCallback(ouvinteRede);
         } catch (Exception e) {
@@ -843,6 +977,14 @@ public class MainActivity extends Activity {
             if ("youtube".equals(o.optString("acao"))) {
                 final String url = o.optString("url", "");
                 runOnUiThread(() -> mostrarYoutube(url));
+                return;
+            }
+            if ("telaPronta".equals(o.optString("acao"))) {
+                runOnUiThread(this::aoTelaPronta);
+                return;
+            }
+            if ("rede".equals(o.optString("acao"))) {
+                runOnUiThread(() -> { if (conectividade != null) conferirInternet(true); });
                 return;
             }
             if ("tocar".equals(o.optString("acao"))) {

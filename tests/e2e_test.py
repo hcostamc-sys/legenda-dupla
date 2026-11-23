@@ -138,16 +138,6 @@ def tocar_rapido(page, seletor):
     page.mouse.up()
 
 
-def segurar(page, seletor, ms=600):
-    caixa = page.locator(seletor).bounding_box()
-    x = caixa['x'] + caixa['width'] / 2
-    y = caixa['y'] + caixa['height'] / 2
-    page.mouse.move(x, y)
-    page.mouse.down()
-    time.sleep(ms / 1000)
-    page.mouse.up()
-
-
 resultados = []
 
 
@@ -238,7 +228,7 @@ def t_arrastar(page):
     page.evaluate("window.__ld.S.ajustes.inverterArraste = false")
 
 
-@caso('4. Toque curto pausa e toca; segurar repete a fala')
+@caso('4. Toque curto pausa e toca; segurar o dedo no vídeo anda em 2× até soltar')
 def t_toque(page):
     esperar(lambda: estado(page) == 1, msg='tocando antes do toque')
     tocar_rapido(page, '#camada-gestos')
@@ -246,13 +236,37 @@ def t_toque(page):
     tocar_rapido(page, '#camada-gestos')
     esperar(lambda: estado(page) == 1, msg='voltou a tocar com toque')
     time.sleep(1.0)
-    i = exibida(page)
-    inicio = page.evaluate(f'window.__ld.S.unidades[{i}].s')
-    segurar(page, '#camada-gestos', 650)
-    expect(page.locator('#retorno-gesto')).to_have_text('↻ Repetindo')
-    t = tempo(page)
-    assert inicio - 0.3 <= t <= inicio + 0.6, (t, inicio)
+    vel = lambda: page.evaluate('window.__ld.S.player.velocidade()')
+    vel0 = vel()
+    salva = page.evaluate('window.__ld.S.ajustes.velocidade')
+    caixa = page.locator('#camada-gestos').bounding_box()
+    page.mouse.move(caixa['x'] + caixa['width'] / 2, caixa['y'] + caixa['height'] / 2)
+    # tocando: segurar → 2× com o selo no topo do vídeo; soltar → volta à velocidade de antes
+    page.mouse.down()
+    expect(page.locator('#selo-rapido')).to_be_visible(timeout=2000)
+    expect(page.locator('#selo-rapido')).to_contain_text('2×')
+    esperar(lambda: vel() == 2, msg='2× segurando')
     assert estado(page) == 1
+    page.mouse.up()
+    expect(page.locator('#selo-rapido')).to_be_hidden(timeout=2000)
+    esperar(lambda: vel() == vel0, msg='voltou à velocidade de antes')
+    assert estado(page) == 1
+    assert page.evaluate('window.__ld.S.ajustes.velocidade') == salva  # o 2× não é salvo
+    assert page.locator('#retorno-gesto').inner_text().strip() != '↻ Repetindo'  # segurar não repete mais
+    # pausado: anda em 2× enquanto segura e pausa de novo ao soltar
+    tocar_rapido(page, '#camada-gestos')
+    esperar(lambda: estado(page) == 2, msg='pausou')
+    page.mouse.down()
+    esperar(lambda: estado(page) == 1 and vel() == 2, msg='pausado + segurar: toca em 2×')
+    page.mouse.up()
+    esperar(lambda: estado(page) == 2, msg='soltou: pausado de novo')
+    esperar(lambda: vel() == vel0, msg='velocidade de volta')
+    page.click('#btn-play')
+    esperar(lambda: estado(page) == 1, msg='tocando de novo')
+    # repetir a fala continua na tecla R
+    page.locator('#titulo-video').click()
+    page.keyboard.press('r')
+    expect(page.locator('#retorno-gesto')).to_have_text('↻ Repetindo')
 
 
 @caso('5. Teclas Espaço, ←, →, R, [ e ]; botão play/pausa; velocidade no menu')
@@ -671,6 +685,27 @@ def t_youtube_sem_shorts(browser, base):
     expect(page.locator('#p-inicio')).to_be_visible()
     expect(page.locator('#p-voce')).to_be_visible()
     expect(page.locator('#video')).to_be_visible()
+    # 23/11: Shorts soltos no resumo "Histórico" da aba Você somem (o "Ver tudo" não mostra Shorts, e as duas
+    # listas não batiam). Cartão de nome conhecido e de nome desconhecido; o resto da prateleira fica.
+    page.evaluate("""() => {
+      document.body.insertAdjacentHTML('beforeend', `
+        <ytm-shelf-renderer id="resumo">
+          <h2>Histórico</h2><a id="ver-tudo" href="/feed/history">Ver tudo</a>
+          <ytm-media-item id="h-video"><a href="/watch?v=aaaaaaaaaaa">Vídeo normal</a><button>⋮</button></ytm-media-item>
+          <ytm-shorts-lockup-view-model id="h-short1"><a href="/shorts/bbbbbbbbbbb">Short</a></ytm-shorts-lockup-view-model>
+          <div class="cartao-novo" id="h-short2"><div class="mini"><a href="/shorts/ccccccccccc?feature=x">capa</a></div>
+            <div class="info"><a href="/shorts/ccccccccccc">Título do Short</a><span>Canal</span></div></div>
+          <div class="cartao-novo" id="h-video2"><a href="/watch?v=ddddddddddd">Outro vídeo</a></div>
+        </ytm-shelf-renderer>`);
+    }""")
+    expect(page.locator('#h-short1')).to_be_hidden()
+    expect(page.locator('#h-short2')).to_be_hidden()
+    expect(page.locator('#h-video')).to_be_visible()
+    expect(page.locator('#h-video2')).to_be_visible()
+    expect(page.locator('#ver-tudo')).to_be_visible()
+    # o YouTube reaproveita o elemento: deixou de ser Shorts, volta a aparecer
+    page.evaluate("document.querySelector('#h-short1 a').setAttribute('href', '/watch?v=eeeeeeeeeee')")
+    expect(page.locator('#h-short1')).to_be_visible(timeout=3000)
     ctx.close()
 
 
@@ -1053,7 +1088,7 @@ def t_app_novo(browser, base):
     n = len(msgs())
     page.click('#carregando-voltar')
     expect(page.locator('#tela-biblioteca')).to_be_visible()
-    assert [m for m in msgs()[n:] if m.get('acao') != 'telaLigada'] == [{'acao': 'youtube', 'url': ''}], msgs()[n:]
+    assert [m for m in msgs()[n:] if m.get('acao') not in ('telaLigada', 'telaPronta')] == [{'acao': 'youtube', 'url': ''}], msgs()[n:]
     expect(page.locator('.item-bib')).to_have_count(0)  # não entra em "Meus vídeos"
 
     # anúncio que ignora o clique por código: o app toca de verdade no "Pular"
@@ -1625,6 +1660,15 @@ def t_ajustes_22_11(browser, base, en, pt):
     assert all(not c.startswith(('0,25', '0,5×', '0,50', '0,55')) for c in chips), chips
     # "Ver como avançar e retroceder o vídeo" nos Ajustes; marcar "não mostrar mais"
     expect(page.locator('#btn-ver-gestos')).to_have_text('Ver como avançar e retroceder o vídeo')
+    # Dicas (23/11): o botão fica logo abaixo da dica de deslizar; sem as dicas da pausa e do idioma do app
+    dicas = page.evaluate('''() => { const b = document.querySelector('#btn-ver-gestos');
+      const antes = b.previousElementSibling; return { grupo: b.closest('.grupo').querySelector('h3').textContent,
+      antes: antes && antes.textContent, texto: b.closest('.grupo').textContent }; }''')
+    assert dicas['grupo'] == 'Dicas', dicas['grupo']
+    assert dicas['antes'].strip().startswith('Deslizar para a esquerda'), dicas['antes']
+    assert 'Com o vídeo pausado' not in dicas['texto']
+    assert 'O app aparece no idioma do seu celular' not in dicas['texto']
+    assert 'o dedo no vídeo: repete a fala' not in dicas['texto'] and '2×' in dicas['texto']
     page.click('#btn-ver-gestos')
     expect(page.locator('#tela-gestos')).to_be_visible()
     page.check('#gestos-nao-mostrar')
@@ -1828,6 +1872,18 @@ def t_ajustes_22_11_3(browser, base, en, pt):
     assert page.evaluate('window.__irPara') >= 1
     page.evaluate("() => { const p = window.__ld.S.player; p.estado = p.__estadoOriginal; p.tempo = p.__tempoOriginal; }")
     expect(page.locator('#aviso-rede')).to_be_hidden(timeout=5000)
+    # 23/11: sair do app e voltar não mostra o aviso falso. O "parado desde" de antes de sair não conta, e o
+    # app Android (versão 14) é chamado para conferir a internet de novo.
+    page.evaluate('''() => { window.__ld.S.rede.travadoDesde = performance.now() - 60000;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange')); }''')
+    assert page.evaluate('window.__ld.S.rede.travadoDesde') == 0
+    # o player retomando devagar (carregando, tempo parado) dentro da carência: sem aviso
+    page.evaluate('''() => { const p = window.__ld.S.player; window.__tParado = p.tempo();
+      p.__estadoOriginal = p.estado; p.estado = () => 3; p.__tempoOriginal = p.tempo; p.tempo = () => window.__tParado; }''')
+    time.sleep(3.0)
+    assert page.locator('#aviso-rede').is_hidden(), 'aviso de reconectar logo depois de voltar ao app'
+    page.evaluate("() => { const p = window.__ld.S.player; p.estado = p.__estadoOriginal; p.tempo = p.__tempoOriginal; }")
     ctx.close()
 
     # App Android 11: ao abrir o vídeo, o app já prepara o registro no histórico
@@ -1958,8 +2014,12 @@ def t_ajustes_22_11_4(browser, base):
     erros = []
     page.on('pageerror', lambda e: erros.append(str(e)))
     falso_tradutor(page)
-    page.goto(base + '?mock=1&gestos=1&app=android&apk=13&mockSoAsr=1')
+    page.goto(base + '?mock=1&gestos=1&app=android&apk=14&mockSoAsr=1')
+    page.evaluate("window.__msgs.length = 0")
     page.evaluate("window.ldAbrirDoYoutube('https://m.youtube.com/watch?v=PAUSAJANELA')")
+    # 23/11: vindo do YouTube, a página troca de tela na hora e avisa o app (que só então faz a animação)
+    esperar(lambda: any(m.get('acao') == 'telaPronta' for m in page.evaluate('window.__msgs')), msg='telaPronta')
+    assert page.locator('#tela-assistir').is_visible()
     expect(page.locator('#tela-idioma')).to_be_visible(timeout=6000)
     page.click('#idioma-ok')
     t0 = time.time()

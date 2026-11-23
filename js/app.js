@@ -81,7 +81,8 @@ const S = {
   ajustes: ajustesIniciais(),
   // internet: online (último aviso do aparelho), travadoDesde (vídeo querendo tocar e o tempo parado),
   // cutucadas (pedidos do trecho de novo), recarregar (o player deu erro sem internet), reabrir (nem carregou)
-  rede: { online: navigator.onLine !== false, andandoEm: 0, ultimoT: -1, travadoDesde: 0, ultimaCutucada: 0, cutucadas: 0, querTocar: false, recarregar: false, reabrir: null },
+  // gracaAte: depois de voltar ao app, um tempo sem aviso (o player retoma e o Android confirma a internet).
+  rede: { online: navigator.onLine !== false, andandoEm: 0, ultimoT: -1, travadoDesde: 0, ultimaCutucada: 0, cutucadas: 0, querTocar: false, recarregar: false, reabrir: null, gracaAte: 0 },
   // vídeo aberto
   registro: null,
   unidades: [],
@@ -110,6 +111,7 @@ const S = {
   abHistorico: false, // a tela do A–B pôs uma entrada no histórico (para o voltar do celular)
   velConfirmada: 1,
   velPedida: null,
+  rapido: null, // segurando o dedo no vídeo: { pausarAoSoltar } enquanto anda em 2×
   velFina: false, // gancho v5 do app Android: velocidades de 0,05 em 0,05
   tocandoLogico: false, // 1, ou 3 (carregando) logo depois de 1
   ajustouVelInicio: false,
@@ -773,17 +775,69 @@ async function aoEscolherBackup(file) {
 
 // ============================================================ telas e histórico
 
-function mostrarBiblioteca() {
-  $('#tela-assistir').hidden = true;
-  $('#tela-biblioteca').hidden = false;
-  document.body.classList.remove('imersivo', 'faixa-visivel');
+// Troca entre Meus vídeos e o vídeo sem "piscada escura" (versão 14). Antes a tela nova surgia do
+// transparente e o fundo escuro aparecia por um instante. Agora:
+// - dentro da página: a tela antiga se dissolve na nova (as duas juntas, sem passar pelo fundo vazio), pela
+//   View Transitions do Chrome; onde ela não existir, a troca é na hora;
+// - vindo do YouTube do app (abrir um vídeo, Meus vídeos): a troca aqui é na hora e quem anima é o app, que
+//   espera o aviso "telaPronta" para a página já estar com a tela nova desenhada.
+
+/** A próxima troca de tela é na hora e o app Android é avisado ("telaPronta"): ele faz a animação. */
+let trocaDoApp = false;
+
+/** Tela que uma transição em andamento ainda vai mostrar ('assistir' ou 'biblioteca'), ou null. */
+let telaACaminho = null;
+
+/** Troca de tela: na hora (avisando o app, se ele pediu) ou dissolvendo uma na outra. */
+function trocarTela(mudar, destino, naHora) {
+  const doApp = trocaDoApp;
+  trocaDoApp = false;
+  const animar = !naHora && !doApp && !REDUZIR_MOVIMENTO && !document.hidden
+    && typeof document.startViewTransition === 'function';
+  if (!animar) {
+    mudar();
+    if (doApp) avisarTelaPronta();
+    return;
+  }
+  telaACaminho = destino;
+  try {
+    document.startViewTransition(() => {
+      if (telaACaminho === destino) telaACaminho = null;
+      mudar();
+    });
+  } catch {
+    telaACaminho = null;
+    mudar();
+  }
+}
+
+/** Avisa o app Android que a tela nova já está na página (depois de desenhada). */
+function avisarTelaPronta() {
+  if (!ANDROID || !window.LDNativo) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => mandarAoApp({ acao: 'telaPronta' })));
+}
+
+function mostrarBiblioteca(naHora = false) {
+  const mudar = () => {
+    $('#tela-assistir').hidden = true;
+    $('#tela-biblioteca').hidden = false;
+    document.body.classList.remove('imersivo', 'faixa-visivel');
+  };
   fecharPaineis();
+  if (telaACaminho === 'biblioteca') return; // a transição em andamento já vai mostrar Meus vídeos
+  const jaNela = $('#tela-assistir').hidden && !telaACaminho;
+  trocarTela(mudar, 'biblioteca', naHora || jaNela);
 }
 
 function mostrarTelaAssistir() {
-  $('#tela-biblioteca').hidden = true;
-  $('#tela-assistir').hidden = false;
-  atualizarImersivo();
+  const mudar = () => {
+    $('#tela-biblioteca').hidden = true;
+    $('#tela-assistir').hidden = false;
+    atualizarImersivo();
+  };
+  if (telaACaminho === 'assistir') return; // a transição em andamento já vai mostrar o vídeo
+  const jaNela = (!$('#tela-assistir').hidden || $('#tela-biblioteca').hidden) && !telaACaminho;
+  trocarTela(mudar, 'assistir', jaNela);
 }
 
 function rota() {
@@ -797,9 +851,19 @@ function rota() {
     }
   } else {
     const voltarAoYoutube = APP_NOVO && !!S.registro && S.origem === 'youtube';
+    if (voltarAoYoutube) {
+      // O vídeo veio do YouTube: volta para lá. O YouTube entra por cima desta tela; a troca para Meus
+      // vídeos aqui embaixo só acontece depois que ele cobriu tudo (antes, Meus vídeos aparecia de relance).
+      fecharVideo();
+      abrirYoutube('');
+      setTimeout(() => {
+        if (S.registro || location.hash === '#assistir') return; // outro vídeo abriu nesse meio-tempo
+        mostrarBiblioteca(true);
+      }, 500);
+      return;
+    }
     if (S.registro) fecharVideo();
     mostrarBiblioteca();
-    if (voltarAoYoutube) abrirYoutube(''); // o vídeo veio do YouTube: volta para lá
   }
 }
 
@@ -977,6 +1041,7 @@ function mostrarPreparandoVideo(sim) {
 }
 
 function encerrarPlayer() {
+  pararAceleracao();
   mostrarPreparandoVideo(false);
   salvarPosicao();
   if (S.player?.estado() === 1) avisarHistorico('progresso', true);
@@ -1007,11 +1072,17 @@ function fecharVideo() {
   renderBiblioteca();
 }
 
+/** A velocidade escolhida nos Ajustes, entre as que o player aceita. */
+function velocidadeSalvaAlvo() {
+  const vels = listaVelocidades();
+  return vels.reduce((a, b) => (Math.abs(b - S.ajustes.velocidade) < Math.abs(a - S.ajustes.velocidade) ? b : a), vels[0] ?? 1);
+}
+
 function aplicarVelocidadeSalva() {
   const p = S.player;
   if (!p) return;
-  const vels = listaVelocidades();
-  const alvo = vels.reduce((a, b) => (Math.abs(b - S.ajustes.velocidade) < Math.abs(a - S.ajustes.velocidade) ? b : a), vels[0] ?? 1);
+  if (S.rapido) return; // segurando o dedo no vídeo (2×): a velocidade salva volta ao soltar
+  const alvo = velocidadeSalvaAlvo();
   S.velConfirmada = p.velocidade() || 1;
   if (Math.abs(alvo - S.velConfirmada) > 1e-6) {
     if (velocidadeFina()) {
@@ -1670,6 +1741,7 @@ function mostrarBloqueio(tipo) {
   fecharCartao();
   fecharMenuTraducao();
   $('#tela-bloqueio').hidden = false;
+  if (trocaDoApp) { trocaDoApp = false; avisarTelaPronta(); }
   $('#bloqueio-voltar').focus();
   try { navigator.vibrate?.(30); } catch { /* nada */ }
 }
@@ -2401,6 +2473,8 @@ function entradaSuave() {
 
 const REDE_AVISO_MS = 2500; // carregando por mais que isto: mostra o aviso
 const REDE_CUTUCAR_MS = 8000; // ainda travado: pede o trecho de novo (e a cada 10 s depois disso)
+const REDE_GRACA_MS = 4000; // de volta ao app: tempo sem aviso enquanto o player retoma
+let timerGracaRede = 0;
 
 function zerarRede() {
   const r = S.rede;
@@ -2417,6 +2491,15 @@ function atualizarAvisoRede(forcar = false) {
   // O vídeo está andando: a internet chega, mesmo que o aparelho diga o contrário (rede sem verificação).
   const andando = agora - r.andandoEm < 1500;
   const semInternet = !r.online && !andando;
+  // App em segundo plano, ou acabou de voltar: nada de aviso (falso alarme ao sair do app e voltar).
+  if (document.hidden || agora < r.gracaAte) {
+    if (!$('#aviso-rede').hidden) $('#aviso-rede').hidden = true;
+    if (agora < r.gracaAte) {
+      clearTimeout(timerGracaRede);
+      timerGracaRede = setTimeout(() => atualizarAvisoRede(), r.gracaAte - agora + 50);
+    }
+    return;
+  }
   const mostrar = aberto && (semInternet || travado || r.recarregar || !!r.reabrir || (forcar && semInternet));
   const aviso = $('#aviso-rede');
   if (!mostrar) { if (!aviso.hidden) aviso.hidden = true; return; }
@@ -2455,7 +2538,7 @@ function conferirRede(st, t) {
   r.querTocar = true;
   atualizarAvisoRede();
   // Com internet, mas travado: pede o trecho de novo. Depois de 3 tentativas, recarrega o player no mesmo ponto.
-  if (r.online && agora - r.travadoDesde >= REDE_CUTUCAR_MS && agora - r.ultimaCutucada >= 10000) {
+  if (r.online && agora >= r.gracaAte && agora - r.travadoDesde >= REDE_CUTUCAR_MS && agora - r.ultimaCutucada >= 10000) {
     if (r.cutucadas >= 3 && S.registro?.estudo) {
       r.cutucadas = 0;
       recarregarPlayer();
@@ -2519,6 +2602,21 @@ function recuperarRede() {
   atualizarAvisoRede();
 }
 
+/**
+ * Voltou ao app (ou a tela ligou): o tempo parado em segundo plano não conta como vídeo travado. Antes, o
+ * "parado desde" antigo continuava valendo e o aviso de reconectar aparecia na hora, com o Wi-Fi perfeito.
+ * O app Android (versão 14) confere a internet de novo e manda o estado atual.
+ */
+function voltouAoApp() {
+  const r = S.rede;
+  r.travadoDesde = 0;
+  r.ultimoT = -1;
+  r.cutucadas = 0;
+  r.gracaAte = performance.now() + REDE_GRACA_MS;
+  if (APK >= 14) mandarAoApp({ acao: 'rede' });
+  atualizarAvisoRede();
+}
+
 /** Aviso do aparelho (eventos online/offline da página e, no app Android 11+, o próprio Android). */
 function aoMudarRede(online) {
   const r = S.rede;
@@ -2526,7 +2624,7 @@ function aoMudarRede(online) {
   r.online = online;
   diag(`internet: ${online ? 'voltou' : 'caiu'}`);
   if (!online) {
-    r.querTocar = r.querTocar || S.tocandoLogico;
+    if (!document.hidden) r.querTocar = r.querTocar || S.tocandoLogico;
     atualizarAvisoRede(true);
     return;
   }
@@ -3200,6 +3298,56 @@ function navegarAcao(acao) {
   vibrar();
 }
 
+// ============================================================ segurar o dedo no vídeo: 2× (versão 14)
+// Como no app do YouTube: enquanto o dedo fica no vídeo, ele anda em 2× (com o selo "2×" no topo do vídeo);
+// ao soltar, volta à velocidade dos Ajustes. Pausado: anda em 2× enquanto segura e pausa de novo ao soltar.
+// A velocidade dos Ajustes não muda (o 2× não é salvo). Durante anúncio, nada acontece.
+
+const VEL_RAPIDA = 2;
+
+/** Troca a velocidade na hora, sem guardar nos Ajustes. */
+function velocidadeMomentanea(v) {
+  const p = S.player;
+  if (!p) return;
+  if (velocidadeFina()) p.definirVelocidadeExata(v);
+  else p.definirVelocidade(v);
+}
+
+function acelerarSegurando() {
+  const p = S.player;
+  if (!p || S.rapido || !S.primeiroPlay || S.anuncio.ativo) return;
+  const st = p.estado();
+  const pausado = st === 2;
+  if (!pausado && st !== 1 && st !== 3) return;
+  S.rapido = { pausarAoSoltar: pausado };
+  velocidadeMomentanea(VEL_RAPIDA);
+  if (pausado) p.tocar();
+  const selo = $('#selo-rapido');
+  selo.hidden = false;
+  selo.classList.remove('visivel');
+  void selo.offsetWidth;
+  selo.classList.add('visivel');
+  vibrar();
+}
+
+/** O dedo saiu do vídeo: volta à velocidade dos Ajustes (e pausa de novo, se estava pausado). */
+function soltarAceleracao() {
+  const r = S.rapido;
+  if (!r) return;
+  pararAceleracao();
+  const p = S.player;
+  if (!p) return;
+  velocidadeMomentanea(velocidadeSalvaAlvo());
+  if (r.pausarAoSoltar && !S.anuncio.ativo) p.pausar();
+}
+
+/** Some com o selo do 2× (sem mexer no player). */
+function pararAceleracao() {
+  S.rapido = null;
+  const selo = $('#selo-rapido');
+  if (selo) { selo.classList.remove('visivel'); selo.hidden = true; }
+}
+
 // ============================================================ velocidade (no painel de ajustes)
 
 // Para mais devagar, de 0,05 em 0,05 (0,95× … 0,60×; abaixo disso a fala fica distorcida e não ajuda).
@@ -3742,9 +3890,10 @@ function abrirYoutube(url) {
 
 /** O app Android chama esta função quando um vídeo é tocado no YouTube de dentro do app. */
 window.ldAbrirDoYoutube = (url) => {
+  trocaDoApp = true; // quem anima é o app (ele espera o aviso "telaPronta")
   if (ehShorts(url)) { mostrarBloqueio('shorts'); return; }
   const link = lerLink(String(url || ''));
-  if (!link) return;
+  if (!link) { trocaDoApp = false; return; }
   if (S.registro) fecharVideo();
   limparFormulario();
   $('#campo-link').value = linkDoVideo(link.videoId, link.inicioSeg);
@@ -3754,6 +3903,7 @@ window.ldAbrirDoYoutube = (url) => {
 
 /** O app Android chama esta função no botão "Meus vídeos" (em cima do YouTube). */
 window.ldMostrarBiblioteca = () => {
+  trocaDoApp = true; // quem anima é o app (ele espera o aviso "telaPronta")
   $('#tela-bloqueio').hidden = true;
   if (S.registro) {
     fecharVideo();
@@ -3943,7 +4093,9 @@ function ligarEventos() {
   ligarGestos($('#camada-gestos'), {
     arrastar: (dir) => navegarAcao(direcaoDoArraste(dir)),
     toque: () => toqueNoVideo(),
-    segurar: () => navegarAcao('repetir'),
+    // Segurar o dedo no vídeo: anda em 2× até soltar (como no app do YouTube). Repetir a fala: tecla R ou ↓.
+    segurar: () => acelerarSegurando(),
+    soltar: () => soltarAceleracao(),
   });
   ligarGestos($('#caixa-legenda'), {
     arrastar: (dir) => navegarAcao(direcaoDoArraste(dir)),
@@ -3973,10 +4125,12 @@ function ligarEventos() {
   mqDeitado.addEventListener?.('change', atualizarImersivo);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      soltarAceleracao(); // saiu do app segurando o dedo no vídeo: volta à velocidade normal
       salvarPosicao();
       cancelAnimationFrame(S.raf);
       S.raf = 0;
     } else {
+      voltouAoApp();
       if (S.player) iniciarLaco();
       if (S.player?.estado() === 1) pedirTelaLigada();
     }

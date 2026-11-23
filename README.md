@@ -22,7 +22,8 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 |---|---|---|
 | Avançar o vídeo (até a próxima fala) | Deslizar o dedo para a **esquerda** sobre o vídeo ou sobre a legenda (como virar página) | Seta → |
 | Retroceder o vídeo (até a fala anterior) | Deslizar para a **direita** | Seta ← |
-| Repetir a fala | Segurar o dedo no vídeo | R ou ↓ |
+| Acelerar para 2× enquanto segura (versão 14) | Segurar o dedo no vídeo: aparece o selo **2× ▶▶** no topo do vídeo; ao soltar, volta à velocidade dos Ajustes (pausado: anda em 2× e pausa de novo ao soltar) | — |
+| Repetir a fala | — | R ou ↓ |
 | Tocar / pausar | Toque no vídeo, ou o botão amarelo | Espaço |
 | Ir a qualquer ponto | Arrastar a barra do tempo | Igual |
 | Traduzir ou copiar uma palavra | Toque na palavra da linha de cima | Clique na palavra |
@@ -36,7 +37,7 @@ De cima para baixo: o vídeo, a barra do tempo, a caixa da legenda e, embaixo de
 
 Padrão de quem acabou de instalar: falas em **Lista** e tradução **Mostrar sempre**.
 
-Com o vídeo **pausado**, avançar ou retroceder (deslizar, setas, segurar) não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Tocando, continua tocando. Abrir **⚙ Ajustes** pausa o vídeo na hora.
+Com o vídeo **pausado**, avançar ou retroceder (deslizar, setas) não faz o vídeo tocar: ele só volta a andar pelo botão de tocar. Tocando, continua tocando. Abrir **⚙ Ajustes** pausa o vídeo na hora.
 
 Antes de o vídeo começar aparece uma explicação animada de **como avançar e retroceder o vídeo**: um vídeo de exemplo com a barra do tempo e a legenda no modo lista (3 falas em inglês). Um polegar desliza rápido (uns 0,4 s) para um lado e para o outro; a cada deslize aparece no meio do vídeo o ícone de **Retroceder** (⏪) ou de **Avançar** (⏩), o ponto da barra do tempo volta ou vai para a frente e a legenda anda junto. Ela volta a cada vídeo até você marcar **Não mostrar mais esta explicação** e tocar em **Concluir**; dá para ver de novo em ⚙ Ajustes → **Ver como avançar e retroceder o vídeo**. Ao deslizar no vídeo de verdade, o aviso rápido no meio da tela também mostra o ícone com **Retroceder** ou **Avançar**. Quando o vídeo começa, o vídeo e a legenda aparecem devagar (entrada suave, de uns 2,4 s: escuro no começo, clareando aos poucos).
 
@@ -113,6 +114,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Versão 10:** o vídeo assistido no app entra no **histórico do YouTube** da conta conectada (o player embutido não grava no histórico; o app avisa o YouTube como o app oficial faz, ao começar o vídeo, a cada 20 s, ao pausar e ao sair). Precisa estar conectado (**Entrar**) e com o histórico ligado na conta. Também: permissão de notificações obrigatória para o download dos pacotes, erros explicados, explicação animada dos gestos e entrada suave do vídeo.
 - **Versão 11:** o histórico do YouTube fica em dia quase na hora: o app busca os endereços de registro assim que o vídeo abre (o registro sai no instante em que o vídeo começa, sem esperar baixar a página do vídeo), manda o progresso a cada 10 s, ao pausar, ao pular na barra (inclusive para trás) e ao sair, tenta de novo se o registro inicial falhar, e o YouTube da tela inicial recarrega sozinho ao voltar, mostrando o vídeo no histórico e a barrinha vermelha de progresso sem precisar puxar para atualizar. O próprio YouTube pode levar alguns segundos para processar. Também: o Android avisa a página quando a internet cai ou volta (aviso de reconexão).
 - **Versão 12:** transições suaves: o YouTube da tela inicial aparece subindo levemente e some apagando ao abrir um vídeo (curvas padrão do Material Design, 0,3 s e 0,24 s), e as abas do próprio YouTube (Início, Inscrições, Você, Histórico, busca) trocam com esmaecimento (o conteúdo antigo apaga em 0,15 s e o novo aparece em 0,32 s). Na página, Meus vídeos e a tela do vídeo aparecem com esmaecimento; o painel ⚙ Ajustes sobe e desce, o menu 文A abre e fecha com zoom curto, as janelas aparecem com leve aumento e a lista do A–B sobe. Também: códigos de formatação das legendas enviadas pelo autor do vídeo (como `<i>Hello.</i>`, `<b>`, `<font>`, `{\an8}`) não aparecem mais como texto, inclusive em vídeos já salvos.
+- **Versão 14:** troca de telas sem a “piscada escura” (a tela que sai fica inteira por baixo e a nova aparece por cima dela; dentro da página, Meus vídeos e o vídeo se dissolvem um no outro); o aviso “Tentando reconectar” não aparece mais à toa ao sair do app e voltar; segurar o dedo no vídeo acelera para 2× até soltar; o resumo **Histórico** da aba Você não mostra mais Shorts (o app não abre Shorts e o **Ver tudo** já não mostrava, por isso as duas listas não batiam).
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
