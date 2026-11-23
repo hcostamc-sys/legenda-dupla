@@ -9,6 +9,7 @@
 // Legendas do próprio YouTube (só no app Android, PLANO.md 15.10):
 // manterLegendas(sim) faixasLegenda() pedirLegenda(faixa) esconderLegendas()
 // silenciar(sim) pularAnuncio() retangulo()
+// revelar(): mostra a imagem do player na hora (anúncio, por exemplo); ver carregar().
 
 class Emissor {
   constructor() { this._ouvintes = {}; }
@@ -21,6 +22,35 @@ class Emissor {
 }
 
 export const MSG_API = 'Não consegui carregar o player do YouTube. Confira a internet.';
+
+/**
+ * Código de idioma do YouTube (parâmetro hl) para um idioma do navegador/celular (versão 16: o player no
+ * idioma do app). O YouTube só aceita os códigos da lista dele (i18nLanguages da API de dados): "pt" é o
+ * português do Brasil e "pt-PT" o de Portugal; "es-419" é o espanhol da América Latina; "iw", o hebraico.
+ * Mesma regra de MainActivity.idiomaYoutube().
+ */
+export function idiomaYoutube(tag) {
+  const partes = String(tag || '').replace(/_/g, '-').split('-').filter(Boolean);
+  const lingua = (partes[0] || 'en').toLowerCase();
+  const escrita = partes.slice(1).find((p) => p.length === 4) || '';
+  const pais = (partes.slice(1).find((p) => p.length === 2 || /^\d{3}$/.test(p)) || '').toUpperCase();
+  switch (lingua) {
+    case 'pt': return pais === 'PT' ? 'pt-PT' : 'pt';
+    case 'es': return !pais || pais === 'ES' ? 'es' : pais === 'US' ? 'es-US' : 'es-419';
+    case 'en': return pais === 'GB' ? 'en-GB' : pais === 'IN' ? 'en-IN' : 'en';
+    case 'fr': return pais === 'CA' ? 'fr-CA' : 'fr';
+    case 'zh':
+      if (pais === 'HK' || pais === 'MO') return 'zh-HK';
+      if (pais === 'TW' || /^hant$/i.test(escrita)) return 'zh-TW';
+      return 'zh-CN';
+    case 'he': case 'iw': return 'iw';
+    case 'in': return 'id';
+    case 'nb': case 'nn': return 'no';
+    case 'tl': return 'fil';
+    case 'sr': return /^latn$/i.test(escrita) ? 'sr-Latn' : 'sr';
+    default: return lingua;
+  }
+}
 
 let promessaApi = null;
 
@@ -62,8 +92,11 @@ export class PlayerYouTube extends Emissor {
     this._base = 0; // ultimoTempo (base da interpolação)
     this._marca = 0;
     this._seek = null; // { alvo, quando, lidoAntes }
-    // Vídeo aberto no ponto salvo (parâmetro start): { alvo, desde } até o player chegar lá (versão 15).
+    // Vídeo aberto no ponto salvo (parâmetro start): { alvo, desde, visto } até o player chegar lá
+    // (versões 15 e 16).
     this._aguardaInicio = null;
+    // Imagem do player escondida até o vídeo andar no ponto certo (versão 16): ver carregar().
+    this._oculto = false;
     this._legendasDesligadas = false;
     this._congelado = false; // pausa pedida, ainda sem confirmação do player
     this._token = 0;
@@ -125,17 +158,30 @@ export class PlayerYouTube extends Emissor {
   /** A janela do player (para conferir de onde vêm os avisos do gancho). */
   janela() { return this.iframe?.contentWindow || null; }
 
-  async carregar(videoId, inicioSeg = 0) {
+  /**
+   * Cria o player no ponto inicioSeg. opcoes.tocar: começa sozinho (autoplay=1), sem esperar o "pronto"
+   * e o pedido de tocar ida e volta (o vídeo salvo do app Android abre mais rápido).
+   *
+   * Versão 16: a imagem do player fica escondida (o fundo escuro do vídeo aparece) até o vídeo estar andando
+   * no ponto certo. Antes, ao abrir um vídeo salvo, aparecia a capa do vídeo (que parece o começo dele),
+   * depois o tempo ia para 00:00 por um instante (o YouTube informa 0 s antes de pular para o parâmetro
+   * start) e só então o vídeo surgia no ponto salvo.
+   */
+  async carregar(videoId, inicioSeg = 0, opcoes = {}) {
     this.destruir();
     const token = this._token;
     await carregarApi();
     if (token !== this._token) return; // destruir() foi chamado enquanto a API carregava
     const origem = encodeURIComponent(location.origin);
     const inicio = Math.max(0, Math.floor(inicioSeg || 0));
+    const hl = encodeURIComponent(idiomaYoutube(navigator.language)); // o player no idioma do app
     const iframe = document.createElement('iframe');
     iframe.id = 'yt';
+    iframe.className = 'yt-oculto';
+    this._oculto = true;
     iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&playsinline=1&rel=0` +
-      `&iv_load_policy=3&cc_load_policy=0&fs=0&disablekb=1&start=${inicio}&origin=${origem}`;
+      `&iv_load_policy=3&cc_load_policy=0&fs=0&disablekb=1&start=${inicio}&hl=${hl}` +
+      `${opcoes.tocar ? '&autoplay=1' : ''}&origin=${origem}`;
     iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
     iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
     iframe.setAttribute('title', 'Player do YouTube');
@@ -159,6 +205,7 @@ export class PlayerYouTube extends Emissor {
             this._ler();
             if (!this._seekAtivo() && this._lido !== null) this._base = this._lido;
             this._marca = performance.now();
+            if (e.data === 1 && !this._aguardaInicio) this.revelar();
             if (e.data === 1 && !this._legendasDesligadas && !this._manterLegendas) {
               this._aplicarSemLegendas();
               this._legendasDesligadas = true;
@@ -173,8 +220,8 @@ export class PlayerYouTube extends Emissor {
             this._vel = Number(e.data) || 1;
             this.emitir('velocidade', this._vel);
           },
-          onError: (e) => this.emitir('erro', e.data),
-          onAutoplayBlocked: () => this.emitir('autoplayBloqueado'),
+          onError: (e) => { this.revelar(); this.emitir('erro', e.data); },
+          onAutoplayBlocked: () => { this.revelar(); this.emitir('autoplayBloqueado'); },
           onApiChange: () => this.emitir('modulos'),
         },
       });
@@ -187,25 +234,40 @@ export class PlayerYouTube extends Emissor {
     try { this.yt.unloadModule('cc'); } catch { /* nada */ }
   }
 
+  /** Mostra a imagem do player (escondida desde carregar() até o vídeo andar no ponto certo). */
+  revelar() {
+    if (!this._oculto) return;
+    this._oculto = false;
+    this.iframe?.classList.remove('yt-oculto');
+  }
+
   _ler() {
     let atual = null;
     try { atual = this.yt?.getCurrentTime?.(); } catch { /* nada */ }
     if (typeof atual === 'number' && this._aguardaInicio) {
-      // Vídeo aberto no ponto salvo: até ir de fato para lá, o player do YouTube informa 0 s. Antes a barra
-      // do tempo e a legenda iam para 00:00 por um instante e voltavam ao ponto salvo (versão 15). Agora
-      // essas leituras são ignoradas e vale o ponto salvo. Se o player tocar 4 s sem chegar lá (start
-      // ignorado), passa a valer o que ele informa.
+      // Vídeo aberto no ponto salvo: até ir de fato para lá, o player do YouTube informa 0 s; essas leituras
+      // são ignoradas e vale o ponto salvo (versão 15). Versão 16: o player às vezes já informa o ponto salvo
+      // ANTES de tocar e depois ainda manda 0 s (a barra ia para 00:00 e voltava, visto numa gravação de
+      // tela). Por isso a espera só acaba com o vídeo TOCANDO perto do ponto salvo e o tempo andando (duas
+      // leituras seguidas, a segunda maior). Se o player tocar 4 s sem chegar lá (start ignorado), passa a
+      // valer o que ele informa.
       const ag = this._aguardaInicio;
+      const agora = performance.now();
       if (atual >= ag.alvo - 1.5) {
-        this._aguardaInicio = null;
+        if (this._estado === 1) {
+          if (ag.visto == null) ag.visto = atual;
+          else if (atual > ag.visto + 0.05) { this._aguardaInicio = null; this.revelar(); }
+        }
+        // perto do ponto salvo: segue para a leitura normal
       } else {
-        if (this._estado === 1 && !ag.desde) ag.desde = performance.now();
-        if (!ag.desde || performance.now() - ag.desde < 4000) {
+        if (this._estado === 1 && !ag.desde) ag.desde = agora;
+        if (!ag.desde || agora - ag.desde < 4000) {
           this._base = ag.alvo;
-          this._marca = performance.now();
+          this._marca = agora;
           return ag.alvo;
         }
         this._aguardaInicio = null;
+        this.revelar();
       }
     }
     if (typeof atual === 'number' && atual !== this._lido) {
@@ -261,6 +323,7 @@ export class PlayerYouTube extends Emissor {
   irPara(seg, buscar = true) {
     const alvo = Math.max(0, Number(seg) || 0);
     this._aguardaInicio = null; // a pessoa (ou o app) escolheu outro ponto
+    this.revelar();
     try { this.yt?.seekTo(alvo, buscar); } catch { /* nada */ }
     this._base = alvo;
     this._marca = performance.now();
@@ -324,6 +387,7 @@ export class PlayerYouTube extends Emissor {
     this._lido = null;
     this._seek = null;
     this._aguardaInicio = null;
+    this._oculto = false;
     this._legendasDesligadas = false;
   }
 }

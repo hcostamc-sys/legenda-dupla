@@ -1996,7 +1996,7 @@ def t_capturas(browser, url, en, pt):
         ctx.close()
 
 
-@caso('20. Ajustes de 22/11 (4): toque no vídeo avisa o app sem o YouTube navegar; abas sem animação (v15); 1 s entre as janelas')
+@caso('20. Ajustes de 22/11 (4): toque no vídeo avisa o app sem o YouTube navegar; abas sem a animação antiga (v15); 1 s entre as janelas')
 def t_ajustes_22_11_4(browser, base):
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'android', 'app', 'src', 'main', 'assets', 'youtube.js')
     ctx = browser.new_context(locale='pt-BR', viewport={'width': 412, 'height': 915})
@@ -2022,14 +2022,15 @@ def t_ajustes_22_11_4(browser, base):
     page.click('#local')  # endereço fora do YouTube: não conta como vídeo
     assert len(page.evaluate('window.__yt')) == 1
     assert page.evaluate('window.__navegou') == 3
-    # Abas (versão 15): trocam sem animação do app, como no app oficial do YouTube (a animação antiga piscava)
+    # Abas: a animação antiga (v14, piscava) não volta, e trocar de endereço sem tocar numa aba não anima.
+    # A animação da versão 16 (toque na aba, igual ao app oficial) é testada em tests/youtube_aba_test.py.
     page.evaluate("history.replaceState(null, '', '/')")
     for caminho in ['/feed/you', '/', '/feed/history']:
         page.evaluate(f"history.pushState(null, '', '{caminho}')")
         for _ in range(4):
             time.sleep(0.1)
             assert page.evaluate("getComputedStyle(document.querySelector('ytm-browse')).opacity") == '1', caminho
-            assert not page.evaluate("document.documentElement.classList.contains('ld-saindo') || document.documentElement.classList.contains('ld-entrando')")
+            assert not page.evaluate("document.documentElement.classList.contains('ld-saindo') || document.documentElement.classList.contains('ld-entrando') || document.documentElement.classList.contains('ld-aba')")
     ctx.close()
 
     # App Android, vídeo novo: a explicação dos gestos só aparece 1 s depois de a janela do idioma sair

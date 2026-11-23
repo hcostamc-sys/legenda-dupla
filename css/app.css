@@ -306,6 +306,10 @@ body.android .tela-ab { padding-top: 0; }
   border: 0;
   display: block;
 }
+/* Versão 16: a imagem do player só aparece com o vídeo andando no ponto certo (sem a capa do vídeo nem o
+   começo dele antes do ponto salvo); aparece rápido, sem piscar */
+.player-host iframe { transition: opacity 0.18s ease-out; }
+.player-host iframe.yt-oculto { opacity: 0; transition: none; }
 .player-falso {
   background: #555;
   display: flex !important;

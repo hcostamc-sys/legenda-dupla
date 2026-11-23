@@ -1027,9 +1027,12 @@ async function abrirVideo(reg, inicio, origem = 'youtube') {
   p.on('autoplayBloqueado', mostrarAvisoToque);
   if (ANDROID && !reg.estudo) p.manterLegendas?.(true);
   iniciarLaco();
+  // Vídeo salvo sem a explicação dos gestos para mostrar antes: o player já nasce tocando (autoplay), sem
+  // esperar o "pronto" e o pedido de tocar (versão 16: abre mais rápido, direto no ponto salvo).
+  const tocarJa = sozinho && !(precisaExplicarGestos() && !S.gestosNestaAbertura);
   if (sozinho) iniciarSozinho(p);
   try {
-    await p.carregar(reg.id, inicio);
+    await p.carregar(reg.id, inicio, { tocar: tocarJa });
   } catch (e) {
     if (S.player !== p) return;
     diag(`player não carregou: ${detalheErro(e)}`);
@@ -1833,6 +1836,7 @@ function aoReceberAnuncio(ev) {
   if (janela && ev.source !== janela) return; // aviso de outro quadro
   const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   S.anuncio = { ativo: !!d.ativo, pulavel: !!d.ativo && !!d.pulavel, x: n(d.x), y: n(d.y), w: n(d.w), h: n(d.h) };
+  if (S.anuncio.ativo) p.revelar?.(); // o anúncio (e o "Pular") precisa aparecer
   atualizarAnuncio();
 }
 
@@ -2602,6 +2606,7 @@ async function recarregarPlayer() {
   if (S.player !== p) return;
   aplicarVelocidadeSalva();
   if (tocar) p.tocar();
+  else p.revelar?.(); // pausado: mostra a imagem do player (sem esperar o vídeo andar)
 }
 
 /** A internet voltou: continua de onde parou. */

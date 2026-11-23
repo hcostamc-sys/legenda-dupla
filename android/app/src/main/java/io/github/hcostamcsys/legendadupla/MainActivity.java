@@ -110,12 +110,17 @@ import java.util.regex.Pattern;
  * 15) versão 15: troca entre o YouTube e a página sem tela meio transparente: a tela nova desliza inteira
  *    (opaca) por cima da antiga, que só recua um pouco. As abas do YouTube trocam sem animação do app
  *    (youtube.js), como no app oficial: a animação antiga piscava (conteúdo, escuro, conteúdo).
+ * 16) versão 16:
+ *    - troca de aba do YouTube igual à do app oficial (medida quadro a quadro numa gravação de tela): a página
+ *      nova sobe 41 dp em 0,375 s na curva "fast out slow in", a partir do toque na aba (youtube.js);
+ *    - o YouTube (tela inicial e player) no idioma do celular: o campo hl do cookie PREF passa a seguir o idioma
+ *      do Android a cada abertura (antes ficava no idioma da primeira visita), e a primeira página leva ?hl=.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 15; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 16; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 
@@ -207,6 +212,8 @@ public class MainActivity extends Activity {
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true); // o player do YouTube fica num quadro de outro site
+        // Versão 16: o YouTube (tela inicial e player) no idioma do celular, antes de qualquer página carregar.
+        aplicarIdiomaYoutube();
 
         boolean gancho = false;
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -535,12 +542,89 @@ public class MainActivity extends Activity {
         botaoEntrar.setVisibility(conectadoAoYoutube() ? View.GONE : View.VISIBLE);
     }
 
+    /**
+     * Código de idioma do YouTube (parâmetro hl) para o idioma do celular. O YouTube só aceita os códigos da
+     * lista dele (i18nLanguages da API de dados): "pt" é o português do Brasil e "pt-PT" o de Portugal;
+     * espanhol: "es" (Espanha), "es-US" e "es-419" (América Latina); inglês: "en", "en-GB", "en-IN";
+     * francês: "fr", "fr-CA"; chinês: "zh-CN", "zh-TW", "zh-HK"; hebraico é "iw"; norueguês, "no".
+     */
+    static String idiomaYoutube(Locale l) {
+        String lingua = l.getLanguage();
+        String pais = l.getCountry() == null ? "" : l.getCountry().toUpperCase(Locale.ROOT);
+        String escrita = l.getScript() == null ? "" : l.getScript();
+        if (lingua == null || lingua.isEmpty()) return "en";
+        switch (lingua) {
+            case "pt": return "PT".equals(pais) ? "pt-PT" : "pt";
+            case "es":
+                if (pais.isEmpty() || "ES".equals(pais)) return "es";
+                return "US".equals(pais) ? "es-US" : "es-419";
+            case "en": return "GB".equals(pais) ? "en-GB" : "IN".equals(pais) ? "en-IN" : "en";
+            case "fr": return "CA".equals(pais) ? "fr-CA" : "fr";
+            case "zh":
+                if ("HK".equals(pais) || "MO".equals(pais)) return "zh-HK";
+                if ("TW".equals(pais) || "Hant".equals(escrita)) return "zh-TW";
+                return "zh-CN";
+            case "he": case "iw": return "iw";
+            case "in": return "id";
+            case "nb": case "nn": return "no";
+            case "tl": return "fil";
+            case "sr": return "Latn".equals(escrita) ? "sr-Latn" : "sr";
+            default: return lingua;
+        }
+    }
+
+    /**
+     * O YouTube guarda o idioma da interface no cookie PREF (campo hl), escolhido na primeira visita; depois
+     * não mudava mais, mesmo trocando o idioma do celular. Aqui o campo hl passa a ser o idioma do celular a cada
+     * abertura do app (trocar o idioma do Android reinicia a tela do app), mantendo o resto do PREF (fuso,
+     * tema etc.). O cookie é de .youtube.com: vale para a tela inicial (m.youtube.com) e para o player.
+     */
+    private void aplicarIdiomaYoutube() {
+        try {
+            String hl = idiomaYoutube(Locale.getDefault());
+            CookieManager cm = CookieManager.getInstance();
+            String todos = cm.getCookie("https://www.youtube.com");
+            String pref = "";
+            if (todos != null) {
+                for (String parte : todos.split(";")) {
+                    String p = parte.trim();
+                    if (p.startsWith("PREF=")) { pref = p.substring(5); break; }
+                }
+            }
+            StringBuilder novo = new StringBuilder();
+            for (String campo : pref.split("&")) {
+                if (campo.isEmpty() || campo.startsWith("hl=")) continue;
+                if (novo.length() > 0) novo.append('&');
+                novo.append(campo);
+            }
+            if (novo.length() > 0) novo.append('&');
+            novo.append("hl=").append(hl);
+            cm.setCookie("https://www.youtube.com", "PREF=" + novo
+                    + "; Domain=.youtube.com; Path=/; Max-Age=63072000; Secure; SameSite=None");
+            cm.flush();
+        } catch (Exception e) {
+            // nada: o YouTube segue no idioma que já tinha
+        }
+    }
+
+    /** Endereço do YouTube com o idioma do celular (hl), reforço do cookie na primeira página carregada. */
+    private static String comIdiomaYoutube(String url) {
+        try {
+            Uri u = Uri.parse(url);
+            String host = u.getHost() == null ? "" : u.getHost();
+            if (!host.endsWith("youtube.com") || u.getQueryParameter("hl") != null) return url;
+            return u.buildUpon().appendQueryParameter("hl", idiomaYoutube(Locale.getDefault())).build().toString();
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
     /** Tela de login do Google para o YouTube, dentro do próprio YouTube do app (os cookies valem para o player). */
     private void entrarNaConta() {
         if (ytWeb == null) return;
         String hl = Uri.encode(Locale.getDefault().toLanguageTag()); // tela de login no idioma do celular
-        String volta = "https://m.youtube.com/signin?action_handle_signin=true&app=m&hl=" + hl + "&next="
-                + Uri.encode(INICIO_YOUTUBE);
+        String volta = "https://m.youtube.com/signin?action_handle_signin=true&app=m&hl="
+                + Uri.encode(idiomaYoutube(Locale.getDefault())) + "&next=" + Uri.encode(INICIO_YOUTUBE);
         String url = "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&hl=" + hl + "&continue="
                 + Uri.encode(volta);
         ultimoUrlYt = url;
@@ -577,7 +661,7 @@ public class MainActivity extends Activity {
         if (alvo != null && !alvo.equals(ultimoUrlYt)) {
             ultimoUrlYt = alvo;
             historicoMudou.set(false); // a página nova já vem atualizada
-            ytWeb.loadUrl(alvo);
+            ytWeb.loadUrl(comIdiomaYoutube(alvo));
         } else if (historicoMudou.get() && paginaDeHistorico(ytWeb.getUrl())) {
             // Página do histórico: recarrega por baixo da capa (a capa entra antes de o YouTube aparecer).
             recarregarYoutube(true);
