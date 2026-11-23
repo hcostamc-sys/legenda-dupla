@@ -119,12 +119,16 @@ import java.util.regex.Pattern;
  *    a página 80 a 200 ms depois: a página ANTIGA descia e subia, com um quadro preto no começo, e a nova
  *    entrava com a subida pela metade. Agora o toque só arma a troca e a subida (41 dp, 0,375 s, de 89% a
  *    100%) começa no quadro em que a página nova aparece; até lá a antiga fica parada.
+ * 18) versão 18: a página nova só começa a subir completa (youtube.js). Na gravação, a engrenagem surgia 1
+ *    quadro depois, a foto do perfil 2 e as miniaturas ficavam cinza por 2 a 4 quadros, tudo no meio da
+ *    subida. Agora ela espera invisível no ponto de partida (no máximo 120 ms) até as imagens à vista estarem
+ *    carregadas e decodificadas e o YouTube passar um quadro sem pôr nada novo.
  */
 public class MainActivity extends Activity {
 
     private static final String ORIGEM_APP = "https://hcostamc-sys.github.io";
     private static final String PAGINA = ORIGEM_APP + "/legenda-dupla/";
-    private static final int VERSAO_APK = 17; // a página usa para saber o que o app sabe fazer
+    private static final int VERSAO_APK = 18; // a página usa para saber o que o app sabe fazer
     private static final int PEDIDO_NOTIFICACAO = 7;
     private static final String INICIO_YOUTUBE = "https://m.youtube.com/";
 

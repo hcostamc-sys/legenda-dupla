@@ -1,4 +1,4 @@
-"""Teste da animação de troca de aba do YouTube do app (android/app/src/main/assets/youtube.js), versão 17.
+"""Teste da animação de troca de aba do YouTube do app (android/app/src/main/assets/youtube.js), versão 18.
 
 Monta uma página de mentira com os nomes de elementos do m.youtube.com (barra de cima, conteúdo e barra de
 abas), que troca de página como o site de verdade fez na gravação de 23/11/2026: a página antiga fica na tela
@@ -6,6 +6,7 @@ uns 80 a 200 ms depois do toque e só então a nova entra. Injeta o youtube.js e
 - antes da troca, a página antiga não se mexe nem escurece (a versão 16 a fazia descer e piscar);
 - o 1º quadro da página nova já está 41 px abaixo, a 89%, e ela sobe na curva medida no app oficial
   (41 px em 0,375 s, (0.4, 0, 0.2, 1)), clareando até 100%;
+- a página nova só aparece completa (miniatura carregada, engrenagem no lugar), com no máximo 120 ms escuros;
 - tocar na aba aberta, ou uma troca que nunca vem, não anima nada.
 
 Uso (na raiz do projeto): python3 tests/youtube_aba_test.py
@@ -36,13 +37,21 @@ PAGINA = """<!doctype html><html><head><meta charset="utf-8"><meta name=viewport
 </ytm-pivot-bar-renderer>
 <script>
   window.modo = 'troca'; window.atraso = 120;
+  // Imagem de 1 px (a miniatura) e quanto ela demora: como na gravação, a página nova chega sem a
+  // engrenagem (vem 1 quadro depois) e com a miniatura cinza (a imagem chega depois). 'nunca': não chega.
+  var PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  window.atrasoImg = 40;
   function novaPagina(texto) {
     var velha = document.getElementById('pag');
     var nova = document.createElement('ytm-browse');
     nova.id = 'pag'; nova.style.cssText = velha.style.cssText;
-    nova.innerHTML = '<div class="lista" style="height:700px">' + texto + '</div>';
+    nova.innerHTML = '<img class="mini" style="display:block;width:200px;height:110px;background:#555">' +
+      '<div class="lista" style="height:590px">' + texto + '</div>';
     velha.replaceWith(nova);
-    document.querySelector('ytm-mobile-topbar-renderer').innerHTML = '<span>topo ' + texto + '</span>';
+    var topo = document.querySelector('ytm-mobile-topbar-renderer');
+    topo.innerHTML = '<span>topo ' + texto + '</span>';
+    requestAnimationFrame(function () { topo.insertAdjacentHTML('beforeend', '<i class="engrenagem">*</i>'); });
+    if (window.atrasoImg !== 'nunca') setTimeout(function () { nova.querySelector('img').src = PNG; }, window.atrasoImg);
   }
   // Como o m.youtube.com: a aba acende na hora, o endereço muda e a página antiga continua na tela até a
   // nova chegar. modo 'duas': esconde a antiga num quadro e põe a nova no seguinte. modo 'nunca': não troca.
@@ -81,7 +90,9 @@ PAGINA = """<!doctype html><html><head><meta charset="utf-8"><meta name=viewport
         var ta = an && an.currentTime !== null ? an.currentTime : -1;
         var pag = document.getElementById('pag');
         linhas.push([ta].concat(ler(document.querySelector('ytm-mobile-topbar-renderer')), ler(pag),
-          [pag.hidden ? '' : pag.textContent, document.documentElement.classList.contains('ld-aba'), agora - t0]));
+          [pag.hidden ? '' : pag.textContent, document.documentElement.classList.contains('ld-aba'), agora - t0,
+           !!(pag.querySelector('img') ? pag.querySelector('img').naturalWidth : 1),
+           !!document.querySelector('.engrenagem') || !pag.querySelector('img'), window.trocouEm ? agora - window.trocouEm : -1]));
         if (agora - t0 < ms) requestAnimationFrame(q); else ok(linhas);
       })();
     });
@@ -103,7 +114,7 @@ def fosi(x):
     return 3 * (1 - s) * s ** 2 + s ** 3
 
 
-def conferir_troca(linhas, antigo, nome, erros):
+def conferir_troca(linhas, antigo, nome, erros, completa=True):
     """Uma troca de aba gravada: antiga parada até sair; nova entra embaixo e sobe na curva."""
     antes = [l for l in linhas if l[5] == antigo]
     for l in antes:
@@ -113,14 +124,27 @@ def conferir_troca(linhas, antigo, nome, erros):
     if not antes:
         erros.append(f'{nome}: a gravação não pegou a página antiga')
     novas = [l for l in linhas if l[5] not in (antigo, '')]
-    if not novas:
-        erros.append(f'{nome}: a página nova não entrou')
+    vistas = [l for l in novas if l[4] > 0.05]
+    if not vistas:
+        erros.append(f'{nome}: a página nova não apareceu')
         return
-    p = novas[0]
+    if completa:
+        for l in vistas:
+            if not (l[8] and l[9]):
+                erros.append(f'{nome}: página nova na tela sem a miniatura ou sem a engrenagem: ' + json.dumps(l))
+                break
+    espera = vistas[0][7] - novas[0][7]
+    if espera > 140:
+        erros.append(f'{nome}: tela escura por {espera:.0f} ms antes da subida (limite 120 ms)')
+    for l in novas:
+        if l[4] <= 0.05 and l[6]:
+            erros.append(f'{nome}: animação começou com a página invisível')
+            break
+    p = vistas[0]
     if p[3] < 38 or p[4] < 0.88 or p[4] > 0.92:
         erros.append(f'{nome}: o 1º quadro da página nova não estava 41 px abaixo a 89%: ' + json.dumps(p))
     maior = 0.0
-    for t, ty_topo, op_topo, ty, op, _, _, _ in novas:
+    for t, ty_topo, op_topo, ty, op, *_ in vistas:
         if t < 0 or t > 360:
             continue
         x = fosi(min(1.0, t / 375))
@@ -165,17 +189,17 @@ def main():
 
         # 2) trocar de aba, página nova 120 ms depois do toque (como na gravação)
         pag.click('#inicio')  # pointerup + click do mesmo toque: uma animação só
-        conferir_troca(pag.evaluate('gravar(560)'), 'Você', 'troca 120 ms', erros)
+        conferir_troca(pag.evaluate('gravar(760)'), 'Você', 'troca 120 ms', erros)
 
         # 3) a página nova demora 300 ms (primeira abertura da aba)
         pag.evaluate('window.atraso = 300')
         pag.click('#inscr')
-        conferir_troca(pag.evaluate('gravar(760)'), 'Início', 'troca 300 ms', erros)
+        conferir_troca(pag.evaluate('gravar(960)'), 'Início', 'troca 300 ms', erros)
 
         # 4) o site esconde a antiga num quadro e põe a nova dois quadros depois
         pag.evaluate("window.atraso = 100; window.modo = 'duas'")
         pag.click('#voce')
-        conferir_troca(pag.evaluate('gravar(560)'), 'Inscrições', 'troca em dois passos', erros)
+        conferir_troca(pag.evaluate('gravar(760)'), 'Inscrições', 'troca em dois passos', erros)
 
         # 5) toque que não troca de página: nada anima
         pag.evaluate("window.modo = 'nunca'")
@@ -187,12 +211,20 @@ def main():
         pag.evaluate("history.replaceState({}, '', '/feed/you')")
         pag.wait_for_timeout(3200)  # a espera armada pelo toque sem troca acaba
 
-        # 6) voltar do celular entre abas: anima também, quando a página volta
+        # 6) miniatura que não carrega (internet lenta): sobe assim mesmo depois de uns 120 ms
+        pag.evaluate("window.atrasoImg = 'nunca'")
+        antigo = pag.evaluate("document.getElementById('pag').textContent")
+        pag.click('#inscr')
+        conferir_troca(pag.evaluate('gravar(800)'), antigo, 'imagem que não chega', erros, completa=False)
+        pag.evaluate('window.atrasoImg = 40')
+        pag.wait_for_timeout(300)
+
+        # 7) voltar do celular entre abas: anima também, quando a página volta
         pag.click('#inicio')
-        pag.evaluate('gravar(560)')
+        pag.evaluate('gravar(760)')
         texto = pag.evaluate("document.getElementById('pag').textContent")
         pag.go_back()
-        conferir_troca(pag.evaluate('gravar(560)'), texto, 'voltar', erros)
+        conferir_troca(pag.evaluate('gravar(760)'), texto, 'voltar', erros)
         nav.close()
     servidor.shutdown()
     shutil.rmtree(pasta, ignore_errors=True)

@@ -12,6 +12,7 @@
 //    Agora o toque só "arma" a troca; a animação começa no instante em que a página antiga sai da tela (o
 //    observador de mudanças roda antes de a tela ser desenhada), então o 1º quadro da página nova já é o
 //    1º quadro da subida. Até lá a página antiga fica parada, sem piscar. Tocar na aba aberta não anima.
+//    Versão 18: a página nova só sobe completa, sem nada surgindo no meio (ver prepararAba).
 //    Outras páginas (Histórico, busca, canal) continuam sem animação.
 // 3) Toque num vídeo: avisa o app (LDYoutube) antes de o YouTube abrir a página do vídeo. A lista fica
 //    exatamente como estava (sem ir e voltar, sem recarregar). Sem LDYoutube, o YouTube segue normal e o
@@ -44,6 +45,10 @@
       ' to { transform: translate3d(0, 0, 0); opacity: 1; } }',
     'html.ld-aba :is(' + PAGINA + ') { animation: ld-aba-sobe ' + ABA_MS + 'ms cubic-bezier(0.4, 0, 0.2, 1) both' +
       ' !important; will-change: transform, opacity; }',
+    // espera da página nova completa (versão 18): parada no ponto de partida, invisível (0,01 e não 0, para o
+    // navegador já desenhar as imagens; numa camada com opacidade 0 ele não desenha nada)
+    'html.ld-aba-espera :is(' + PAGINA + ') { transform: translate3d(0, 41px, 0) !important;' +
+      ' opacity: 0.01 !important; will-change: transform, opacity; }',
     '@media (prefers-reduced-motion: reduce) { html.ld-aba :is(' + PAGINA + ') { animation: none !important; } }',
   ].join('\n');
 
@@ -281,7 +286,93 @@
     else trocou = PONTOS.some(function (p) { return !!elementoNoPonto(p); }); // tela vazia: veio conteúdo
     if (!trocou) return;
     desarmar();
-    animarAba();
+    prepararAba();
+  }
+
+  // ------------------------------------------------------------------ página nova completa (versão 18)
+  // Na gravação da v16, a página nova chegava incompleta e as coisas surgiam no meio da subida: a engrenagem
+  // 1 quadro depois, a foto do perfil 2 quadros depois e as miniaturas como blocos cinza por 2 a 4 quadros.
+  // No app oficial tudo já está lá no 1º quadro. Então a página nova fica parada no ponto de partida,
+  // invisível (como os 1 ou 2 quadros escuros do app oficial), até as imagens à vista estarem carregadas e
+  // decodificadas e o YouTube passar um quadro inteiro sem pôr nada novo; só aí a subida começa.
+  // Limite: 120 ms. Com a internet lenta, sobe assim mesmo (melhor que a tela escura demorar).
+  var ESPERA_COMPLETA_MS = 120;
+  var preparo = null;
+
+  function imagensAVista() {
+    var lista = [];
+    var partes = document.querySelectorAll(PAGINA);
+    for (var k = 0; k < partes.length; k++) {
+      var imgs = partes[k].querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        var r = imgs[i].getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) continue;
+        if (r.bottom <= 0 || r.top >= window.innerHeight || r.right <= 0 || r.left >= window.innerWidth) continue;
+        lista.push(imgs[i]);
+      }
+    }
+    return lista;
+  }
+
+  function cancelarPreparo() {
+    if (!preparo) return;
+    if (preparo.obs) preparo.obs.disconnect();
+    preparo = null;
+    var raiz = document.documentElement;
+    if (raiz) raiz.classList.remove('ld-aba-espera');
+  }
+
+  function prepararAba() {
+    cancelarPreparo();
+    fimAba();
+    var raiz = document.documentElement;
+    raiz.classList.add('ld-aba-espera'); // aplicado antes de a tela ser desenhada: a página nova não aparece
+    var p = preparo = { desde: performance.now(), mexeu: true, decod: null, pronto: false, obs: null };
+    try {
+      p.obs = new MutationObserver(function (lista) {
+        for (var i = 0; i < lista.length; i++) {
+          var alvo = lista[i].target;
+          if (alvo.closest && alvo.closest('ytm-pivot-bar-renderer')) continue;
+          p.mexeu = true;
+          return;
+        }
+      });
+      p.obs.observe(document.body, { childList: true, subtree: true }); // imagens: conferidas a cada quadro
+    } catch (e) { p.obs = null; }
+
+    function soltar() {
+      if (preparo !== p) return;
+      if (p.obs) p.obs.disconnect();
+      preparo = null;
+      // no mesmo quadro: sai da espera e começa a subida do mesmíssimo ponto (41 dp abaixo)
+      raiz.classList.remove('ld-aba-espera');
+      animarAba();
+    }
+
+    requestAnimationFrame(function passo() {
+      if (preparo !== p) return;
+      if (performance.now() - p.desde >= ESPERA_COMPLETA_MS) { soltar(); return; }
+      var quieto = !p.mexeu;
+      p.mexeu = false;
+      var imgs = imagensAVista();
+      var faltam = imgs.some(function (im) { return !im.complete || !im.naturalWidth; });
+      if (faltam) {
+        p.decod = null;
+        p.pronto = false;
+      } else if (!p.decod || p.decod.imgs.length !== imgs.length ||
+          imgs.some(function (im, i) { return im !== p.decod.imgs[i]; })) {
+        // todas carregadas: decodifica já (se o YouTube trocar alguma, decodifica de novo)
+        var d = { imgs: imgs };
+        p.decod = d;
+        p.pronto = false;
+        Promise.all(imgs.map(function (im) {
+          try { return im.decode().catch(function () {}); } catch (e) { return null; }
+        })).then(function () { if (p.decod === d) p.pronto = true; });
+      }
+      // sobe no quadro em que está tudo pronto e o YouTube passou o quadro anterior sem pôr nada novo
+      if (!faltam && quieto && p.pronto) { soltar(); return; }
+      requestAnimationFrame(passo);
+    });
   }
 
   function armarTroca() {
@@ -290,6 +381,7 @@
     try { reduzir = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* nada */ }
     if (reduzir) return;
     desarmar();
+    cancelarPreparo();
     fimAba(); // toque no meio de uma subida: a página atual fica no lugar até a troca
     armada = { marcas: PONTOS.map(elementoNoPonto), ate: Date.now() + ESPERA_MS };
     try {
