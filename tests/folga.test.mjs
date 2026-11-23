@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  tempoDestinoFolga, navegar, processar, lerArquivoLegenda, FOLGA_MARGEM, FOLGA_MIN, FOLGA_MIN_ESTIMADA, FOLGAS_MAX, FOLGA_MAX_PADRAO,
+  tempoDestinoFolga, navegar, processar, lerArquivoLegenda, FOLGA_MARGEM, FOLGA_MIN, FOLGA_MIN_FRASES, FOLGAS_MAX, FOLGA_MAX_PADRAO,
 } from '../js/legendas.js';
 import { lerTimedText } from '../js/timedtext.js';
 import { misturarAjustes, AJUSTES_PADRAO } from '../js/armazenamento.js';
@@ -29,9 +29,9 @@ test('silêncio quase nulo ou fala sobreposta: folga mínima', () => {
   quase(tempoDestinoFolga([{ s: 8, e: 10.4 }, { s: 10, e: 12 }], 1), 10 - FOLGA_MIN); // legenda feita por pessoa, encostada
 });
 
-test('frases com início estimado: folga mínima maior', () => {
+test('frases montadas (legenda automática): folga mínima maior', () => {
   const un = [{ s: 8, e: 10 }, { s: 10, e: 12 }];
-  quase(tempoDestinoFolga(un, 1, { min: FOLGA_MIN_ESTIMADA }), 10 - FOLGA_MIN_ESTIMADA);
+  quase(tempoDestinoFolga(un, 1, { min: FOLGA_MIN_FRASES }), 10 - FOLGA_MIN_FRASES);
   // a máxima nunca fica abaixo da mínima
   quase(tempoDestinoFolga([{ s: 2, e: 4 }, { s: 10, e: 12 }], 1, { min: 0.3, max: 0.1 }), 9.7);
 });
@@ -66,25 +66,46 @@ test('navegação a partir do destino (no silêncio, antes da fala): com a fala 
   assert.equal(navegar(un, t, 'voltar', mem, 1000).indice, 0);
 });
 
-test('processar informa quando o início das frases é estimado', () => {
+test('legenda automática: o silêncio é medido pelo fim estimado da fala, não pelo fim folgado da legenda', () => {
+  // Caso do usuário (23/11/2026): "...a mystery. However ..." com 0,7 s de pausa real. Antes, o fim de
+  // "mystery" vinha da legenda (0,88 s depois do início), o silêncio dava quase 0 e a folga ficava na
+  // mínima, qualquer que fosse a máxima: o começo de "However" era comido.
+  const ev = [];
+  let t = 0;
+  for (const x of 'and to this day the case remains a mystery 0.7 however no one has ever found the answer'.split(' ')) {
+    if (/^\d/.test(x)) { t += Number(x); continue; }
+    ev.push([x, Math.round(t * 1000) / 1000]);
+    t += 0.12 + 0.05 * x.length; // duração real de cada palavra
+  }
+  const json3 = JSON.stringify({ wireMagic: 'pb3', events: [{ tStartMs: 0, dDurationMs: Math.round(t * 1000) + 500, wWinId: 1,
+    segs: ev.map(([w, s], k) => (k ? { utf8: ` ${w}`, tOffsetMs: Math.round(s * 1000) } : { utf8: w })) }] });
+  const r = processar({ estudo: { falas: lerTimedText(json3).falas, arquivo: '[English (auto-generated)] x', idioma: 'en' } }, {});
+  const i = r.unidades.findIndex((u) => /^However/.test(u.texto));
+  assert.equal(i, 1, r.unidades.map((u) => u.texto).join(' | '));
+  const [mystery] = ev.filter(([w]) => w === 'mystery');
+  const fimReal = mystery[1] + 0.12 + 0.05 * 7;
+  const ant = r.unidades[0];
+  assert.ok(ant.fimFala >= fimReal, `fim estimado ${ant.fimFala} antes do fim real ${fimReal}`);
+  assert.ok(ant.fimFala < ant.e, 'mais justo que o fim da legenda');
+  const u = r.unidades[i];
+  for (const max of FOLGAS_MAX) {
+    const d = tempoDestinoFolga(r.unidades, i, { max, min: FOLGA_MIN_FRASES });
+    assert.ok(d >= fimReal, `máx ${max}: destino ${d} dentro de "mystery"`);
+    assert.ok(u.s - d >= Math.min(max, 0.4) - 1e-9, `máx ${max}: folga ${u.s - d} curta demais`);
+  }
+  // a máxima escolhida faz diferença quando há silêncio
+  assert.ok(tempoDestinoFolga(r.unidades, i, { max: 0.6, min: FOLGA_MIN_FRASES }) < tempoDestinoFolga(r.unidades, i, { max: 0.3, min: FOLGA_MIN_FRASES }));
+});
+
+test('sem o tempo de cada palavra não há fimFala (usa o fim da legenda)', () => {
   const ler = (nome) => {
     const b = readFileSync(new URL(`./fixtures/${nome}`, import.meta.url));
     return lerArquivoLegenda(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
   };
-  // automática baixada (SRT): frases montadas sem o tempo de cada palavra → início estimado
-  const auto = processar({ estudo: { falas: ler('auto_downsub.srt').falas } }, { modoFrases: 'auto' });
-  assert.equal(auto.frases, true);
-  assert.equal(auto.inicioEstimado, true);
-  // feita por pessoa: falas como vieram
-  const normal = processar({ estudo: { falas: ler('normal.srt').falas } }, { modoFrases: 'auto' });
-  assert.equal(normal.inicioEstimado, false);
-  // automática do app Android (json3, tempo de cada palavra) → início real
-  const ev = [['so', 0], ['today', 0.3], ['we', 0.6], ['talk', 0.9], ['about', 1.2], ['music', 1.5]];
-  const json3 = JSON.stringify({ wireMagic: 'pb3', events: [{ tStartMs: 0, dDurationMs: 3000, wWinId: 1,
-    segs: ev.map(([w, s], k) => (k ? { utf8: ` ${w}`, tOffsetMs: s * 1000 } : { utf8: w })) }] });
-  const r = processar({ estudo: { falas: lerTimedText(json3).falas, arquivo: '[English (auto-generated)] x', idioma: 'en' } }, {});
-  assert.equal(r.frases, true);
-  assert.equal(r.inicioEstimado, false);
+  for (const nome of ['auto_downsub.srt', 'normal.srt']) {
+    const r = processar({ estudo: { falas: ler(nome).falas } }, { modoFrases: 'auto' });
+    assert.ok(r.unidades.every((u) => u.fimFala === undefined), nome);
+  }
 });
 
 test('ajuste folgaFala: padrão 0,45 s, só valores da lista', () => {

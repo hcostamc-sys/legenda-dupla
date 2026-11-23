@@ -345,7 +345,7 @@ def t_teclas(page):
     page.click('#btn-fechar-ajustes')
 
 
-@caso('5b. Folga antes da fala (v20): destino no silêncio; pausado, avançar devagar não repete a fala; ajuste no menu')
+@caso('5b. Folga antes da fala (v20/21): destino no silêncio; pausado, avançar devagar não repete a fala; ajuste no menu')
 def t_folga(page):
     page.locator('#titulo-video').click()  # tira o foco de campos
     if estado(page) != 2:
@@ -359,8 +359,8 @@ def t_folga(page):
         esperar(lambda: exibida(page) == i + k, msg=f'→ nº {k} avança uma fala')
         s, _ = U[i + k]
         e_ant = U[i + k - 1][1]
-        # falas de teste: 0,2 s de silêncio → folga = mínima (0,12 s), depois do fim da fala anterior
-        esperar(lambda: abs(tempo(page) - (s - 0.12)) < 0.02, msg=f'destino {s - 0.12:.2f} s')
+        # falas de teste: 0,2 s de silêncio → 0,12 s; vale a mínima (0,15 s, legenda feita por pessoa)
+        esperar(lambda: abs(tempo(page) - (s - 0.15)) < 0.02, msg=f'destino {s - 0.15:.2f} s')
         assert tempo(page) > e_ant, 'destino dentro da fala anterior'
         assert estado(page) == 2, 'continua pausado'
         time.sleep(0.9)

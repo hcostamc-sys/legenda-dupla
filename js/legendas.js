@@ -1064,7 +1064,37 @@ export function montarFrasesInteiras(falas, opcoes = {}) {
  * Quebra frases inteiras em legendas no padrão de filme. Se a frase já tem tradução (trad),
  * ela é dividida nos pontos equivalentes. Devolve [{s, e, texto, trad?, marca?}].
  */
-export function quebrarFrases(frases) {
+// Fim da fala para a folga antes da fala seguinte (versão 21). A legenda automática só traz o INÍCIO
+// de cada palavra; o fim que vem dela (até 0,25 s + 0,09 s por letra) é folgado de propósito, para a
+// legenda não sumir antes da hora, mas não serve para medir o silêncio: "mystery" virava 0,88 s, e
+// com 0,4 s de pausa real o app achava que não havia silêncio. Aqui o fim da última palavra de cada
+// legenda é estimado pelo ritmo da própria pessoa (mediana), com folga para o alongamento de fim de frase.
+const BASE_PALAVRA = 0.1;
+const ALONGAMENTO_FIM = 1.3;
+const letras = (w) => String(w || '').replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** Segundos por letra da pessoa: mediana entre o começo de uma palavra e o da seguinte. grupos: [[{w,s}]]. */
+export function ritmoDaFala(grupos) {
+  const ritmos = [];
+  for (const ps of grupos) {
+    for (let k = 0; k + 1 < ps.length; k++) {
+      const d = ps[k + 1].s - ps[k].s;
+      if (d > 0 && d < 2) ritmos.push(Math.max(0, d - BASE_PALAVRA) / Math.max(1, letras(ps[k].w)));
+    }
+  }
+  if (!ritmos.length) return null;
+  ritmos.sort((x, y) => x - y);
+  return ritmos[ritmos.length >> 1];
+}
+
+/** Fim estimado do som da palavra (início + duração pelo ritmo, com alongamento), sem passar de p.e. */
+export function fimEstimadoPalavra(p, ritmo) {
+  return Math.min(p.e, p.s + ALONGAMENTO_FIM * (BASE_PALAVRA + ritmo * Math.max(1, letras(p.w))));
+}
+
+/** opcoes.ritmo (legenda com o tempo de cada palavra): cada legenda ganha fimFala (ver acima). */
+export function quebrarFrases(frases, opcoes = {}) {
+  const ritmo = Number.isFinite(opcoes.ritmo) ? opcoes.ritmo : null;
   const saida = [];
   for (const f of frases) {
     if (f.marca || !f.ps) {
@@ -1090,10 +1120,15 @@ export function quebrarFrases(frases) {
     pedacos.forEach((parte, k) => {
       const u = unidadeDePalavras(parte);
       if (trads) u.trad = trads[k];
+      if (ritmo !== null) u.fimFala = fimEstimadoPalavra(parte[parte.length - 1], ritmo);
       saida.push(u);
     });
   }
-  for (const u of saida) { u.s = arred(u.s); u.e = arred(u.e); }
+  for (const u of saida) {
+    u.s = arred(u.s);
+    u.e = arred(u.e);
+    if (u.fimFala !== undefined) u.fimFala = arred(u.fimFala);
+  }
   return saida;
 }
 
@@ -1224,7 +1259,8 @@ export function processar(entrada, opcoes = {}) {
     pontuada = pontuar;
     pontuadaModelo = op.usouModelo;
     if (trad.length) parearPorPalavra(inteiras, trad);
-    unidades = quebrarFrases(inteiras);
+    const ritmo = temTempoDePalavra(estudo) ? ritmoDaFala(inteiras.filter((f) => f.ps).map((f) => f.ps)) : null;
+    unidades = quebrarFrases(inteiras, { ritmo });
   } else {
     unidades = [];
     for (const f of estudo) {
@@ -1235,9 +1271,7 @@ export function processar(entrada, opcoes = {}) {
     if (trad.length) parearPorFala(unidades, trad.map((f) => ({ ...f, t: limparSetas(f.t) })).filter((f) => f.t));
   }
   unidades.forEach((u, i) => { u.i = i; if (typeof u.trad !== 'string') u.trad = ''; });
-  // Início das frases estimado (sem o tempo real de cada palavra): a folga mínima antes da fala é maior.
-  const inicioEstimado = frases && !temTempoDePalavra(estudo);
-  return { unidades, frases, automatica, pontuada, pontuadaModelo, inicioEstimado };
+  return { unidades, frases, automatica, pontuada, pontuadaModelo };
 }
 
 /**
@@ -1312,12 +1346,14 @@ export function tempoDestino(unidade, preRolagem) {
 // Silêncio curto: vai para logo depois do fim da fala anterior (sem ouvir o finalzinho dela).
 // Silêncio longo: vai só até a folga máxima antes da fala (sem esperar à toa).
 // O app não tem acesso ao áudio do YouTube: o fim da fala anterior é estimado pela legenda (na
-// automática, pelo tempo de cada palavra). Por isso a margem e a folga mínima.
+// automática, pelo ritmo da pessoa: fimFala, em quebrarFrases). Por isso a margem e a folga mínima.
+// Versão 21: as mínimas voltaram aos valores fixos da versão 19 (0,15 s; 0,30 s nas frases montadas da
+// legenda automática). Com 0,12 s o começo de algumas falas ("However") era comido.
 // ---------------------------------------------------------------------------
 
 export const FOLGA_MARGEM = 0.08; // segundos depois do fim estimado da fala anterior
-export const FOLGA_MIN = 0.12; // nunca menos: cobre o atraso do YouTube para soltar o som depois do salto
-export const FOLGA_MIN_ESTIMADA = 0.3; // frases montadas sem o tempo real de cada palavra (início estimado)
+export const FOLGA_MIN = 0.15; // falas como vieram (legenda feita por pessoa)
+export const FOLGA_MIN_FRASES = 0.3; // frases montadas da legenda automática
 export const FOLGAS_MAX = [0.3, 0.45, 0.6, 0.8];
 export const FOLGA_MAX_PADRAO = 0.45;
 
@@ -1332,7 +1368,8 @@ export function tempoDestinoFolga(unidades, i, opcoes = {}) {
   if (!u) return 0;
   const min = Number.isFinite(opcoes.min) ? Math.max(0, opcoes.min) : FOLGA_MIN;
   const max = Math.max(min, Number.isFinite(opcoes.max) ? opcoes.max : FOLGA_MAX_PADRAO);
-  const fimAnterior = i > 0 ? unidades[i - 1].e : 0;
+  const ant = i > 0 ? unidades[i - 1] : null;
+  const fimAnterior = ant ? (Number.isFinite(ant.fimFala) ? ant.fimFala : ant.e) : 0;
   const silencio = u.s - fimAnterior;
   const folga = Math.min(max, Math.max(min, silencio - FOLGA_MARGEM));
   return arred(Math.max(0, u.s - folga));

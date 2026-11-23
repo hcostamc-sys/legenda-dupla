@@ -3,7 +3,7 @@
 
 import {
   tituloDoArquivo, chaveTitulo, titulosParecidos, lerLink, lerArquivoLegenda, lerArquivoLegendaDupla, sugerirPapeis,
-  processar, falaNoTempo, navegar, JANELA_NAVEGACAO_MS, tempoDestinoFolga, FOLGA_MIN, FOLGA_MIN_ESTIMADA, FOLGAS_MAX, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
+  processar, falaNoTempo, navegar, JANELA_NAVEGACAO_MS, tempoDestinoFolga, FOLGA_MIN, FOLGA_MIN_FRASES, FOLGAS_MAX, limparPalavra, formatarTempo, formatarNumero, LIMITE_BYTES,
   MSG_LINK_INVALIDO, decidirPapeis, detectarIdioma, NOMES_IDIOMAS, palavrasParaPontuar,
 } from './legendas.js';
 import {
@@ -90,7 +90,6 @@ const S = {
   automatica: false,
   pontuada: false,
   pontuadaModelo: false, // a legenda na tela usa a pontuação melhorada (modelo)
-  inicioEstimado: false, // frases montadas sem o tempo real de cada palavra (folga mínima maior)
   // pontuação melhorada: { reg, ctrl, feitas, total } enquanto o modelo trabalha
   modelo: null,
   pacotes: {}, // estado de cada pacote: 'pronto' | 'ausente'
@@ -913,7 +912,6 @@ function reprocessar() {
   S.automatica = r.automatica;
   S.pontuada = r.pontuada;
   S.pontuadaModelo = r.pontuadaModelo;
-  S.inicioEstimado = !!r.inicioEstimado;
   S.memoriaNav = null;
   S.alvoNav = null;
   if (S.ab.a !== null || S.loop.alvo !== null) zerarRepeticao(); // os índices das falas mudaram
@@ -2753,7 +2751,7 @@ function irParaIndice(i) {
   if (!p || !u) return;
   p.irPara(tempoDestinoFolga(S.unidades, i, {
     max: S.ajustes.folgaFala,
-    min: S.inicioEstimado ? FOLGA_MIN_ESTIMADA : FOLGA_MIN,
+    min: S.frases ? FOLGA_MIN_FRASES : FOLGA_MIN,
   }));
   S.saltoEm = performance.now();
   S.alvoNav = i;
