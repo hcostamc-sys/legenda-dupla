@@ -1,6 +1,6 @@
 // sw.js — rede primeiro, cache como reserva, só para arquivos do próprio site (PLANO.md seção 4).
 // Ao mudar qualquer arquivo do site, troque o nome do cache (ld-v2, ld-v4...).
-const CACHE = 'ld-v31';
+const CACHE = 'ld-v32';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -19,6 +19,7 @@ const ARQUIVOS = [
   './js/modelos.js',
   './js/pontuador.js',
   './js/pontuador-worker.js',
+  './js/voz.js',
   './vendor/ort/ort.wasm.bundle.min.mjs',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -49,6 +50,9 @@ self.addEventListener('fetch', (ev) => {
   if (url.pathname.endsWith('.wasm')) return;
   // Pacote baixado pelo app Android, entregue pelo próprio app (centenas de MB): passa direto.
   if (url.pathname.includes('/__ld_modelo/')) return;
+  // Áudio tratado da voz mais clara (app Android, entregue pelo próprio app em pedaços) e qualquer pedido
+  // de um pedaço (Range, usado pelo <audio> para pular): passa direto, sem cache.
+  if (url.pathname.includes('/__ld_voz/') || req.headers.has('range')) return;
   ev.respondWith(
     // no-cache: confere com o servidor, para nunca misturar arquivos novos com antigos do cache HTTP.
     fetch(req, { cache: 'no-cache' })
