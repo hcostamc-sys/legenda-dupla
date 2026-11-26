@@ -1,5 +1,6 @@
 # Prova da "voz mais clara" (sem Android): roda o modelo de separação de voz de verdade num áudio de teste
-# (fala sintetizada + música mais alta que ela) e confere a melhora; testa o download do áudio do YouTube
+# (fala sintetizada + música mais alta que ela) e confere a melhora; roda a limpeza da voz (eco com WPE, ruído
+# com o DeepFilterNet3 pelo onnxruntime Java) em fala com eco e ruído; testa o download do áudio do YouTube
 # com o NewPipe Extractor. O ambiente do Claude Code não acessa o Hugging Face nem o YouTube; o GitHub sim.
 name: Voz mais clara (prova)
 
@@ -10,6 +11,7 @@ on:
       - 'android/app/src/main/java/io/github/hcostamcsys/legendadupla/voz/**'
       - 'android/voz-ci/**'
       - 'tests/voz_java/**'
+      - 'android/app/src/main/assets/dfn3/**'
       - '.github/workflows/voz-ci.yml'
   workflow_dispatch:
 
@@ -62,12 +64,23 @@ jobs:
           espeak-ng -v en-us -s 150 -w fala22.wav "Hello, and welcome to this short test. Today we are going to talk about electric motors and how a frequency inverter controls their speed. First, the inverter rectifies the alternating current into direct current. Then it switches transistors very fast to build a new alternating voltage. By changing the frequency, it changes the speed of the motor. Remember: always wait for the capacitors to discharge before opening the panel. Thank you for watching, and see you next time."
           python3 tests/voz_java/sinal_teste.py gerar fala22.wav fala.wav mistura.wav
 
-      - name: Separar e mixar com o modelo de verdade
+      - name: Separar, limpar e mixar com os modelos de verdade (como o app)
         run: |
-          android/voz-ci/build/install/voz-ci/bin/voz-ci modelo modelo/htdemucs_ft_vocals.onnx mistura.wav voz.wav mix.wav 12
+          android/voz-ci/build/install/voz-ci/bin/voz-ci modelo modelo/htdemucs_ft_vocals.onnx mistura.wav voz.wav mix.wav 12 \
+            android/app/src/main/assets/dfn3 limpa.wav
 
       - name: Avaliar
-        run: python3 tests/voz_java/sinal_teste.py avaliar fala.wav mistura.wav voz.wav mix.wav
+        run: python3 tests/voz_java/sinal_teste.py avaliar fala.wav mistura.wav voz.wav mix.wav limpa.wav
+
+      - name: Limpeza da voz (fala com eco de sala + ruído rosa + zumbido de 60 Hz)
+        run: |
+          sha256sum android/app/src/main/assets/dfn3/*.onnx
+          python3 tests/voz_java/sinal_teste.py sujar fala.wav sujo.wav alvo.wav
+          B=android/voz-ci/build/install/voz-ci/bin/voz-ci
+          $B limpeza android/app/src/main/assets/dfn3 sujo.wav limpo.wav
+          $B limpeza android/app/src/main/assets/dfn3 sujo.wav limpo_sem_eco.wav sem-eco
+          $B limpeza android/app/src/main/assets/dfn3 sujo.wav limpo_so_eco.wav so-eco
+          python3 tests/voz_java/sinal_teste.py avaliar_limpeza alvo.wav sujo.wav limpo.wav limpo_sem_eco.wav limpo_so_eco.wav
 
       - name: YouTube (NewPipe Extractor) — só informativo
         if: always()
@@ -84,5 +97,8 @@ jobs:
           path: |
             mistura.wav
             voz.wav
+            limpa.wav
             mix.wav
+            sujo.wav
+            limpo.wav
           if-no-files-found: ignore

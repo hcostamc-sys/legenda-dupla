@@ -19,6 +19,13 @@ sourceSets {
             include 'io/github/hcostamcsys/legendadupla/voz/ModeloOnnx.java'
             include 'io/github/hcostamcsys/legendadupla/voz/SeparadorVoz.java'
             include 'io/github/hcostamcsys/legendadupla/voz/MixadorVoz.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/Reamostrador.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/Fft.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/ModeloLimpeza.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/ModeloDfn3.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/LimpadorVoz.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/Dereverberador.java'
+            include 'io/github/hcostamcsys/legendadupla/voz/LimpezaVoz.java'
             include 'io/github/hcostamcsys/legendadupla/voz/BaixadorHttp.java'
             include 'io/github/hcostamcsys/legendadupla/voz/ObterAudio.java'
         }

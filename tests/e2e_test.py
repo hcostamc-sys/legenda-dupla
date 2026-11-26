@@ -2200,6 +2200,7 @@ def t_voz(browser, base, en, pt):
     expect(page.locator('#voz-video .pm-texto')).to_contain_text('Leva mais ou menos o tempo do vídeo')
     expect(page.locator('#voz-tratar')).to_be_visible()
     expect(page.locator('#linha-voz-margem .chip.confirmada')).to_have_text('Médio')
+    expect(page.locator('#linha-voz-limpeza .chip.confirmada')).to_have_text('Máxima')
     page.locator('#grupo-voz').screenshot(path=os.path.join(CAPTURAS, 'android-voz-ajustes.png'))
     # Tratar: o modelo ainda não está no celular → pergunta antes de baixar 316 MB
     page.click('#voz-tratar')
@@ -2208,7 +2209,7 @@ def t_voz(browser, base, en, pt):
     page.click('#dialogo-ok')
     esperar(lambda: msgs('vozTratar'), msg='pediu para tratar')
     pedido = msgs('vozTratar')[-1]
-    assert pedido['id'] == ID and pedido['margem'] == 12, pedido
+    assert pedido['id'] == ID and pedido['margem'] == 12 and pedido['limpeza'] == 100 and not pedido['refazer'], pedido
     # Modelo baixando, vídeo na fila
     estado_app(modelo={'estado': 'baixando', 'feitos': 158_000_000, 'total': 316_446_953},
                videos={ID: {'estado': 'fila', 'titulo': 'Teste', 'progresso': 0}})
@@ -2217,7 +2218,7 @@ def t_voz(browser, base, en, pt):
     expect(page.locator('#voz-cancelar')).to_be_visible()
     # Separando
     estado_app(modelo={'estado': 'pronto'}, videos={ID: {'estado': 'separando', 'titulo': 'Teste', 'progresso': 0.456, 'restante': 600}})
-    expect(page.locator('#voz-video .pm-texto')).to_have_text('Separando a voz do fundo… 45%, faltam cerca de 10 min')
+    expect(page.locator('#voz-video .pm-texto')).to_have_text('Separando e limpando a voz… 45%, faltam cerca de 10 min')
     expect(page.locator('#voz-video .pm-barra')).to_be_visible()
     expect(page.locator('#dialogo')).to_be_hidden()
     time.sleep(0.3)
@@ -2226,7 +2227,8 @@ def t_voz(browser, base, en, pt):
     page.click('#btn-fechar-ajustes')
     page.click('#btn-play')
     esperar(lambda: estado(page) == 1, msg='tocando de novo')
-    pronto = {ID: {'estado': 'pronto', 'titulo': 'Teste', 'progresso': 1, 'margem': 12, 'arquivo': 'mix-12.m4a', 'bytes': 30_000_000}}
+    pronto = {ID: {'estado': 'pronto', 'titulo': 'Teste', 'progresso': 1, 'margem': 12, 'limpeza': 100, 'limpa': True,
+                   'arquivo': 'mix-12-100.m4a', 'bytes': 30_000_000}}
     estado_app(modelo={'estado': 'pronto'}, videos=pronto, usado=30_000_000)
     expect(page.locator('#toast')).to_contain_text('Áudio tratado pronto: voz mais clara ligada.')
     audio = lambda: page.evaluate("""() => { const a = document.querySelector('#audio-voz'); const p = window.__ld.S.player;
@@ -2260,7 +2262,22 @@ def t_voz(browser, base, en, pt):
     assert msgs('vozMixar')[-1]['margem'] == 16
     assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).vozMargem") == 16
     expect(page.locator('#voz-espaco')).to_contain_text('Áudios tratados: 1 vídeo, 30 MB')
+    # Limpeza da voz: vale para todos e refaz a mixagem deste vídeo (sem separar de novo)
+    expect(page.locator('#voz-tratar')).to_be_hidden()
+    page.click('#linha-voz-limpeza .chip:has-text("Suave")')
+    esperar(lambda: msgs('vozMixar')[-1].get('limpeza') == 12, msg='pediu a mixagem com a limpeza nova')
+    assert msgs('vozMixar')[-1]['margem'] == 16
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).vozLimpeza") == 12
+    expect(page.locator('#linha-voz-limpeza .chip.confirmada')).to_have_text('Suave')
     page.locator('#grupo-voz').screenshot(path=os.path.join(CAPTURAS, 'android-voz-pronto.png'))
+    # Vídeo tratado na versão 24 (sem a voz limpa): oferece tratar de novo, e o pedido refaz a separação
+    antigo = {ID: {**pronto[ID], 'limpa': False, 'limpeza': 12, 'margem': 16, 'arquivo': 'mix-16.m4a'}}
+    estado_app(modelo={'estado': 'pronto'}, videos=antigo, usado=30_000_000)
+    expect(page.locator('#voz-tratar')).to_have_text('Tratar de novo')
+    expect(page.locator('#voz-video .pm-texto')).to_contain_text('antes da limpeza de ruído e eco')
+    page.click('#voz-tratar')
+    esperar(lambda: msgs('vozTratar')[-1].get('refazer') is True, msg='pediu para tratar de novo')
+    estado_app(modelo={'estado': 'pronto'}, videos=pronto, usado=30_000_000)
     page.click('#btn-fechar-ajustes')
     esperar(lambda: audio()['mudo'] and audio()['src'].endswith('voz-teste.wav'), msg='ligado de novo')
     # Sair do vídeo: o áudio tratado para; Meus vídeos mostra o selo

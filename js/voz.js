@@ -1,7 +1,7 @@
-// voz.js — "Voz mais clara" (app Android, versão 24; PLANO.md seção 22).
+// voz.js — "Voz mais clara" (app Android, versões 24 e 25; PLANO.md seções 22 e 23).
 //
 // O app Android trata o áudio do vídeo em segundo plano (ServicoVoz.java): separa a voz do fundo com um modelo
-// de IA e abaixa o fundo só quando ele encobre a fala. Aqui a página:
+// de IA, limpa a voz separada (ruído e eco; versão 25) e abaixa o fundo só quando ele encobre a fala. Aqui a página:
 // - mostra o estado e os botões nos Ajustes e o selo em Meus vídeos;
 // - toca o áudio tratado (<audio>) junto com o vídeo, que fica sem som. O relógio do vídeo vem do gancho
 //   (dentro do player do YouTube, v6), com o instante exato de cada leitura; o áudio segue esse relógio:
@@ -17,6 +17,13 @@ export const MARGENS = Object.freeze([
   { db: 22, nome: 'Máximo' },
 ]);
 export const MARGEM_PADRAO = 12;
+/** Limpeza da voz (versão 25): quanto o ruído e o eco podem cair (dB; 0 = desligada). */
+export const LIMPEZAS = Object.freeze([
+  { db: 0, nome: 'Desligada' },
+  { db: 12, nome: 'Suave' },
+  { db: 100, nome: 'Máxima' },
+]);
+export const LIMPEZA_PADRAO = 100;
 export const BYTES_MODELO = 316446953;
 
 /** Diferença tolerada entre o áudio e o vídeo (s): abaixo disso não mexe. */
@@ -92,7 +99,9 @@ export function descreverVideo(v, geral = {}) {
       return {
         estado: 'pronto',
         selo: 'Voz clara',
-        texto: v.mixando ? 'Ajustando o volume do fundo…' : 'Pronto: a voz fica mais clara, e o fundo só abaixa quando alguém fala.',
+        texto: v.mixando ? 'Ajustando o som…'
+          : v.limpa ? 'Pronto: a voz fica mais clara, sem ruído e com menos eco, e o fundo só abaixa quando alguém fala.'
+            : 'Pronto, mas tratado antes da limpeza de ruído e eco (versão 24). Toque em Tratar de novo para limpar a voz.',
         progresso: null,
       };
     case 'fila': {
@@ -108,7 +117,7 @@ export function descreverVideo(v, geral = {}) {
     case 'baixando':
       return { estado: 'trabalhando', selo: `Tratando ${pct}%`, texto: `Baixando o áudio do vídeo… ${pct}%`, progresso: pct };
     case 'separando':
-      return { estado: 'trabalhando', selo: `Tratando ${pct}%`, texto: `Separando a voz do fundo… ${pct}%${resta}`, progresso: pct };
+      return { estado: 'trabalhando', selo: `Tratando ${pct}%`, texto: `Separando e limpando a voz… ${pct}%${resta}`, progresso: pct };
     case 'mixando':
       return { estado: 'trabalhando', selo: `Tratando ${pct}%`, texto: `Ajustando o volume do fundo… ${pct}%`, progresso: pct };
     case 'erro':
@@ -294,12 +303,17 @@ export function criarVoz(ctx) {
     if (V.autoPedido.has(reg.id) || videoAtual()) return;
     if (V.estado.modelo?.estado !== 'pronto') return;
     V.autoPedido.add(reg.id);
-    ctx.mandar({ acao: 'vozTratar', id: reg.id, titulo: reg.titulo || '', margem: margem() });
+    ctx.mandar({ acao: 'vozTratar', id: reg.id, titulo: reg.titulo || '', margem: margem(), limpeza: limpeza() });
   }
 
   function margem() {
     const m = Number(ctx.ajustes().vozMargem);
     return MARGENS.some((x) => x.db === m) ? m : MARGEM_PADRAO;
+  }
+
+  function limpeza() {
+    const l = Number(ctx.ajustes().vozLimpeza);
+    return LIMPEZAS.some((x) => x.db === l) ? l : LIMPEZA_PADRAO;
   }
 
   /** O gancho (dentro do player) manda o relógio do vídeo várias vezes por segundo. */
@@ -375,13 +389,14 @@ export function criarVoz(ctx) {
         const spp = Number(e.segPorSeg);
         const dur = Number(v?.duracao) || 0;
         txt.textContent = spp > 0 && dur > 0
-          ? `O app separa a voz do fundo no celular. Neste vídeo deve levar ${textoMinutos(spp * dur)}; dá para sair dele ou assistir outro enquanto isso.`
-          : 'O app separa a voz do fundo no celular. Leva mais ou menos o tempo do vídeo; dá para sair dele ou assistir outro enquanto isso (o andamento fica nas notificações).';
+          ? `O app separa a voz do fundo e limpa a voz no celular. Neste vídeo deve levar ${textoMinutos(spp * dur)}; dá para sair dele ou assistir outro enquanto isso.`
+          : 'O app separa a voz do fundo e limpa a voz no celular. Leva mais ou menos o tempo do vídeo; dá para sair dele ou assistir outro enquanto isso (o andamento fica nas notificações).';
       } else {
         txt.textContent = d.texto;
       }
-      $('#voz-tratar').hidden = !(d.estado === 'nada' || d.estado === 'erro');
-      $('#voz-tratar').textContent = d.estado === 'erro' ? 'Tentar de novo' : 'Tratar o áudio deste vídeo';
+      const antigo = d.estado === 'pronto' && !v?.limpa && !v?.mixando; // tratado na versão 24, sem a limpeza
+      $('#voz-tratar').hidden = !(d.estado === 'nada' || d.estado === 'erro' || antigo);
+      $('#voz-tratar').textContent = d.estado === 'erro' ? 'Tentar de novo' : antigo ? 'Tratar de novo' : 'Tratar o áudio deste vídeo';
       $('#voz-cancelar').hidden = !(d.estado === 'fila' || d.estado === 'trabalhando');
       $('#voz-apagar-video').hidden = d.estado !== 'pronto';
       $('#voz-copiar').hidden = !(d.estado === 'erro' && v?.detalhe);
@@ -403,6 +418,20 @@ export function criarVoz(ctx) {
       }
     }
     for (const b of linha?.children || []) b.classList.toggle('confirmada', Number(b.dataset.db) === margem());
+    // Limpeza da voz
+    const linhaL = $('#linha-voz-limpeza');
+    if (linhaL && !linhaL.childElementCount) {
+      for (const l of LIMPEZAS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip';
+        b.dataset.db = String(l.db);
+        b.textContent = l.nome;
+        b.addEventListener('click', () => mudarLimpeza(l.db));
+        linhaL.appendChild(b);
+      }
+    }
+    for (const b of linhaL?.children || []) b.classList.toggle('confirmada', Number(b.dataset.db) === limpeza());
     const auto = $('#voz-auto');
     if (auto) auto.checked = !!ctx.ajustes().vozAuto;
     // Modelo
@@ -459,7 +488,9 @@ export function criarVoz(ctx) {
       reg.vozAutoNao = false;
       await ctx.salvarRegistro(reg);
     }
-    ctx.mandar({ acao: 'vozTratar', id: reg.id, titulo: reg.titulo || '', margem: margem() });
+    const v = videoAtual();
+    const refazer = v?.estado === 'pronto' && !v.limpa; // tratado na versão 24: separa e limpa de novo
+    ctx.mandar({ acao: 'vozTratar', id: reg.id, titulo: reg.titulo || '', margem: margem(), limpeza: limpeza(), refazer });
     ctx.toast?.('O áudio deste vídeo entrou na fila. Pode continuar assistindo: o som muda sozinho quando ficar pronto.', 4000);
   }
 
@@ -471,8 +502,21 @@ export function criarVoz(ctx) {
     const reg = ctx.registro();
     const v = videoAtual();
     if (reg && v && (v.estado === 'pronto' || v.estado === 'fila')) {
-      ctx.mandar({ acao: 'vozMixar', id: reg.id, margem: db });
+      ctx.mandar({ acao: 'vozMixar', id: reg.id, margem: db, limpeza: limpeza() });
       if (v.estado === 'pronto') ctx.toast?.('Ajustando o volume do fundo… o som muda em alguns segundos.', 3000);
+    }
+  }
+
+  async function mudarLimpeza(db) {
+    if (db === limpeza()) return;
+    ctx.ajustes().vozLimpeza = db;
+    ctx.salvar();
+    renderAjustes();
+    const reg = ctx.registro();
+    const v = videoAtual();
+    if (reg && v && (v.estado === 'pronto' || v.estado === 'fila')) {
+      ctx.mandar({ acao: 'vozMixar', id: reg.id, margem: margem(), limpeza: db });
+      if (v.estado === 'pronto' && v.limpa) ctx.toast?.('Ajustando a limpeza da voz… o som muda em alguns segundos.', 3000);
     }
   }
 

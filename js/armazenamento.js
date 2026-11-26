@@ -34,6 +34,8 @@ export const AJUSTES_PADRAO = Object.freeze({
   // tratar sozinho todo vídeo novo.
   vozMargem: 12,
   vozAuto: false,
+  // Limpeza da voz separada (versão 25): quanto o ruído e o eco podem cair, em dB (0 = desligada, 100 = máxima).
+  vozLimpeza: 100,
 });
 
 const OPCOES = {
@@ -43,6 +45,7 @@ const OPCOES = {
   modoLegenda: ['uma', 'lista'],
   folgaFala: [0.3, 0.45, 0.6, 0.8], // igual a FOLGAS_MAX (legendas.js)
   vozMargem: [8, 12, 16, 22], // igual a MARGENS (voz.js)
+  vozLimpeza: [0, 12, 100], // igual a LIMPEZAS (voz.js)
 };
 const FAIXAS = {
   fonteL1: [14, 32],

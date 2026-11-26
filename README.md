@@ -72,18 +72,19 @@ A pontuação pelas pausas é uma aproximação. Para algo bem mais certo, o app
 - Também erra às vezes (principalmente vírgulas), mas entende o sentido da frase, o que as pausas não fazem.
 - Versão 23: vale também quando a legenda automática chega **sem o tempo de cada palavra** (o player do YouTube às vezes a entrega assim). Antes, nesse caso, nenhuma pontuação era feita e aparecia só “Frases montadas pelo app”; agora o modelo pontua (o texto só precisa das palavras). Sem o pacote, essa legenda continua sem pontuação, porque a pontuação simples depende das pausas entre as palavras. O diagnóstico mostra, em “legenda capturada”, o formato e em quantas falas veio o tempo de cada palavra.
 
-### Voz mais clara (app Android, versão 24; recurso extra, baixado à parte)
+### Voz mais clara (app Android, versões 24 e 25; recurso extra, baixado à parte)
 
-Para vídeos com música alta, efeitos ou barulho por cima da fala. Um modelo de IA no celular separa a voz do fundo, e o fundo **só abaixa enquanto alguém fala**, o bastante para a voz ficar acima dele; no resto, o som fica como no original (a música não some).
+Para vídeos com música alta, efeitos, barulho, eco ou microfone ruim. Um modelo de IA no celular separa a voz do fundo; depois, a voz separada é **limpa** (versão 25): sai o ruído e o chiado (DeepFilterNet3) e parte do eco da sala (WPE). O fundo **só abaixa enquanto alguém fala**, o bastante para a voz ficar acima dele; no resto, o som fica como no original (a música não some).
 
 - Onde: no vídeo, ⚙ Ajustes → **Voz mais clara** → **Tratar o áudio deste vídeo**. Na primeira vez, o app baixa o modelo de separação de voz (316 MB, uma vez só; use Wi‑Fi).
 - O tratamento roda no celular, em segundo plano, e leva mais ou menos o tempo do vídeo (o app mede o primeiro e passa a estimar). Dá para sair do vídeo, assistir outro ou sair do app: o andamento fica nas notificações, e no fim vem o aviso “Áudio tratado pronto” (tocar nele abre o vídeo). Em Meus vídeos aparece “Tratando 45%” ou “Voz clara”.
 - Pronto: o vídeo passa a tocar com o áudio tratado, no lugar do som original, junto com a imagem (também na velocidade escolhida, no loop, no A–B e ao avançar ou retroceder). Durante anúncio volta o som original.
 - **Quanto abaixar o fundo quando alguém fala:** Pouco, Médio (padrão), Muito ou Máximo. Vale para todos os vídeos; num vídeo já tratado, o som muda em alguns segundos.
+- **Limpeza da voz (ruído e eco):** Máxima (padrão), Suave (o ruído e o eco caem no máximo 12 dB, se a voz parecer abafada ou artificial) ou Desligada. Também muda em segundos num vídeo já tratado. Vídeo tratado na versão 24 mostra **Tratar de novo** para ganhar a limpeza.
 - **Usar o áudio tratado neste vídeo** liga e desliga sem apagar. **Tratar sozinho todo vídeo que eu abrir** trata cada vídeo novo automaticamente.
-- Espaço: uns 2,5 MB por minuto de vídeo tratado. **Apagar todos os áudios tratados** libera; apagar um vídeo de Meus vídeos apaga o áudio dele.
+- Espaço: uns 3,7 MB por minuto de vídeo tratado. **Apagar todos os áudios tratados** libera; apagar um vídeo de Meus vídeos apaga o áudio dele.
 - Para isso o app baixa o áudio do vídeo do YouTube (com o NewPipe Extractor, o mesmo do app NewPipe). O YouTube não permite isso nos termos dele, e a Play Store não aceita apps que fazem isso: é um recurso para uso pessoal. Se o YouTube mudar e o download parar, o app precisa de atualização.
-- Limites: a voz cantada das músicas conta como voz; fala muito mal gravada não volta a ficar nítida; vídeos ao vivo, com restrição de idade ou só para membros não são baixados.
+- Limites: a voz cantada das músicas conta como voz; o eco forte de sala só diminui (não some); fala muito mal gravada (picotada, abafada) melhora, mas não vira gravação de estúdio; vídeos ao vivo, com restrição de idade ou só para membros não são baixados.
 
 ### Passar a biblioteca para outro aparelho
 
@@ -137,6 +138,7 @@ No app Android, a legenda vem do próprio vídeo: o player do YouTube baixa a le
 - **Versão 18:** na troca de abas do YouTube, nada mais surge no meio da subida (engrenagem, foto do perfil, miniaturas cinza): a página nova espera invisível, no máximo 120 ms, até estar completa, e só então sobe, como no app oficial.
 - **Versão 19:** na aba **Início**, a fileira de chips (bússola, Tudo, Podcasts, Notícias…) sobe junto com o resto da página; antes ela pulava fora de sincronia na troca de aba. Agora sobe tudo o que está na tela, menos a barra de abas de baixo, e as animações próprias do YouTube ficam desligadas durante a troca.
 - **Versão 24:** **Voz mais clara** (veja acima): o app trata o áudio do vídeo no celular, em segundo plano, e abaixa a música e o barulho só quando eles encobrem a fala. O APK passou de ~1,3 MB para ~17 MB (o motor do modelo e o leitor do YouTube ficam dentro dele; o modelo, 316 MB, é baixado à parte).
+- **Versão 25:** **limpeza da voz** na voz mais clara: depois da separação, a voz passa por um redutor de eco (WPE) e por um redutor de ruído com IA (DeepFilterNet3, 8,6 MB, dentro do APK). Ajuste **Limpeza da voz** (Máxima, Suave, Desligada). O tratamento fica ~40% mais demorado e o APK, ~8 MB maior.
 - Limitações: o app depende de funções não documentadas do player do YouTube e pode quebrar se o YouTube mudar. O registro no histórico usa o mesmo caminho não documentado (o mesmo do yt-dlp `--mark-watched`).
 - Código: pasta `android/` (Java, WebView) e `gancho.js`. O GitHub Actions compila e publica o APK a cada mudança na pasta `android/`. A página `prototipo.html` é o teste de diagnóstico (mostra o que o gancho captura e gera relatório).
 
@@ -160,11 +162,11 @@ node --test                      # lógica das legendas, legenda dupla e traduç
 python3 tests/e2e_test.py        # interface com Playwright e o player de teste
 python3 tests/youtube_aba_test.py         # troca de aba do YouTube (curva do app oficial)
 python3 tests/youtube_aba_inicio_test.py  # aba Início: chips sobem junto com a página
-sh tests/voz_java/rodar.sh                # voz mais clara: separação em trechos, ganhos do fundo, reamostrador (Java)
+sh tests/voz_java/rodar.sh                # voz mais clara: separação em trechos, ganhos do fundo, reamostrador, FFT, limpeza (Java)
 ```
 
 O teste de interface salva capturas de tela em `tests/capturas/` (não vão para o repositório).
 
 A pontuação melhorada usa modelos do Hugging Face, que o ambiente do Claude não acessa. Por isso o teste com os modelos de verdade roda no GitHub Actions (`.github/workflows/pontuacao.yml`): baixa os modelos pelos mesmos endereços do app, compara o resultado do código do app com a biblioteca oficial (`punctuators`) e publica o relatório na release `ci-pontuacao`. Os testes locais usam um modelo falso com as mesmas entradas e saídas (`tests/fixtures/modelo/`). Os arquivos de legenda em `tests/fixtures/` são sintéticos (texto inventado); `tests/fixtures/gerar.py` recria todos.
 
-A voz mais clara também usa um modelo do Hugging Face e o YouTube: o teste com o modelo de verdade roda no GitHub Actions (`.github/workflows/voz-ci.yml`, nas branches `voz-*`): gera uma fala sintetizada (espeak-ng) com música mais alta por cima, separa e mixa com o mesmo código Java do app (`android/voz-ci/`) e confere a melhora. O download do áudio do YouTube não dá para testar lá (o YouTube recusa servidores de nuvem): só no celular.
+A voz mais clara também usa um modelo do Hugging Face e o YouTube: o teste com o modelo de verdade roda no GitHub Actions (`.github/workflows/voz-ci.yml`, nas branches `voz-*`): gera uma fala sintetizada (espeak-ng) com música mais alta por cima, separa, limpa e mixa com o mesmo código Java do app (`android/voz-ci/`) e confere a melhora; e limpa uma fala com eco de sala e ruído, conferindo quanto o ruído e o eco caem. O download do áudio do YouTube não dá para testar lá (o YouTube recusa servidores de nuvem): só no celular.

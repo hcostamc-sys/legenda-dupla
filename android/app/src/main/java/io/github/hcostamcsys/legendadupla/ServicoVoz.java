@@ -40,7 +40,10 @@ import java.util.regex.Pattern;
 
 import io.github.hcostamcsys.legendadupla.voz.CodificadorAac;
 import io.github.hcostamcsys.legendadupla.voz.DecodificadorAudio;
+import io.github.hcostamcsys.legendadupla.voz.LimpezaVoz;
 import io.github.hcostamcsys.legendadupla.voz.MixadorVoz;
+import io.github.hcostamcsys.legendadupla.voz.ModeloDfn3;
+import io.github.hcostamcsys.legendadupla.voz.ModeloLimpeza;
 import io.github.hcostamcsys.legendadupla.voz.ModeloOnnx;
 import io.github.hcostamcsys.legendadupla.voz.ObterAudio;
 import io.github.hcostamcsys.legendadupla.voz.SeparadorVoz;
@@ -51,9 +54,13 @@ import io.github.hcostamcsys.legendadupla.voz.SeparadorVoz;
  *
  * Para cada vídeo da fila:
  * 1) baixa o áudio original do YouTube (ObterAudio, NewPipe Extractor) → v/ID/orig.m4a (ou .webm);
- * 2) separa a voz do fundo com o modelo HT-Demucs (ModeloOnnx, SeparadorVoz) → v/ID/voz.m4a, e mede o nível
- *    da voz e do fundo a cada 23 ms → v/ID/niveis.bin;
- * 3) mixa: voz + fundo abaixado só quando ele encobre a fala (MixadorVoz), na margem escolhida → v/ID/mix-M.m4a.
+ * 2) separa a voz do fundo com o modelo HT-Demucs (ModeloOnnx, SeparadorVoz) → v/ID/voz.m4a (voz como saiu da
+ *    separação: só serve para calcular o fundo = original − voz); na mesma passada, limpa a voz separada
+ *    (LimpezaVoz: eco com WPE, ruído com o DeepFilterNet3) → v/ID/limpa.m4a, e mede o nível da voz limpa e do
+ *    fundo a cada 23 ms → v/ID/niveis.bin;
+ * 3) mixa: voz limpa (ou um pouco da voz original de volta, no nível de limpeza escolhido) + fundo abaixado só
+ *    quando ele encobre a fala (MixadorVoz), na margem escolhida → v/ID/mix-M-L.m4a. O ruído e o eco tirados da
+ *    voz não voltam pelo fundo, porque o fundo é calculado com a voz antes da limpeza.
  *    O fundo é o original menos a voz, então onde nada abaixa sai o áudio original. Trocar a margem depois só
  *    refaz o passo 3 (segundos, não minutos).
  * A página toca o mix-M.m4a (endereço PREFIXO + "ID/mix-M.m4a", entregue com Range por responder()) junto com
@@ -80,11 +87,13 @@ public class ServicoVoz extends Service {
     static final int TAXA = 44100;
     static final int THREADS = 4;
     static final int MARGEM_PADRAO = 12;
+    /** Limpeza da voz: quanto o ruído e o eco podem cair, em dB (0 = desligada; 100 = sem limite). */
+    static final int LIMPEZA_PADRAO = 100;
     private static final String CANAL = "voz";
     static final int NOTIF_PROGRESSO = 51;
     static final int NOTIF_FIM = 52;
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9_-]{11}");
-    private static final Pattern ARQ_MIX = Pattern.compile("mix-(\\d{1,2})\\.m4a");
+    private static final Pattern ARQ_MIX = Pattern.compile("mix-(\\d{1,2})(-\\d{1,3})?\\.m4a");
 
     interface Ouvinte {
         void aoEstado(String json);
@@ -263,14 +272,21 @@ public class ServicoVoz extends Service {
                         if (!ID.matcher(id).matches()) break;
                         JSONObject v = vs.optJSONObject(id);
                         int margem = margemValida(o.optInt("margem", MARGEM_PADRAO));
-                        if (v != null && "pronto".equals(v.optString("estado"))) {
-                            if (v.optInt("margem", -1) != margem) iniciar = pedirMix(id, margem);
+                        int limpeza = limpezaValida(o.optInt("limpeza", LIMPEZA_PADRAO));
+                        boolean refazer = o.optBoolean("refazer", false); // tratado antes da limpeza (versão 24)
+                        if (v != null && "pronto".equals(v.optString("estado")) && !refazer) {
+                            if (v.optInt("margem", -1) != margem || v.optInt("limpeza", -1) != limpeza) {
+                                iniciar = pedirMix(id, margem, limpeza);
+                            }
                             break;
                         }
+                        if (v != null && refazer && id.equals(atual) && separando) break;
                         if (v == null) v = new JSONObject();
                         v.put("estado", "fila");
                         v.put("titulo", o.optString("titulo", v.optString("titulo", "")));
                         v.put("margem", margem);
+                        v.put("limpeza", limpeza);
+                        v.remove("arquivo");
                         v.put("progresso", 0);
                         v.remove("erro");
                         v.remove("detalhe");
@@ -315,10 +331,13 @@ public class ServicoVoz extends Service {
                     case "vozMixar": {
                         JSONObject v = vs.optJSONObject(id);
                         int margem = margemValida(o.optInt("margem", MARGEM_PADRAO));
-                        if (v != null && "pronto".equals(v.optString("estado")) && v.optInt("margem", -1) != margem) {
-                            iniciar = pedirMix(id, margem);
+                        int limpeza = limpezaValida(o.optInt("limpeza", LIMPEZA_PADRAO));
+                        if (v != null && "pronto".equals(v.optString("estado"))
+                                && (v.optInt("margem", -1) != margem || v.optInt("limpeza", -1) != limpeza)) {
+                            iniciar = pedirMix(id, margem, limpeza);
                         } else if (v != null && !"pronto".equals(v.optString("estado"))) {
-                            v.put("margem", margem); // ainda na fila: já sai com a margem nova
+                            v.put("margem", margem); // ainda na fila: já sai com os ajustes novos
+                            v.put("limpeza", limpeza);
                         }
                         break;
                     }
@@ -338,7 +357,17 @@ public class ServicoVoz extends Service {
         return Math.max(3, Math.min(30, m));
     }
 
-    private static boolean pedirMix(String id, int margem) throws Exception {
+    /** 0 (desligada), 12 (suave: o ruído e o eco caem até 12 dB) ou 100 (máxima). */
+    static int limpezaValida(int l) {
+        if (l <= 0) return 0;
+        return l <= 20 ? 12 : 100;
+    }
+
+    static String nomeMix(int margem, int limpeza) {
+        return "mix-" + margem + "-" + limpeza + ".m4a";
+    }
+
+    private static boolean pedirMix(String id, int margem, int limpeza) throws Exception {
         JSONArray l = estado.getJSONArray("mixar");
         for (int i = l.length() - 1; i >= 0; i--) {
             if (id.equals(l.getJSONObject(i).optString("id"))) l.remove(i);
@@ -346,9 +375,13 @@ public class ServicoVoz extends Service {
         JSONObject j = new JSONObject();
         j.put("id", id);
         j.put("margem", margem);
+        j.put("limpeza", limpeza);
         l.put(j);
         JSONObject v = video(id);
-        if (v != null) v.put("mixPendente", margem);
+        if (v != null) {
+            v.put("mixPendente", margem);
+            v.put("limpezaPendente", limpeza);
+        }
         return true;
     }
 
@@ -486,6 +519,8 @@ public class ServicoVoz extends Service {
 
     private void lacoSeparacao() {
         ModeloOnnx modelo = null;
+        ModeloLimpeza limpeza = null;
+        boolean limpezaTentada = false;
         boolean saiuNaTrava = false;
         try {
             while (true) {
@@ -539,12 +574,23 @@ public class ServicoVoz extends Service {
                         continue;
                     }
                 }
-                tratar(proximo, modelo);
+                if (!limpezaTentada) {
+                    limpezaTentada = true;
+                    try {
+                        limpeza = abrirModeloLimpeza(this);
+                        erroLimpeza = null;
+                    } catch (Throwable t) {
+                        // Sem a rede de limpeza, a voz ainda passa pelo WPE (eco); o diagnóstico mostra o motivo.
+                        erroLimpeza = t.getClass().getSimpleName() + ": " + t.getMessage();
+                    }
+                }
+                tratar(proximo, modelo, limpeza);
             }
         } catch (Exception e) {
             // nada: o estado de cada vídeo já foi gravado
         } finally {
             if (modelo != null) modelo.close();
+            if (limpeza != null) limpeza.close();
             // Saindo pela trava, "separando" já é false e um laço novo pode ter começado: não mexe.
             if (!saiuNaTrava) {
                 synchronized (TRAVA) {
@@ -556,12 +602,29 @@ public class ServicoVoz extends Service {
         }
     }
 
-    private void tratar(String id, ModeloOnnx modelo) {
+    private static volatile String erroLimpeza = null;
+
+    /** DeepFilterNet3 (3 arquivos ONNX oficiais, ~8,6 MB) guardado dentro do APK, em assets/dfn3. */
+    static ModeloLimpeza abrirModeloLimpeza(Context c) throws Exception {
+        return new ModeloDfn3(lerAsset(c, "dfn3/enc.onnx"), lerAsset(c, "dfn3/erb_dec.onnx"), lerAsset(c, "dfn3/df_dec.onnx"), THREADS);
+    }
+
+    private static byte[] lerAsset(Context c, String nome) throws IOException {
+        try (InputStream in = c.getAssets().open(nome)) {
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream(4 << 20);
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) b.write(buf, 0, n);
+            return b.toByteArray();
+        }
+    }
+
+    private void tratar(String id, ModeloOnnx modelo, ModeloLimpeza limpeza) {
         atual = id;
         cancelarAtual = false;
         File pv = pastaVideo(this, id);
         String titulo;
-        int margem;
+        int margem, nivelLimpeza;
         synchronized (TRAVA) {
             JSONObject v;
             try {
@@ -580,6 +643,7 @@ public class ServicoVoz extends Service {
             }
             titulo = v.optString("titulo", "");
             margem = v.optInt("margem", MARGEM_PADRAO);
+            nivelLimpeza = limpezaValida(v.optInt("limpeza", LIMPEZA_PADRAO));
         }
         long t0 = SystemClock.elapsedRealtime();
         try {
@@ -622,11 +686,11 @@ public class ServicoVoz extends Service {
                 duracaoSeg = v == null ? 0 : v.optLong("duracao", 0);
             }
             // 2) Separação
-            separar(id, titulo, orig, pv, modelo, duracaoSeg);
+            separar(id, titulo, orig, pv, modelo, limpeza, duracaoSeg);
             // 3) Mixagem
             mudar(id, "mixando", 0.93, null);
             final String tit = titulo;
-            renderizar(id, margem, atraso, duracaoSeg, f -> progresso(id, tit, "mixando", 0.93 + 0.07 * f, -1));
+            renderizar(id, margem, nivelLimpeza, atraso, duracaoSeg, f -> progresso(id, tit, "mixando", 0.93 + 0.07 * f, -1));
             boolean apagado;
             synchronized (TRAVA) {
                 JSONObject v = video(id);
@@ -635,7 +699,12 @@ public class ServicoVoz extends Service {
                     v.put("estado", "pronto");
                     v.put("progresso", 1);
                     v.put("margem", margem);
-                    v.put("arquivo", "mix-" + margem + ".m4a");
+                    v.put("limpeza", nivelLimpeza);
+                    v.put("arquivo", nomeMix(margem, nivelLimpeza));
+                    v.put("limpa", new File(pv, "limpa.m4a").isFile());
+                    v.put("limpaRede", erroLimpeza == null);
+                    if (erroLimpeza != null) v.put("detalheLimpeza", erroLimpeza);
+                    else v.remove("detalheLimpeza");
                     v.put("bytes", tamanho(pv));
                     long gasto = (SystemClock.elapsedRealtime() - t0) / 1000;
                     v.put("tempoGasto", gasto);
@@ -743,65 +812,137 @@ public class ServicoVoz extends Service {
         return Math.max(0, a);
     }
 
-    private void separar(String id, String titulo, File orig, File pv, ModeloOnnx modelo, long duracaoSeg) throws Exception {
+    /**
+     * Separa a voz e, na mesma passada, limpa a voz separada. O fundo (original − voz antes da limpeza) espera
+     * numa fila o tempo da limpeza (ela segura até ~18 s para trabalhar em blocos), para o medidor comparar a voz
+     * limpa com o fundo do mesmo instante.
+     */
+    private void separar(String id, String titulo, File orig, File pv, ModeloOnnx modelo, ModeloLimpeza redeLimpeza,
+                         long duracaoSeg) throws Exception {
         mudar(id, "separando", 0.10, null);
         File vozTmp = new File(pv, "voz.tmp.m4a");
         File voz = new File(pv, "voz.m4a");
+        File limpaTmp = new File(pv, "limpa.tmp.m4a");
+        File limpa = new File(pv, "limpa.m4a");
         File niveis = new File(pv, "niveis.bin");
         //noinspection ResultOfMethodCallIgnored
         voz.delete();
+        //noinspection ResultOfMethodCallIgnored
+        limpa.delete();
         try (DecodificadorAudio dec = new DecodificadorAudio(orig, TAXA);
-             CodificadorAac enc = new CodificadorAac(vozTmp, TAXA, 128000)) {
+             CodificadorAac enc = new CodificadorAac(vozTmp, TAXA, 128000);
+             CodificadorAac encLimpa = new CodificadorAac(limpaTmp, TAXA, 160000)) {
             long totalAmostras = Math.max(1, dec.duracaoUs() > 0 ? dec.duracaoUs() * TAXA / 1_000_000L : duracaoSeg * TAXA);
             MixadorVoz.Medidor medidor = new MixadorVoz.Medidor(TAXA);
-            SeparadorVoz sep = new SeparadorVoz(modelo, (vE, vD, fE, fD, q) -> {
-                medidor.medir(vE, vD, fE, fD, q);
-                enc.escrever(vE, vD, 0, q);
-            });
-            float[] e = new float[TAXA], d = new float[TAXA];
-            long inicioSep = SystemClock.elapsedRealtime();
-            int k;
-            while ((k = dec.ler(e, d, e.length)) > 0) {
-                if (cancelarAtual || parar) throw new ObterAudio.Parado();
-                sep.adicionar(e, d, 0, k);
-                double f = Math.min(1.0, sep.entregues() / (double) totalAmostras);
-                long passou = SystemClock.elapsedRealtime() - inicioSep;
-                long restante = f > 0.02 ? (long) (passou * (1 - f) / f / 1000) : -1;
-                progresso(id, titulo, "separando", 0.10 + 0.83 * f, restante);
+            FilaAudio fundo = new FilaAudio();
+            float[][] fb = new float[2][0];
+            try (LimpezaVoz limp = new LimpezaVoz(redeLimpeza, true, TAXA, THREADS, (cE, cD, q) -> {
+                if (fb[0].length < q) {
+                    fb[0] = new float[q];
+                    fb[1] = new float[q];
+                }
+                fundo.tirar(fb[0], fb[1], q);
+                medidor.medir(cE, cD, fb[0], fb[1], q);
+                encLimpa.escrever(cE, cD, 0, q);
+            })) {
+                SeparadorVoz sep = new SeparadorVoz(modelo, (vE, vD, fE, fD, q) -> {
+                    enc.escrever(vE, vD, 0, q);
+                    fundo.por(fE, fD, q);
+                    limp.adicionar(vE, vD, 0, q);
+                });
+                float[] e = new float[TAXA], d = new float[TAXA];
+                long inicioSep = SystemClock.elapsedRealtime();
+                int k;
+                while ((k = dec.ler(e, d, e.length)) > 0) {
+                    if (cancelarAtual || parar) throw new ObterAudio.Parado();
+                    sep.adicionar(e, d, 0, k);
+                    double f = Math.min(1.0, limp.entregues() / (double) totalAmostras);
+                    long passou = SystemClock.elapsedRealtime() - inicioSep;
+                    long restante = f > 0.02 ? (long) (passou * (1 - f) / f / 1000) : -1;
+                    progresso(id, titulo, "separando", 0.10 + 0.83 * f, restante);
+                }
+                sep.terminar();
+                limp.terminar();
             }
-            sep.terminar();
             enc.terminar();
+            encLimpa.terminar();
             medidor.terminar().salvar(niveis);
         } catch (Exception ex) {
             //noinspection ResultOfMethodCallIgnored
             vozTmp.delete();
+            //noinspection ResultOfMethodCallIgnored
+            limpaTmp.delete();
             throw ex;
         }
         if (!vozTmp.renameTo(voz)) throw new IOException("não consegui gravar a voz separada");
+        if (!limpaTmp.renameTo(limpa)) throw new IOException("não consegui gravar a voz limpa");
+    }
+
+    /** Fila de áudio estéreo (o fundo esperando a voz limpa). */
+    static final class FilaAudio {
+        private final java.util.ArrayDeque<float[][]> pedacos = new java.util.ArrayDeque<>();
+        private int lido = 0; // já tirado do primeiro pedaço
+
+        void por(float[] e, float[] d, int n) {
+            if (n <= 0) return;
+            pedacos.add(new float[][]{java.util.Arrays.copyOf(e, n), java.util.Arrays.copyOf(d, n)});
+        }
+
+        /** Tira n amostras; se faltar (não deveria), completa com silêncio. */
+        void tirar(float[] e, float[] d, int n) {
+            int q = 0;
+            while (q < n && !pedacos.isEmpty()) {
+                float[][] p = pedacos.peek();
+                int k = Math.min(n - q, p[0].length - lido);
+                System.arraycopy(p[0], lido, e, q, k);
+                System.arraycopy(p[1], lido, d, q, k);
+                q += k;
+                lido += k;
+                if (lido == p[0].length) {
+                    pedacos.poll();
+                    lido = 0;
+                }
+            }
+            for (int i = q; i < n; i++) {
+                e[i] = 0f;
+                d[i] = 0f;
+            }
+        }
     }
 
     interface Fracao {
         void aoAndamento(double f);
     }
 
-    /** Mixa voz + fundo abaixado na margem pedida → mix-M.m4a (e apaga mixes de outras margens). */
-    private void renderizar(String id, int margem, int atraso, long duracaoSeg, Fracao andamento) throws Exception {
+    /**
+     * Mixa voz limpa + fundo abaixado na margem pedida → mix-M-L.m4a (e apaga os mixes de outros ajustes).
+     * Fundo = original − voz antes da limpeza. Voz tocada = voz limpa, com um pouco da voz antes da limpeza de
+     * volta no nível Suave (como o limite de atenuação do DeepFilterNet: o ruído e o eco caem no máximo L dB).
+     * Vídeo tratado antes da limpeza (sem limpa.m4a): toca a voz separada, como na versão 24.
+     */
+    private void renderizar(String id, int margem, int limpeza, int atraso, long duracaoSeg, Fracao andamento) throws Exception {
         File pv = pastaVideo(this, id);
         File orig = arquivoOriginal(pv);
         File voz = new File(pv, "voz.m4a");
+        File limpa = new File(pv, "limpa.m4a");
         if (orig == null || !voz.isFile()) throw new IOException("faltam os arquivos do áudio tratado");
+        boolean usarLimpa = limpeza > 0 && limpa.isFile();
+        float devolver = !usarLimpa ? 1f : limpeza >= 100 ? 0f : (float) Math.pow(10, -limpeza / 20.0);
         MixadorVoz.Niveis nv = MixadorVoz.Niveis.ler(new File(pv, "niveis.bin"));
         MixadorVoz.Aplicador ap = new MixadorVoz.Aplicador(MixadorVoz.ganhos(nv, margem, TAXA));
         File tmp = new File(pv, "mix.tmp.m4a");
-        File fim = new File(pv, "mix-" + margem + ".m4a");
+        File fim = new File(pv, nomeMix(margem, limpeza));
         try (DecodificadorAudio dO = new DecodificadorAudio(orig, TAXA);
              DecodificadorAudio dV = new DecodificadorAudio(voz, TAXA);
+             DecodificadorAudio dL = usarLimpa ? new DecodificadorAudio(limpa, TAXA) : null;
              CodificadorAac enc = new CodificadorAac(tmp, TAXA, 160000)) {
             dV.pularInicio(atraso); // voz.m4a começa "atraso" amostras depois
+            if (dL != null) dL.pularInicio(atraso); // limpa.m4a também (mesmo codificador)
             long total = Math.max(1, dO.duracaoUs() > 0 ? dO.duracaoUs() * TAXA / 1_000_000L : duracaoSeg * TAXA);
             int bloco = 8192;
             float[] oE = new float[bloco], oD = new float[bloco], vE = new float[bloco], vD = new float[bloco];
             float[] fE = new float[bloco], fD = new float[bloco], sE = new float[bloco], sD = new float[bloco];
+            float[] lE = new float[bloco], lD = new float[bloco];
             long feitas = 0;
             long descartar = atraso; // o mix gravado também ganha "atraso": começa adiantado
             long ultimo = 0;
@@ -818,7 +959,20 @@ public class ServicoVoz extends Service {
                     fE[i] = oE[i] - vE[i];
                     fD[i] = oD[i] - vD[i];
                 }
-                ap.misturar(vE, vD, fE, fD, sE, sD, q);
+                if (dL != null) {
+                    int ql = lerExato(dL, lE, lD, q);
+                    for (int i = ql; i < q; i++) {
+                        lE[i] = 0f;
+                        lD[i] = 0f;
+                    }
+                    for (int i = 0; i < q; i++) { // voz tocada = limpa·(1 − devolver) + antes da limpeza·devolver
+                        lE[i] = lE[i] * (1 - devolver) + vE[i] * devolver;
+                        lD[i] = lD[i] * (1 - devolver) + vD[i] * devolver;
+                    }
+                    ap.misturar(lE, lD, fE, fD, sE, sD, q);
+                } else {
+                    ap.misturar(vE, vD, fE, fD, sE, sD, q);
+                }
                 int ini = 0;
                 if (descartar > 0) {
                     int p = (int) Math.min(descartar, q);
@@ -872,7 +1026,7 @@ public class ServicoVoz extends Service {
         try {
             while (!parar) {
                 String id;
-                int margem;
+                int margem, limpeza;
                 synchronized (TRAVA) {
                     carregar(this);
                     JSONArray l = estado.getJSONArray("mixar");
@@ -885,6 +1039,7 @@ public class ServicoVoz extends Service {
                     l.remove(0);
                     id = j.optString("id");
                     margem = margemValida(j.optInt("margem", MARGEM_PADRAO));
+                    limpeza = limpezaValida(j.optInt("limpeza", LIMPEZA_PADRAO));
                     JSONObject v = video(id);
                     if (v == null || !"pronto".equals(v.optString("estado")) || id.equals(atual)) {
                         salvar(this);
@@ -902,15 +1057,19 @@ public class ServicoVoz extends Service {
                         titulo = v0 == null ? "" : v0.optString("titulo", "");
                         duracaoSeg = v0 == null ? 0 : v0.optLong("duracao", 0);
                     }
-                    renderizar(id, margem, atrasoAac(), duracaoSeg, f -> progresso(id, titulo, "remixando", f, -1));
+                    renderizar(id, margem, limpeza, atrasoAac(), duracaoSeg, f -> progresso(id, titulo, "remixando", f, -1));
                     synchronized (TRAVA) {
                         JSONObject v = video(id);
                         if (v != null) {
                             v.put("margem", margem);
-                            v.put("arquivo", "mix-" + margem + ".m4a");
+                            v.put("limpeza", limpeza);
+                            v.put("arquivo", nomeMix(margem, limpeza));
                             v.put("bytes", tamanho(pastaVideo(this, id)));
                             v.remove("mixando");
-                            if (v.optInt("mixPendente", -1) == margem) v.remove("mixPendente");
+                            if (v.optInt("mixPendente", -1) == margem && v.optInt("limpezaPendente", -1) == limpeza) {
+                                v.remove("mixPendente");
+                                v.remove("limpezaPendente");
+                            }
                         }
                         salvar(this);
                     }
@@ -920,6 +1079,7 @@ public class ServicoVoz extends Service {
                         if (v != null) {
                             v.remove("mixando");
                             v.remove("mixPendente");
+                            v.remove("limpezaPendente");
                             v.put("erroMix", mensagem(e));
                         }
                         salvar(this);

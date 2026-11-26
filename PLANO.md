@@ -973,3 +973,32 @@ Pedido do usuário: em vídeos com ruído, fala difícil e música alta por cima
 **Testes:** `sh tests/voz_java/rodar.sh` (separação em trechos exata, rampas, ganhos, sílabas, medidor, reamostrador), `tests/voz.test.mjs` (relógio e sincronia), e2e caso 21 (Ajustes, pedidos ao app, áudio de teste tocando junto com o player falso, pulo, anúncio, desligar, margem, selo, apagar) e `voz-ci.yml` (modelo de verdade).
 
 **Limitações:** vídeos ao vivo e com restrição de idade/membros não baixam; a separação é imperfeita quando a música tem voz cantada (a voz cantada conta como voz) e quando a fala foi mal gravada; o primeiro vídeo serve de medida do tempo.
+
+
+## 23. Limpeza da voz separada: ruído e eco (26/11/2026, APK versão 25)
+
+Pedido do usuário: quando o microfone de quem fala tem ruído, chiado, baixa qualidade ou eco, tratar também a voz **depois** da separação, com a melhor qualidade possível. (A versão 24 só separava a voz e abaixava o fundo; a voz separada saía com o ruído e o eco que vieram nela.)
+
+**Cadeia** (`voz/LimpezaVoz.java`), na mesma passada da separação, em fluxo, sem atraso e com o mesmo número de amostras:
+voz separada (44,1 kHz) → 48 kHz (`Reamostrador`) → eco (`Dereverberador`, WPE) → ruído (`LimpadorVoz` + `ModeloDfn3`, DeepFilterNet3) → 44,1 kHz.
+
+| Etapa | O que é | Conferido |
+|---|---|---|
+| Ruído | DeepFilterNet3 (Schröter et al., 2023), os 3 ONNX oficiais sem alteração (`models/DeepFilterNet3_onnx.tar.gz`, commit 7b14b89 de github.com/Rikorose/DeepFilterNet; MIT/Apache-2.0), 8,6 MB, dentro do APK (`assets/dfn3/`, com origem e SHA-256 em `ORIGEM.md`). O processamento de sinal em volta (STFT 960/480 com janela de Vorbis, entradas ERB e espectro normalizadas com α = 0,99, olhar à frente de 2 quadros, filtro profundo de 5 quadros sobre o espectro original até 4,8 kHz, ganho por banda acima) foi portado do caminho offline oficial (`df/enhance.py`, `DfNet.forward`, `libDF/src/lib.rs` e `tract.rs`). | Java x pacote oficial (PyPI deepfilternet 0.5.6, PyTorch) no `noisy_snr0.wav` do repositório: diferença −134 dB (só arredondamento). |
+| Blocos da rede | A rede tem estado (GRU) de memória longa: com 1 s de aquecimento, a emenda perde 0,75 dB de SI-SDR; com 3 s, nada (20,03 x 20,01 dB do áudio inteiro). Usamos blocos de 15 s com 3 s de aquecimento; o processamento de sinal é contínuo e a emenda acontece no espectro (a síntese com sobreposição suaviza). | Diferenças nas emendas: −63 a −76 dB absolutos (silêncio). |
+| Eco | WPE (Weighted Prediction Error; Nakatani 2010, Yoshioka 2012), filtro linear (não inventa som), na forma em blocos do nara_wpe (wpe_v7, "full", MIT): STFT 1536/384 (32/8 ms, Hann), 20 coeficientes, atraso 3 (prevê a cauda com o áudio de 24 a 180 ms antes), 3 iterações, só até 8 kHz (medido: mesmo resultado, conta 3× menor), blocos de 15 s. | Java x nara_wpe 0.0.11: −139 dB. |
+| Estéreo | A rede e o WPE estimam na média dos canais e aplicam o mesmo ganho/filtro a cada canal (a imagem da voz não oscila). | Teste com modelo neutro: saída = entrada (erro < 1e-5). |
+
+**Quanto melhora** (medido aqui; fala gravada do repositório do DeepFilterNet):
+- Ruído (SNR 0 dB): SI-SDR de 6,1 para 20,0 dB.
+- Fala numa sala com eco (RIR real do repositório, RT60 0,79 s) e ruído 20 dB abaixo: a cauda do eco nas pausas, que ficava 16,4 dB abaixo da fala, ficou 23,0 dB abaixo só com o DeepFilterNet3 e 23,7 dB com WPE + DeepFilterNet3. O WPE acrescenta pouco (≈ 0,7 dB na cauda, ≈ 1 dB de SI-SDR), mas é linear e sem efeito colateral; o DeepFilterNet3 já reduz parte do eco (foi treinado com alvo levemente sem eco).
+- Fala com eco sintético (RT60 0,6 s) + ruído rosa + zumbido de 60 Hz, 5 dB abaixo da fala, passando pela cadeia inteira em Java: ruído nos silêncios de −7,6 para −39,9 dB em relação à fala; cauda nas pausas de −7,1 para −21,7 dB; SI-SDR (em relação à fala com só os primeiros 50 ms da sala) de −1,0 para 3,1 dB.
+- **Limite honesto:** eco forte diminui, não some. [Não testado: um modelo neural próprio para tirar eco de voz, como os "DeReverb" do UVR, com licença a conferir.]
+
+**Fundo e mixagem.** O fundo continua = original − voz **antes** da limpeza (`voz.m4a`): assim o ruído e o eco tirados da voz não voltam pelo fundo. A voz limpa vai para `limpa.m4a` (AAC 160 kbit/s); o medidor (`niveis.bin`) passa a comparar a voz limpa com o fundo do mesmo instante (o fundo espera numa fila os ~18 s que a limpeza segura para trabalhar em blocos). Mix: voz tocada = limpa·(1 − d) + voz antes da limpeza·d, com d = 10^(−L/20) — o mesmo limite de atenuação do DeepFilterNet (`atten_lim_db`), feito no tempo (as duas vozes estão alinhadas). Arquivo: `mix-M-L.m4a` (M = margem, L = limpeza).
+
+**Ajuste** `vozLimpeza` (⚙ Ajustes → Voz mais clara → Limpeza da voz): Máxima (100, padrão), Suave (12 dB) ou Desligada (0). Trocar só refaz a mixagem (segundos). Vídeo tratado na versão 24 (sem `limpa.m4a`): toca como antes e mostra **Tratar de novo** (`vozTratar` com `refazer: true`), que refaz a separação com a limpeza (o áudio original baixado é reaproveitado).
+
+**Custo:** WPE ≈ 0,21 s por segundo de áudio aqui (2 núcleos x86); a rede, menos. No celular: [não medido]; a estimativa de tempo do app (`segPorSeg`) se ajusta sozinha. Memória extra: ~100 MB durante o tratamento. Espaço: +~1,2 MB por minuto (`limpa.m4a`). APK: +~8 MB.
+
+**Testes:** `sh tests/voz_java/rodar.sh` (FFT x DFT direta, limpador com modelo neutro devolve a entrada em blocos pequenos, WPE deixa passar o que está acima de 8 kHz sem atraso, WPE tira o eco de 96 ms (9,8 dB; o nara_wpe tira 9,6 dB num sinal igual), ida e volta 44,1 ↔ 48 kHz sem atraso); e2e caso 21 (ajuste de limpeza, pedido ao app, Tratar de novo); `voz-ci.yml` (separação + limpeza + mixagem com os modelos de verdade pelo onnxruntime Java; limpeza de fala com eco e ruído com limites mínimos de melhora).

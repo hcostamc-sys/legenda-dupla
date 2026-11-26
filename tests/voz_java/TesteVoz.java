@@ -1,4 +1,9 @@
+import io.github.hcostamcsys.legendadupla.voz.Dereverberador;
+import io.github.hcostamcsys.legendadupla.voz.Fft;
+import io.github.hcostamcsys.legendadupla.voz.LimpadorVoz;
+import io.github.hcostamcsys.legendadupla.voz.LimpezaVoz;
 import io.github.hcostamcsys.legendadupla.voz.MixadorVoz;
+import io.github.hcostamcsys.legendadupla.voz.ModeloLimpeza;
 import io.github.hcostamcsys.legendadupla.voz.ModeloSeparacao;
 import io.github.hcostamcsys.legendadupla.voz.Reamostrador;
 import io.github.hcostamcsys.legendadupla.voz.SeparadorVoz;
@@ -273,6 +278,161 @@ public class TesteVoz {
         conferir(pico < 0.03, "reamostrador: 23 kHz deveria cair pelo menos 25 dB, sobrou " + pico); // faixa de transição do filtro
     }
 
+    // ------------------------------------------------------------------ limpeza da voz (ruído e eco)
+
+    static void testeFft() {
+        for (int n : new int[]{960, 1536, 12}) {
+            Fft f = new Fft(n);
+            Random r = new Random(n);
+            double[] re = new double[n], im = new double[n], r0 = new double[n], i0 = new double[n];
+            for (int i = 0; i < n; i++) {
+                re[i] = r0[i] = r.nextGaussian();
+                im[i] = i0[i] = r.nextGaussian();
+            }
+            f.transformar(re, im, false);
+            double erro = 0;
+            for (int k = 0; k < n; k++) {
+                double sr = 0, si = 0;
+                for (int t = 0; t < n; t++) {
+                    double a = -2 * Math.PI * ((long) k * t % n) / n;
+                    sr += r0[t] * Math.cos(a) - i0[t] * Math.sin(a);
+                    si += r0[t] * Math.sin(a) + i0[t] * Math.cos(a);
+                }
+                erro = Math.max(erro, Math.hypot(re[k] - sr, im[k] - si));
+            }
+            conferir(erro < 1e-8 * n, "fft " + n + ": erro " + erro);
+            f.transformar(re, im, true);
+            double volta = 0;
+            for (int i = 0; i < n; i++) volta = Math.max(volta, Math.hypot(re[i] / n - r0[i], im[i] / n - i0[i]));
+            conferir(volta < 1e-12 * n, "fft " + n + " ida e volta: erro " + volta);
+        }
+    }
+
+    /** Modelo falso: ganho 1 em todas as bandas e filtro profundo = só o quadro atual → a saída tem de ser a entrada. */
+    static final class ModeloIdentidade implements ModeloLimpeza {
+        int chamadas = 0;
+
+        public void rodar(float[] fe, float[] fs, int t, float[] m, float[] c) {
+            chamadas++;
+            java.util.Arrays.fill(m, 1f);
+            java.util.Arrays.fill(c, 0f);
+            for (int i = 0; i < t * DF; i++) c[(i * ORDEM + 2) * 2] = 1f; // coeficiente do quadro t (olhar = 2) = 1 + 0i
+        }
+
+        public void close() {}
+    }
+
+    static void testeLimpadorIdentidade() throws Exception {
+        int n = 48000 * 3 + 123;
+        Random r = new Random(5);
+        float[] e = new float[n], d = new float[n];
+        for (int i = 0; i < n; i++) {
+            e[i] = (float) (0.3 * r.nextGaussian());
+            d[i] = (float) (0.2 * Math.sin(i * 0.01) + 0.1 * r.nextGaussian());
+        }
+        float[] ye = new float[n], yd = new float[n];
+        int[] pos = {0};
+        ModeloIdentidade m = new ModeloIdentidade();
+        LimpadorVoz l = new LimpadorVoz(m, 70, 20, (a, b, q) -> {
+            System.arraycopy(a, 0, ye, pos[0], q);
+            System.arraycopy(b, 0, yd, pos[0], q);
+            pos[0] += q;
+        });
+        for (int i = 0; i < n; ) {
+            int k = Math.min(n - i, 1 + r.nextInt(7000));
+            l.adicionar(e, d, i, k);
+            i += k;
+        }
+        l.terminar();
+        conferir(pos[0] == n, "limpador: saiu " + pos[0] + " de " + n);
+        double erro = 0;
+        for (int i = 0; i < n; i++) erro = Math.max(erro, Math.max(Math.abs(ye[i] - e[i]), Math.abs(yd[i] - d[i])));
+        conferir(erro < 1e-5, "limpador com modelo neutro deveria devolver a entrada; erro " + erro);
+        conferir(m.chamadas > 3, "limpador: blocos " + m.chamadas);
+    }
+
+    static float[][] rodarEco(float[] e, float[] d, int bloco) throws Exception {
+        int n = e.length;
+        float[][] y = new float[2][n];
+        int[] pos = {0};
+        Dereverberador dv = new Dereverberador(bloco, 2, (a, b, q) -> {
+            System.arraycopy(a, 0, y[0], pos[0], q);
+            System.arraycopy(b, 0, y[1], pos[0], q);
+            pos[0] += q;
+        });
+        Random r = new Random(9);
+        for (int i = 0; i < n; ) {
+            int k = Math.min(n - i, 1 + r.nextInt(9000));
+            dv.adicionar(e, d, i, k);
+            i += k;
+        }
+        dv.terminar();
+        dv.close();
+        conferir(pos[0] == n, "eco: saiu " + pos[0] + " de " + n);
+        return y;
+    }
+
+    static void testeEcoPassagem() throws Exception {
+        // Acima de 8 kHz o WPE não mexe: um tom de 15 kHz tem de sair igual, na mesma posição
+        int n = 48000 * 2 + 77;
+        float[] x = new float[n];
+        for (int i = 0; i < n; i++) x[i] = (float) (0.5 * Math.sin(2 * Math.PI * 15000 * i / 48000.0));
+        float[][] y = rodarEco(x, x, 60);
+        double erro = 0;
+        for (int i = 0; i < n; i++) erro = Math.max(erro, Math.abs(y[0][i] - x[i]));
+        conferir(erro < 1e-3, "eco: tom de 15 kHz deveria passar igual; erro " + erro);
+    }
+
+    static void testeEcoReduz() throws Exception {
+        // Fonte com potência que muda muito (como a fala) + eco repetido de 96 ms (12 passos da STFT), ganho 0,5:
+        // y[t] = s[t] + 0,5·y[t − 4608]. O WPE tem de prever e tirar quase todo o eco.
+        int sr = 48000, n = sr * 8, atraso = 4608;
+        Random r = new Random(3);
+        float[] s = new float[n], y = new float[n];
+        double ganho = 0, m1 = 0, m2 = 0, m3 = 0, m4 = 0, m5 = 0;
+        for (int i = 0; i < n; i++) {
+            if (i % 2400 == 0) ganho = r.nextDouble() < 0.3 ? 0 : Math.pow(10, -2 * r.nextDouble()); // trechos de 50 ms
+            double v = r.nextGaussian();
+            double ma = (v + m1 + m2 + m3 + m4 + m5) / 6; // média de 6 amostras: quase tudo abaixo de 8 kHz
+            m5 = m4; m4 = m3; m3 = m2; m2 = m1; m1 = v;
+            s[i] = (float) (0.3 * ganho * ma);
+            y[i] = s[i] + (i >= atraso ? 0.5f * y[i - atraso] : 0f);
+        }
+        float[][] x = rodarEco(y, y, 375);
+        double eco = 0, resto = 0;
+        for (int i = sr; i < n; i++) {
+            eco += (y[i] - s[i]) * (y[i] - s[i]);
+            resto += (x[0][i] - s[i]) * (x[0][i] - s[i]);
+        }
+        double queda = 10 * Math.log10(resto / eco);
+        System.out.printf("  eco: sobrou %.1f dB do eco%n", queda);
+        conferir(queda < -7, "eco: o WPE deveria tirar mais de 7 dB do eco (o nara_wpe tira 9,6 dB num sinal igual); tirou " + (-queda));
+    }
+
+    static void testeLimpezaPassagem() throws Exception {
+        // Sem modelo e sem eco: só ida e volta 44,1 → 48 → 44,1 kHz; tem de sair igual, sem atraso
+        int n = 44100 * 2 + 31;
+        float[] x = new float[n], z = new float[n];
+        for (int i = 0; i < n; i++) {
+            x[i] = (float) (0.4 * Math.sin(2 * Math.PI * 1000 * i / 44100.0) + 0.2 * Math.sin(2 * Math.PI * 5000 * i / 44100.0));
+            z[i] = -x[i];
+        }
+        float[][] y = new float[2][n];
+        int[] pos = {0};
+        LimpezaVoz l = new LimpezaVoz(null, false, 44100, 1, (a, b, q) -> {
+            System.arraycopy(a, 0, y[0], pos[0], q);
+            System.arraycopy(b, 0, y[1], pos[0], q);
+            pos[0] += q;
+        });
+        for (int i = 0; i < n; i += 5000) l.adicionar(x, z, i, Math.min(5000, n - i));
+        l.terminar();
+        l.close();
+        conferir(pos[0] == n, "limpeza: saiu " + pos[0] + " de " + n);
+        double erro = 0;
+        for (int i = 200; i < n - 200; i++) erro = Math.max(erro, Math.max(Math.abs(y[0][i] - x[i]), Math.abs(y[1][i] - z[i])));
+        conferir(erro < 0.005, "limpeza: ida e volta da reamostragem; erro " + erro);
+    }
+
     public static void main(String[] a) throws Exception {
         testeReamostrador();
         testeSeparadorExato();
@@ -280,6 +440,11 @@ public class TesteVoz {
         testeGanhos();
         testeSilabas();
         testeMedidorEAplicador();
+        testeFft();
+        testeLimpadorIdentidade();
+        testeEcoPassagem();
+        testeEcoReduz();
+        testeLimpezaPassagem();
         if (falhas > 0) {
             System.out.println(falhas + " falha(s)");
             System.exit(1);
