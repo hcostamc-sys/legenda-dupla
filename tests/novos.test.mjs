@@ -130,5 +130,5 @@ test('ajustes v2: "inverter arraste" volta ao padrão, porque o sentido padrão 
   assert.equal(misturarAjustes({ versao: 2, inverterArraste: true, fonteL1: 24 }).inverterArraste, false);
   assert.equal(misturarAjustes({ versao: 2, inverterArraste: true, fonteL1: 24 }).fonteL1, 24);
   assert.equal(misturarAjustes({ versao: 3, inverterArraste: true }).inverterArraste, true);
-  assert.equal(AJUSTES_PADRAO.versao, 3);
+  assert.equal(AJUSTES_PADRAO.versao, 4);
 });

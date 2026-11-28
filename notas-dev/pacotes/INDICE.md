@@ -1,7 +1,7 @@
 # Pacotes
 | Pnn | Título | Itens do log | Tamanho (pontos) | Modelo | Depende de | Status |
 |---|---|---|---|---|---|---|
-| P01 | Ajustes rápidos: folga, texto da sincronia e bloco de voz | 1, 3, 2a, 10 (log 9) | 4 | Sonnet | nada | pendente |
+| P01 | Ajustes rápidos: folga, texto da sincronia e bloco de voz | 1, 3, 2a, 10 (log 9) | 4 | Sonnet | nada | testar |
 | P02 | Botão de tela cheia no vídeo e retomada sem pulo da barra | 9 (log 8), 12 (log 11) | 4 | Opus | P01 | pendente |
 | P03 | Falso "tentando reconectar" ao passar falas rápido | 5 (2º item 4 do log) | 4 | Opus | P02 | pendente |
 | P04 | Ícone de carregando e aviso de rede desde a abertura | 7 (log 6) | 4 | Opus | P03 | pendente |

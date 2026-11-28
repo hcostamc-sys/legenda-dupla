@@ -339,8 +339,8 @@ export function criarVoz(ctx) {
       if (v.estado === 'pronto' && !V.avisadoPronto.has(id)) {
         V.avisadoPronto.add(id);
         if (reg && reg.id === id && ctx.naTelaDoVideo()) {
-          ctx.toast?.(reg.vozDesligada ? 'O áudio tratado deste vídeo está pronto. Ligue em ⚙ Ajustes → Voz mais clara.'
-            : 'Áudio tratado pronto: voz mais clara ligada.', 3500);
+          ctx.toast?.(reg.vozDesligada ? 'O áudio tratado deste vídeo está pronto. Ligue em ⚙ Ajustes → Tratamento do áudio.'
+            : 'Áudio tratado pronto e ligado.', 3500);
         } else {
           ctx.toast?.(`Áudio tratado pronto: “${v.titulo || 'vídeo'}”. Está em Meus vídeos.`, 4000);
         }
@@ -477,7 +477,7 @@ export function criarVoz(ctx) {
     const m = V.estado?.modelo?.estado;
     if (m !== 'pronto' && m !== 'baixando' && m !== 'fila' && m !== 'verificando') {
       const r = await ctx.dialogo({
-        texto: `Para tratar o áudio, o app baixa uma vez o modelo de separação de voz (${MB(BYTES_MODELO)} MB; use Wi‑Fi). `
+        texto: `Para tratar o áudio, o app baixa uma vez o modelo de tratamento do áudio (${MB(BYTES_MODELO)} MB; use Wi‑Fi). `
           + 'Depois, o tratamento roda no próprio celular.',
         ok: 'Baixar e tratar',
         cancelar: 'Agora não',
@@ -524,7 +524,7 @@ export function criarVoz(ctx) {
     const ligar = el.checked;
     if (ligar && V.estado?.modelo?.estado !== 'pronto') {
       const r = await ctx.dialogo({
-        texto: `Para tratar os vídeos sozinho, o app precisa do modelo de separação de voz (${MB(BYTES_MODELO)} MB; use Wi‑Fi). Baixar agora?`,
+        texto: `Para tratar os vídeos sozinho, o app precisa do modelo de tratamento do áudio (${MB(BYTES_MODELO)} MB; use Wi‑Fi). Baixar agora?`,
         ok: 'Baixar',
         cancelar: 'Cancelar',
       });
@@ -553,7 +553,7 @@ export function criarVoz(ctx) {
   }
 
   async function apagarModelo() {
-    const r = await ctx.dialogo({ texto: `Apagar o modelo de separação de voz? Libera ${MB(BYTES_MODELO)} MB. Os áudios já tratados continuam funcionando.`, ok: 'Apagar' });
+    const r = await ctx.dialogo({ texto: `Apagar o modelo de tratamento do áudio? Libera ${MB(BYTES_MODELO)} MB. Os áudios já tratados continuam funcionando.`, ok: 'Apagar' });
     if (!r.ok) return;
     ctx.mandar({ acao: 'vozApagarModelo' });
   }
@@ -583,7 +583,7 @@ export function criarVoz(ctx) {
     $('#voz-apagar-todos')?.addEventListener('click', apagarTodos);
     $('#voz-copiar')?.addEventListener('click', async () => {
       const v = videoAtual();
-      try { await navigator.clipboard.writeText(`Voz mais clara: ${v?.erro || ''}\n${v?.detalhe || ''}`); ctx.toast?.('Diagnóstico copiado.'); } catch { /* nada */ }
+      try { await navigator.clipboard.writeText(`Tratamento do áudio: ${v?.erro || ''}\n${v?.detalhe || ''}`); ctx.toast?.('Diagnóstico copiado.'); } catch { /* nada */ }
     });
   }
 

@@ -83,9 +83,24 @@ test('sem o tempo de cada palavra não há fimFala (usa o fim da legenda)', () =
   }
 });
 
-test('ajuste folgaFala: padrão 0,45 s, só valores da lista', () => {
+test('ajuste folgaFala (P01): opções 0,18 / 0,3 / 0,45, padrão 0,3, só valores da lista', () => {
+  assert.deepEqual(FOLGAS_MAX, [0.18, 0.3, 0.45]);
+  assert.equal(FOLGA_MAX_PADRAO, 0.3);
   assert.equal(AJUSTES_PADRAO.folgaFala, FOLGA_MAX_PADRAO);
-  assert.equal(misturarAjustes({ versao: 3, folgaFala: 0.8 }).folgaFala, 0.8);
-  assert.equal(misturarAjustes({ versao: 3, folgaFala: 5 }).folgaFala, 0.45);
-  assert.equal(misturarAjustes({ versao: 3 }).folgaFala, 0.45);
+  assert.equal(misturarAjustes({ versao: 4, folgaFala: 0.18 }).folgaFala, 0.18);
+  assert.equal(misturarAjustes({ versao: 4, folgaFala: 0.45 }).folgaFala, 0.45);
+  assert.equal(misturarAjustes({ versao: 4, folgaFala: 0.8 }).folgaFala, 0.3);
+  assert.equal(misturarAjustes({ versao: 4, folgaFala: 5 }).folgaFala, 0.3);
+  assert.equal(misturarAjustes({ versao: 4 }).folgaFala, 0.3);
+});
+
+test('migração P01: a folga salva antes da versão 4 volta uma vez ao padrão 0,3', () => {
+  for (const v of [0.3, 0.45, 0.6, 0.8]) assert.equal(misturarAjustes({ versao: 3, folgaFala: v }).folgaFala, 0.3);
+  // os outros ajustes da versão 3 continuam
+  assert.equal(misturarAjustes({ versao: 3, folgaFala: 0.45, velocidade: 1.25 }).velocidade, 1.25);
+});
+
+test('a menor opção da folga vale também nas frases da legenda automática', () => {
+  const un = [{ s: 2, e: 4 }, { s: 10, e: 12 }];
+  quase(tempoDestinoFolga(un, 1, { max: Math.min(...FOLGAS_MAX), min: FOLGA_MIN_FRASES }), 10 - Math.min(...FOLGAS_MAX));
 });

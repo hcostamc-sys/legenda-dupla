@@ -410,32 +410,32 @@ def t_folga(page):
         page.keyboard.press('ArrowRight')
         esperar(lambda: exibida(page) == i + k, msg=f'→ nº {k} avança uma fala')
         s, _ = U[i + k]
-        # versão 22: destino = início da fala − folga do ajuste (0,45 s, padrão), qualquer que seja o silêncio
-        esperar(lambda: abs(tempo(page) - (s - 0.45)) < 0.02, msg=f'destino {s - 0.45:.2f} s')
+        # versão 22: destino = início da fala − folga do ajuste (0,3 s, padrão desde o P01), qualquer que seja o silêncio
+        esperar(lambda: abs(tempo(page) - (s - 0.3)) < 0.02, msg=f'destino {s - 0.3:.2f} s')
         assert estado(page) == 2, 'continua pausado'
         time.sleep(0.9)
     page.keyboard.press('ArrowLeft')
     esperar(lambda: exibida(page) == i + 2, msg='← volta uma fala')
-    # ajuste: folga máxima 0,45 s (padrão); escolher 0,8 s salva
+    # ajuste (P01): opções 0,18 / 0,3 / 0,45, padrão 0,3; escolher 0,45 s salva
     page.click('#btn-ajustes')
     controles = page.locator('.grupo', has=page.locator('h3', has_text='Controles'))
     assert controles.locator('#linha-folga').count() == 1
-    expect(page.locator('#linha-folga .chip')).to_have_text(['0,3 s', '0,45 s', '0,6 s', '0,8 s'])
+    expect(page.locator('#linha-folga .chip')).to_have_text(['0,18 s', '0,3 s', '0,45 s'])
+    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,3 s')
+    page.locator('#linha-folga .chip', has_text='0,45 s').click()
     expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,45 s')
-    page.locator('#linha-folga .chip', has_text='0,8 s').click()
-    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,8 s')
-    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).folgaFala") == 0.8
+    assert page.evaluate("JSON.parse(localStorage.getItem('ld.ajustes')).folgaFala") == 0.45
     # o ajuste muda o destino de verdade (era o defeito da v21)
     page.click('#btn-fechar-ajustes')
     page.locator('#titulo-video').click()
     j = exibida(page)
     page.keyboard.press('ArrowRight')
-    esperar(lambda: exibida(page) == j + 1, msg='→ com 0,8 s')
+    esperar(lambda: exibida(page) == j + 1, msg='→ com 0,45 s')
     s8 = U[j + 1][0]
-    esperar(lambda: abs(tempo(page) - (s8 - 0.8)) < 0.02, msg=f'destino {s8 - 0.8:.2f} s com folga 0,8 s')
+    esperar(lambda: abs(tempo(page) - (s8 - 0.45)) < 0.02, msg=f'destino {s8 - 0.45:.2f} s com folga 0,45 s')
     page.click('#btn-ajustes')
-    page.locator('#linha-folga .chip', has_text='0,45 s').click()
-    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,45 s')
+    page.locator('#linha-folga .chip', has_text='0,3 s').click()
+    expect(page.locator('#linha-folga .chip.confirmada')).to_have_text('0,3 s')
     page.click('#btn-fechar-ajustes')
 
 
@@ -2230,7 +2230,7 @@ def t_voz(browser, base, en, pt):
     pronto = {ID: {'estado': 'pronto', 'titulo': 'Teste', 'progresso': 1, 'margem': 12, 'limpeza': 100, 'limpa': True,
                    'arquivo': 'mix-12-100.m4a', 'bytes': 30_000_000}}
     estado_app(modelo={'estado': 'pronto'}, videos=pronto, usado=30_000_000)
-    expect(page.locator('#toast')).to_contain_text('Áudio tratado pronto: voz mais clara ligada.')
+    expect(page.locator('#toast')).to_contain_text('Áudio tratado pronto e ligado.')
     audio = lambda: page.evaluate("""() => { const a = document.querySelector('#audio-voz'); const p = window.__ld.S.player;
       return { src: a ? a.getAttribute('src') || '' : '', pausado: a ? a.paused : true, t: a ? a.currentTime : -1,
                v: p ? p.tempo() : -1, mudo: p ? p.estaMudo() : false }; }""")

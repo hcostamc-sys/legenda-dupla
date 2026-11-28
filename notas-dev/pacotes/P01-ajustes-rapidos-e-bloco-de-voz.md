@@ -1,5 +1,5 @@
 # P01 — Ajustes rápidos: folga, texto da sincronia e bloco de voz
-Status: pendente
+Status: testar
 Modelo sugerido: Sonnet
 Depende de: nada
 
@@ -63,3 +63,11 @@ Trocar as opções da folga, encurtar um texto da sincronia e reorganizar o bloc
 
 ## Ao terminar
 Seguir a regra 9 do CLAUDE.md. Só página: não precisa de APK novo.
+
+## Resultado (28/11/2026)
+- Feito como descrito. Ordem do bloco: dica geral → "Este vídeo" → "Tratar sozinho…" → "Volume da voz e do fundo" → "Limpeza da voz (ruído e eco)" → modelo → espaço/apagar todos.
+- Extra necessário: `FOLGA_MIN_FRASES` (legendas.js) baixou de 0,3 para 0,18; com 0,3 a opção 0,18 s virava 0,3 s na legenda automática.
+- Migração: `VERSAO_AJUSTES` 3 → 4; folga salva com versão < 4 volta a 0,3 uma vez.
+- Toast "Áudio tratado pronto: voz mais clara ligada." virou "Áudio tratado pronto e ligado." (e2e ajustado).
+- Restam "voz mais clara" só em comentários do código (não aparecem na tela).
+- `node --test` 115/115 e e2e 35/35.

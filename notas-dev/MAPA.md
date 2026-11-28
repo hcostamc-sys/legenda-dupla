@@ -8,9 +8,9 @@
 - Assinatura: fixa. `android/app/ld-debug.keystore` (config `signingConfigs.debug` em `android/app/build.gradle`). Cada APK instala por cima e os dados ficam.
 - Como a mudança chega à principal: o Claude faz commit e `git push` direto na `main` (é assim desde o início; tem permissão). O Heric não precisa fazer nada.
 - Versão do app: `versionCode`/`versionName` em `android/app/build.gradle` (hoje 25 / '0.25') e `VERSAO_APK` em `MainActivity` (hoje 24; a página lê pelo `?apk=` em `APK` de `js/app.js` para saber o que o app sabe fazer). Incrementar os três ao mudar algo em `android/`; a página só confere `APK` quando depende de função nativa nova.
-- Cache da página: `CACHE` em `sw.js` (hoje `ld-v33`). Toda mudança em arquivo do site exige trocar o nome (ld-v34…), senão o celular continua com a versão velha.
+- Cache da página: `CACHE` em `sw.js` (hoje `ld-v34`). Toda mudança em arquivo do site exige trocar o nome (ld-v34…), senão o celular continua com a versão velha.
 - Testes automáticos:
-  - `node --test` (raiz; `tests/*.test.mjs`, lógica pura; ~1 s, 113 testes);
+  - `node --test` (raiz; `tests/*.test.mjs`, lógica pura; ~1 s, 115 testes);
   - `python3 tests/e2e_test.py` (interface com Playwright + player falso `?mock=1`; instalar com `pip install --break-system-packages playwright` e `python3 -m playwright install chromium`);
   - `python3 tests/youtube_aba_test.py` e `tests/youtube_aba_inicio_test.py` (troca de aba do YouTube);
   - `sh tests/voz_java/rodar.sh` (Java da voz mais clara);
@@ -55,11 +55,11 @@
 | `android/app/src/main/res/values*/strings.xml` | Textos nativos (notificações) em vários idiomas | — |
 
 ## Configurações persistidas
-Ajustes gerais: localStorage `ld.ajustes` (`js/armazenamento.js`). Valor fora de `OPCOES`/`FAIXAS` é descartado por `misturarAjustes` e volta ao padrão (é a "migração" automática). `VERSAO_AJUSTES` = 3.
+Ajustes gerais: localStorage `ld.ajustes` (`js/armazenamento.js`). Valor fora de `OPCOES`/`FAIXAS` é descartado por `misturarAjustes` e volta ao padrão (é a "migração" automática). `VERSAO_AJUSTES` = 4 (P01: folga salva antes da 4 volta ao padrão uma vez; regras por versão dentro de `misturarAjustes`).
 
 | Chave | Valores | Padrão | Lida/gravada em |
 |---|---|---|---|
-| `folgaFala` | 0.3, 0.45, 0.6, 0.8 (igual a `FOLGAS_MAX` de `legendas.js`) | 0.45 | `montarFolgas`, `tempoDestinoFolga` |
+| `folgaFala` | 0.18, 0.3, 0.45 (igual a `FOLGAS_MAX` de `legendas.js`; `FOLGA_MIN_FRASES` = menor opção) | 0.3 | `montarFolgas`, `tempoDestinoFolga` |
 | `velocidade` | 0.25–2 | 1 | `montarVelocidades` |
 | `fonteL1` | 14–32 | 19 | `aplicarAparencia`, `confirmarFonte` |
 | `modoTraducao` | sempre, pausado, desligada | sempre | menu da tradução |
@@ -77,7 +77,7 @@ Por vídeo (IndexedDB `legenda-dupla`/`videos`, registro `reg`): posição salva
 ## Recursos baixáveis (modelos, pacotes)
 | Recurso | Origem do download | Onde é salvo | Quem usa |
 |---|---|---|---|
-| Modelo de separação de voz (HT-Demucs FT, 316 MB) | Hugging Face, `URL_MODELO` em `ServicoVoz.java` (revisão fixa, confere SHA-256) | `files/voz/` (`arquivoModelo`) | `ServicoVoz.baixarModelo`/`baixarArquivo`; página: bloco `#voz-modelo` |
+| Modelo de tratamento do áudio (na página; HT-Demucs FT, 316 MB) | Hugging Face, `URL_MODELO` em `ServicoVoz.java` (revisão fixa, confere SHA-256) | `files/voz/` (`arquivoModelo`) | `ServicoVoz.baixarModelo`/`baixarArquivo`; página: bloco `#voz-modelo` |
 | Limpeza de ruído (DeepFilterNet3, 8,6 MB) | Dentro do APK (`assets/dfn3/`) | — | `ModeloDfn3`, `abrirModeloLimpeza` |
 | Pacotes de pontuação (en, latinas) | Hugging Face; no app, download nativo por `ServicoModelos` | Cache `modelos-pontuacao-v1` (`CACHE_MODELOS`) | `js/modelos.js`, `baixarPacoteNativo` |
 | Motor onnxruntime-web | `vendor/ort/` (no site) | cache do site | `pontuador-worker.js` |
@@ -94,7 +94,8 @@ Por vídeo (IndexedDB `legenda-dupla`/`videos`, registro `reg`): posição salva
 - **Ponto salvo ao abrir vídeo:** `PlayerYouTube._ler`/`revelar` esperam o vídeo tocar perto do ponto salvo antes de mostrar a imagem (v16; PLANO.md seção 20, item 3). A barra (`atualizarProgresso`) é atualizada pelo laço `tique`, que pode ler tempos falsos do player antes disso.
 - **Aviso de rede:** depende de três fontes — `ldRede` (nativo, `vigiarInternet`, confirma queda após `CONFIRMAR_QUEDA_MS` = 2 s), `conferirRede` (player travado em buffer) e `aoMudarRede`. Falso alarme já foi corrigido uma vez (v14); pulos rápidos de fala geram buffer e podem disparar `conferirRede`.
 - **Gestos:** `ligarGestos` é ligado em `ligarEventos` duas vezes: em `#camada-gestos` (vídeo: arrastar, toque, `segurar` = 2× com `acelerarSegurando`/`soltarAceleracao`) e em `#caixa-legenda` (só arrastar e toque, sem `segurar`). Antes do primeiro play a camada de gestos não pode capturar toques (PLANO.md 7.2).
-- **Folga antes da fala:** `tempoDestinoFolga` usa o silêncio antes da fala; ver testes `tests/folga.test.mjs`.
+- **Folga antes da fala:** `tempoDestinoFolga` usa o silêncio antes da fala; ver testes `tests/folga.test.mjs`. `FOLGA_MIN_FRASES` não pode ser maior que a menor opção de `FOLGAS_MAX`, senão a opção some na legenda automática.
+- **Nome na interface:** o grupo `#grupo-voz` aparece como "Tratamento do áudio" (partes "Volume da voz e do fundo" e "Limpeza da voz (ruído e eco)"); no código e nos comentários ainda se chama "voz mais clara". Textos nativos (`android/`) ainda dizem "separação de voz" até o P05.
 - **Testes e2e** dependem dos ids do `index.html`; renomear id = ajustar `tests/e2e_test.py`.
 - **Voz mais clara:** o download do áudio do YouTube (NewPipe Extractor) não pode ser testado no Actions (YouTube recusa servidores); só no celular. A função não pode ir para a Play Store.
 - **APK:** `abiFilters` só ARM; mexer em dependências muda o tamanho do APK.

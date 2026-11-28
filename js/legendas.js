@@ -1356,9 +1356,10 @@ export function tempoDestino(unidade, preRolagem) {
 
 export const FOLGA_MARGEM = 0.08; // segundos depois do fim estimado da fala anterior
 export const FOLGA_MIN = 0.15; // falas como vieram (legenda feita por pessoa)
-export const FOLGA_MIN_FRASES = 0.3; // frases montadas da legenda automática
-export const FOLGAS_MAX = [0.3, 0.45, 0.6, 0.8];
-export const FOLGA_MAX_PADRAO = 0.45;
+// Frases montadas da legenda automática. Igual à menor opção de FOLGAS_MAX, para toda opção valer (P01).
+export const FOLGA_MIN_FRASES = 0.18;
+export const FOLGAS_MAX = [0.18, 0.3, 0.45]; // P01 (28/11/2026)
+export const FOLGA_MAX_PADRAO = 0.3;
 
 /**
  * Tempo de destino ao ir para a unidade i: início dela menos a folga (opcoes.max, o ajuste),

@@ -10,7 +10,9 @@ const CHAVE_AJUSTES = 'ld.ajustes';
 // Versão 2 (22/11/2026): interface enxuta. Os ajustes antigos que saíram são ignorados.
 // Versão 3 (22/11/2026): o sentido padrão do arraste foi invertido (esquerda avança); o
 // "inverter" salvo antes valia para o sentido antigo, por isso volta ao padrão.
-export const VERSAO_AJUSTES = 3;
+// Versão 4 (28/11/2026, P01): folga antes da fala com opções 0,18 / 0,3 / 0,45 e padrão 0,3; a folga
+// salva antes (0,45 era o padrão antigo) volta uma vez ao novo padrão.
+export const VERSAO_AJUSTES = 4;
 export const AJUSTES_PADRAO = Object.freeze({
   versao: VERSAO_AJUSTES,
   idioma: 'auto', // idioma do vídeo, para a tradução automática e o cartão da palavra
@@ -25,7 +27,7 @@ export const AJUSTES_PADRAO = Object.freeze({
   velocidade: 1,
   // Folga máxima (s) antes da fala ao avançar, retroceder ou repetir (versão 20). Com silêncio curto
   // antes da fala, a folga é menor (vai para logo depois do fim da fala anterior).
-  folgaFala: 0.45,
+  folgaFala: 0.3,
   // Pontuação melhorada (modelo baixado à parte): usar quando o pacote do idioma estiver no aparelho.
   pontuacaoModelo: true,
   // A explicação animada de como avançar e retroceder o vídeo (antes do vídeo) já foi marcada "não mostrar mais".
@@ -43,7 +45,7 @@ const OPCOES = {
   destino: [...IDIOMAS_TRADUCAO, 'nao'],
   modoTraducao: ['sempre', 'pausado', 'desligada'],
   modoLegenda: ['uma', 'lista'],
-  folgaFala: [0.3, 0.45, 0.6, 0.8], // igual a FOLGAS_MAX (legendas.js)
+  folgaFala: [0.18, 0.3, 0.45], // igual a FOLGAS_MAX (legendas.js)
   vozMargem: [8, 12, 16, 22], // igual a MARGENS (voz.js)
   vozLimpeza: [0, 12, 100], // igual a LIMPEZAS (voz.js)
 };
@@ -61,6 +63,7 @@ export function misturarAjustes(salvos) {
       // O tamanho de letra da versão 1 (22 px) ficava grande demais no celular: volta ao novo padrão.
       if (k === 'fonteL1' && !(salvos.versao >= 2)) continue;
       if (k === 'inverterArraste' && !(salvos.versao >= 3)) continue;
+      if (k === 'folgaFala' && !(salvos.versao >= 4)) continue;
       const v = salvos[k];
       if (typeof v !== typeof AJUSTES_PADRAO[k]) continue;
       if (typeof v === 'number' && !Number.isFinite(v)) continue;

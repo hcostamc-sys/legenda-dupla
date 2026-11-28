@@ -285,7 +285,7 @@
       <div id="grupo-sincronia" class="subgrupo">
       <h4 class="subtitulo">Sincronia (só deste vídeo)</h4>
       <div class="ajuste-sinc" data-alvo="ajusteEstudo">
-        <span>Legenda estudada: <b class="valor-sinc">0 s</b></span>
+        <span>Legenda: <b class="valor-sinc">0 s</b></span>
         <div class="linha-chips">
           <button type="button" class="chip" data-d="-0.5">−0,5</button>
           <button type="button" class="chip" data-d="-0.1">−0,1</button>
@@ -349,10 +349,10 @@
       <label class="ajuste ajuste-check"><input type="checkbox" data-ajuste="pontuacaoModelo"> Usar a pontuação melhorada</label>
     </div>
 
-    <!-- Voz mais clara (app Android, versões 24 e 25): js/voz.js -->
+    <!-- Tratamento do áudio (app Android, versões 24 e 25; nome novo no P01): js/voz.js -->
     <div id="grupo-voz" class="grupo" hidden>
-      <h3>Voz mais clara</h3>
-      <p class="dica">Para vídeos com música alta, barulho, eco ou microfone ruim. Modelos de IA no celular separam a voz do fundo e limpam a voz (ruído e eco); o fundo só abaixa enquanto alguém fala: no resto, o som fica como no original.</p>
+      <h3>Tratamento do áudio</h3>
+      <p class="dica">Para vídeos com música alta, barulho, eco ou microfone ruim. Faz duas coisas, com modelos de IA no próprio celular: abaixa o fundo enquanto alguém fala (no resto, o som fica como no original) e limpa a voz de ruído e eco.</p>
       <div id="voz-video" class="pm-bloco">
         <div class="pm-topo"><strong>Este vídeo</strong><span class="pm-estado"></span></div>
         <p class="pm-texto dica"></p>
@@ -365,15 +365,16 @@
         </div>
         <label id="voz-usar-linha" class="ajuste ajuste-check" hidden><input type="checkbox" id="voz-usar"> Usar o áudio tratado neste vídeo</label>
       </div>
-      <h4 class="subtitulo">Quanto abaixar o fundo quando alguém fala</h4>
-      <div id="linha-voz-margem" class="linha-chips" role="group" aria-label="Quanto abaixar o fundo quando alguém fala"></div>
+      <label class="ajuste ajuste-check"><input type="checkbox" id="voz-auto"> Tratar sozinho todo vídeo que eu abrir</label>
+      <h4 class="subtitulo">Volume da voz e do fundo</h4>
+      <p class="dica">Quanto abaixar o fundo quando alguém fala.</p>
+      <div id="linha-voz-margem" class="linha-chips" role="group" aria-label="Volume da voz e do fundo: quanto abaixar o fundo quando alguém fala"></div>
       <p class="dica">Pouco: a música continua bem presente. Máximo: a música quase some enquanto alguém fala. Vale para todos os vídeos; num vídeo já tratado, o som muda em alguns segundos.</p>
       <h4 class="subtitulo">Limpeza da voz (ruído e eco)</h4>
       <div id="linha-voz-limpeza" class="linha-chips" role="group" aria-label="Limpeza da voz: ruído e eco"></div>
-      <p class="dica">Máxima: tira o máximo de ruído, chiado e eco da voz. Suave: tira menos (até 12 dB), se a voz parecer abafada ou artificial. Desligada: a voz como saiu da separação. Num vídeo já tratado, o som muda em alguns segundos.</p>
-      <label class="ajuste ajuste-check"><input type="checkbox" id="voz-auto"> Tratar sozinho todo vídeo que eu abrir</label>
+      <p class="dica">Máxima: tira o máximo de ruído, chiado e eco da voz. Suave: tira menos (até 12 dB), se a voz parecer abafada ou artificial. Desligada: a voz sem limpeza. Vale para todos os vídeos; num vídeo já tratado, o som muda em alguns segundos.</p>
       <div id="voz-modelo" class="pm-bloco">
-        <div class="pm-topo"><strong>Modelo de separação de voz</strong><span class="pm-estado"></span></div>
+        <div class="pm-topo"><strong>Modelo de tratamento do áudio</strong><span class="pm-estado"></span></div>
         <p class="pm-texto dica"></p>
         <div class="pm-barra" hidden><div></div></div>
         <div class="pm-botoes">
