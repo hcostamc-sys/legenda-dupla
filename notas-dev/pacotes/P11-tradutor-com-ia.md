@@ -34,7 +34,7 @@ Com a chave do P06 ("Pronto"), o cartão do tradutor lista todos os sentidos do 
 
 ## Decisões já tomadas e suposições (não perguntar de novo)
 - Heric escolheu: Gemini com chave grátis de cada usuário; sem chave, o recurso aparece "Indisponível". Linguee e Reverso descartados (sem API oficial; risco nas lojas). Modelo local no celular descartado (qualidade e velocidade piores).
-- Suposição: sem chave, a tradução simples do Google continua aparecendo no cartão (só a parte da IA fica indisponível).
+- Heric confirmou: sem chave (quem não quiser usar a IA), a tradução do Google continua disponível no cartão; só a parte da IA fica "Indisponível".
 - Suposição: destacar o sentido desta fala sem mudar a ordem (o Heric pode pedir para tirar).
 
 ## Não mexer / regressões a vigiar
