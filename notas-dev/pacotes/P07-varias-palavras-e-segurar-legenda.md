@@ -1,7 +1,7 @@
 # P07 — Traduzir várias palavras juntas e segurar a legenda para voltar ao início da fala
 Status: pendente
 Modelo sugerido: Opus
-Depende de: P06
+Depende de: P11
 
 ## Objetivo
 Permitir escolher um trecho de quantas palavras quiser na legenda para traduzir junto, e fazer o "segurar 1,5 s" na legenda voltar ao início da fala atual (com a folga), sem ligar o loop.
@@ -20,7 +20,7 @@ Permitir escolher um trecho de quantas palavras quiser na legenda para traduzir 
 ## O que fazer
 ### Item 4b (várias palavras)
 1. Tocar uma palavra abre o cartão (como hoje). Com o cartão aberto, tocar outra palavra da mesma fala escolhe o trecho entre as duas (qualquer direção, qualquer quantidade de palavras). Cada novo toque numa palavra da mesma fala move o fim do trecho até ela. O trecho fica destacado na legenda.
-2. O cartão traduz o trecho inteiro pelo caminho do P06 (IA com a fala como contexto; fallback Google).
+2. O cartão traduz o trecho inteiro pelo caminho do P11 (IA com a fala como contexto; fallback Google).
 3. Tocar numa palavra de outra fala começa uma escolha nova. Fechar o cartão limpa a escolha.
 
 ### Item 6 (segurar a legenda)

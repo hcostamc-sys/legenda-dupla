@@ -1,7 +1,7 @@
 # P10 — Nota do áudio e "Aprimorar o áudio" na janela de idiomas (parte B: página)
 Status: pendente
 Modelo sugerido: Opus
-Depende de: P09
+Depende de: P09, P06
 
 ## Objetivo
 Mostrar a nota da qualidade do áudio já na janela de escolha de idiomas, com uma caixa "Aprimorar o áudio" que vem marcada quando a nota é baixa e exige o download do modelo para ser usada.
@@ -18,7 +18,7 @@ Mostrar a nota da qualidade do áudio já na janela de escolha de idiomas, com u
 
 ## O que fazer
 1. Só no app com `APK` ≥ versão do P09 (no site, nada muda).
-2. Ao abrir a janela de idiomas, pedir a análise. Linha "Qualidade do áudio: analisando…" com carregando pequeno → "7/10 · boa" (rótulos: 0–4 ruim, 5–6 média, 7–10 boa). Erro: "não foi possível analisar".
+2. Seguir o padrão de "cartão de recurso" criado no P06: o cartão "Tratamento do áudio" entra em "Recursos extras", depois de "Tradutor com IA", com o mesmo visual (`.pm-bloco`, selo de estado, botões). Ao abrir a janela de idiomas, pedir a análise. Linha "Qualidade do áudio: analisando…" com carregando pequeno → "7/10 · boa" (rótulos: 0–4 ruim, 5–6 média, 7–10 boa). Erro: "não foi possível analisar".
 3. Caixa "Aprimorar o áudio" na mesma janela:
    - nota ≤ 5: marcada sozinha;
    - nota ainda não saiu: segue o ajuste "Tratar sozinho todo vídeo que eu abrir" (`vozAuto`);
